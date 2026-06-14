@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/shared" },
-    { "path": "./packages/foundry-module" }
+    { "path": "./packages/foundry-module" },
+    { "path": "./packages/mcp-server" }
   ]
 }
