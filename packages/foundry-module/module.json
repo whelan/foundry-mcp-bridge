@@ -1,0 +1,23 @@
+{
+  "id": "foundry-mcp-bridge",
+  "title": "Foundry MCP Bridge",
+  "description": "Lets an AI (via an MCP server) create/update/delete documents in this running world. GM-only; connects out to a configured relay.",
+  "version": "0.1.0",
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14"
+  },
+  "esmodules": ["dist/index.js"],
+  "authors": [{ "name": "foundry-mcp-bridge" }],
+  "relationships": {
+    "optional": [
+      {
+        "id": "forien-quest-log",
+        "type": "module",
+        "reason": "Quests are created through Forien's Quest Log API when present."
+      }
+    ]
+  },
+  "socket": false,
+  "license": "MIT"
+}

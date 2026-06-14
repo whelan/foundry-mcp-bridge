@@ -1,0 +1,15 @@
+{
+  "name": "@foundry-mcp-bridge/foundry-module",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean"
+  },
+  "dependencies": {
+    "@foundry-mcp-bridge/shared": "0.1.0"
+  }
+}

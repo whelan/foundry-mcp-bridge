@@ -1,0 +1,57 @@
+/**
+ * Foundry module entry point. Registers settings, and on `ready` — GM only —
+ * opens the relay and starts executing inbound commands against this world.
+ *
+ * All wiring here touches Foundry globals and is not run in CI; the behaviour it
+ * composes (executor, relay client) is unit-tested against the mock.
+ */
+
+import { RelayClient } from "./relay-client.js";
+import {
+  MODULE_ID,
+  createFoundryRuntimeApi,
+  readSettings,
+  registerSettings,
+} from "./foundry-runtime.js";
+
+export { RelayClient } from "./relay-client.js";
+export * from "./protocol-executor.js";
+export {
+  MODULE_ID,
+  createFoundryRuntimeApi,
+  readSettings,
+  registerSettings,
+} from "./foundry-runtime.js";
+
+let client: RelayClient | null = null;
+
+Hooks.once("init", () => {
+  registerSettings();
+});
+
+Hooks.once("ready", () => {
+  // GM-only: non-GM clients never open the relay.
+  if (!game.user?.isGM) return;
+
+  let settings;
+  try {
+    settings = readSettings();
+  } catch (e) {
+    ui.notifications?.warn((e as Error).message);
+    return;
+  }
+
+  client = new RelayClient({
+    url: settings.url,
+    api: createFoundryRuntimeApi(),
+    context: { isGM: true, expectedToken: settings.token },
+    createSocket: (url) => new WebSocket(url),
+    log: (level, message) => console[level === "error" ? "error" : "log"](`[${MODULE_ID}] ${message}`),
+  });
+  client.connect();
+});
+
+Hooks.once("closeGame", () => {
+  client?.disconnect();
+  client = null;
+});
