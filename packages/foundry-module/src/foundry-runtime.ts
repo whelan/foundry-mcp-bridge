@@ -154,29 +154,35 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         );
       }
 
-      const QuestDB = (fqlModule as any).api?.QuestDB;
+      const QuestAPI = (fqlModule as any).public?.QuestAPI;
+      if (!QuestAPI) {
+        throw new CommandExecutionError(
+          "INTERNAL",
+          "forien-quest-log QuestAPI not found",
+        );
+      }
+
+      const QuestDB = QuestAPI.DB;
       if (!QuestDB) {
         throw new CommandExecutionError(
           "INTERNAL",
-          "forien-quest-log QuestDB API not found",
+          "forien-quest-log QuestDB shim not found",
         );
       }
 
       if (opts.dryRun) {
-        // Dry-run: validate data structure by attempting to instantiate.
-        const Quest = (fqlModule as any).api?.Quest;
-        if (Quest) {
-          new Quest(data || {});
-        }
+        // Dry-run: just validate that the module is ready.
         return { _id: "dry-run", name: (data as any)?.name || "Quest" };
       }
 
-      // Create quest via QuestDB.
+      // Create quest via public API.
       const quest = await QuestDB.createQuest({ data, parentId });
       if (!quest) {
         throw new CommandExecutionError("INTERNAL", "quest creation returned nothing");
       }
-      return quest.toJSON?.() || (quest as any);
+      // Quest.toJSON() doesn't include _id, so we need to add it manually.
+      const questData = quest.toJSON?.() || {};
+      return { ...questData, _id: (quest as any).id };
     },
   } satisfies FoundryDocumentApi;
 }
