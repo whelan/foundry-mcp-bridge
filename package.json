@@ -1,0 +1,21 @@
+{
+  "name": "foundry-mcp-bridge",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server + Foundry V14 module for live AI-driven document management",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

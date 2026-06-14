@@ -1,0 +1,9 @@
+{
+  "relayUrl": "ws://localhost:3010",
+  "relayToken": "dev-token-change-me",
+  "foundry": {
+    "e2eUrl": "",
+    "gmUser": "",
+    "gmPassword": ""
+  }
+}
