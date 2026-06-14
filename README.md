@@ -11,6 +11,8 @@ See the design docs:
   semantics (§7.2), reliability (§11).
 - [`docs/foundry-mcp-bridge-project-plan.md`](docs/foundry-mcp-bridge-project-plan.md)
   — monorepo layout, config rules, mock-first test strategy.
+- [`docs/setup-foundry-forge.md`](docs/setup-foundry-forge.md) — every
+  configurable property and how to activate against local Foundry and The Forge.
 
 ## Packages
 
