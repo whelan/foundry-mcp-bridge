@@ -246,7 +246,11 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       }
 
       if (!opts.dryRun) {
-        await QuestDB.deleteQuest(id);
+        // Delete via backing JournalEntry (public API doesn't expose deleteQuest)
+        const entry = (quest as any).entry;
+        if (entry) {
+          await entry.delete();
+        }
       }
     },
   } satisfies FoundryDocumentApi;
