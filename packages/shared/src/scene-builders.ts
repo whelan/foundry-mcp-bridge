@@ -7,6 +7,8 @@
  * so advanced fields stay reachable without re-specifying defaults.
  */
 
+import { type Json, deepMerge } from "./objects.js";
+
 const ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 /** Foundry-style 16-char document id. */
@@ -16,27 +18,6 @@ export function randomID(length = 16): string {
     out += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
   }
   return out;
-}
-
-type Json = Record<string, unknown>;
-
-function isPlainObject(v: unknown): v is Json {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-/** Deep-merge `override` into `base` (override wins; arrays are replaced). */
-export function deepMerge<T extends Json>(base: T, override?: Json): T {
-  if (!override) return base;
-  const out: Json = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    const existing = out[key];
-    if (isPlainObject(existing) && isPlainObject(value)) {
-      out[key] = deepMerge(existing, value);
-    } else {
-      out[key] = value;
-    }
-  }
-  return out as T;
 }
 
 // ---------------------------------------------------------------------------

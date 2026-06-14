@@ -14,10 +14,14 @@ import {
   type CommandResult,
   type DocumentType,
   type CommandError,
+  type Json,
   PROTOCOL_VERSION,
   randomID,
   ok,
   err,
+  expandObject,
+  getByPath,
+  applyUpdate,
 } from "@foundry-mcp-bridge/shared";
 
 // ---------------------------------------------------------------------------
@@ -66,57 +70,9 @@ export function embeddedKey(
   return `!${COLLECTION[parentType]}.${field}!${parentId}.${embeddedId}`;
 }
 
-type Json = Record<string, unknown>;
-
-// ---------------------------------------------------------------------------
-// Object helpers mirroring Foundry's expandObject + update merge semantics
-// ---------------------------------------------------------------------------
-
-function isPlainObject(v: unknown): v is Json {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-/** Foundry expandObject: {"a.b": 1} -> {a:{b:1}}. */
-export function expandObject(flat: Json): Json {
-  const out: Json = {};
-  for (const [path, value] of Object.entries(flat)) {
-    const parts = path.split(".");
-    let cursor = out;
-    for (let i = 0; i < parts.length - 1; i++) {
-      const key = parts[i]!;
-      if (!isPlainObject(cursor[key])) cursor[key] = {};
-      cursor = cursor[key] as Json;
-    }
-    cursor[parts[parts.length - 1]!] = value;
-  }
-  return out;
-}
-
-/** Get a value by dot path. */
-export function getByPath(obj: Json, path: string): unknown {
-  return path.split(".").reduce<unknown>((acc, key) => {
-    if (isPlainObject(acc)) return acc[key];
-    return undefined;
-  }, obj);
-}
-
-function deepMerge(base: Json, override: Json): Json {
-  const out: Json = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    const existing = out[key];
-    if (isPlainObject(existing) && isPlainObject(value)) {
-      out[key] = deepMerge(existing, value);
-    } else {
-      out[key] = value;
-    }
-  }
-  return out;
-}
-
-/** Apply a Foundry update diff (dot-notation aware) to a clone of `doc`. */
-export function applyUpdate(doc: Json, diff: Json): Json {
-  return deepMerge(structuredClone(doc), expandObject(diff));
-}
+// Re-export the shared object helpers used to mirror Foundry's update semantics
+// so existing importers of the mock keep working.
+export { expandObject, getByPath, applyUpdate } from "@foundry-mcp-bridge/shared";
 
 // ---------------------------------------------------------------------------
 // FilePicker mock (local "data" + Forge "forgevtt")

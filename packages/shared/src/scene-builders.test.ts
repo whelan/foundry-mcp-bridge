@@ -4,11 +4,11 @@ import {
   buildLight,
   buildToken,
   buildNote,
-  deepMerge,
   randomID,
   GRID_TYPES,
   TOKEN_DISPOSITIONS,
 } from "./scene-builders.js";
+import { deepMerge } from "./objects.js";
 
 describe("randomID", () => {
   it("produces 16-char alphanumeric ids that differ", () => {
