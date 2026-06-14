@@ -6,10 +6,10 @@ There are two sides to configure, and they must agree on URL + token:
 - **MCP server** — read once from `.env` (or `dev.config.json` in development).
 - **Foundry module** — set in the world's **Module Settings** (GM only).
 
-> Prerequisites for real testing (beyond config): the module must be **bundled**
-> into a single `dist/index.js` and installed in Foundry, and the **relay
-> endpoint** at `relayUrl` must be running and reachable. See "Prerequisites"
-> below. Until both exist, develop against the in-memory mock (`npm test`).
+> The relay endpoint at `relayUrl` is **hosted by the MCP server** — start the
+> MCP server and the module connects out to it. Before installing in Foundry,
+> bundle the module with `npm run bundle:module`. Until you test against a real
+> world, develop against the in-memory mock (`npm test`).
 
 ---
 
@@ -20,7 +20,7 @@ This is the only place the server reads configuration.
 
 | Property | Env var | Required | Default | What it is |
 | --- | --- | --- | --- | --- |
-| `relayUrl` | `RELAY_URL` | ✅ | — | WebSocket address of the relay endpoint the Foundry module connects to (e.g. `wss://relay.example.com` or `ws://localhost:8787`). Must match the module's **Relay URL**. |
+| `relayUrl` | `RELAY_URL` | ✅ | — | WebSocket address the MCP server **binds** the relay to and the Foundry module connects to (e.g. `ws://localhost:8787`, or `wss://…` behind a TLS proxy). Host/port/path are parsed from this URL. Must match the module's **Relay URL**. |
 | `relayToken` | `RELAY_TOKEN` | ⛔ optional* | — | Shared secret. When set, every command must carry it; the module rejects mismatches with an `AUTH` error. *Required in practice for any non-localhost relay. Must match the module's **Relay token**. |
 | `requestTimeoutMs` | `RELAY_TIMEOUT_MS` | ⛔ optional | `10000` | Per-command transport timeout in milliseconds. A slow/unreachable module yields a structured `TIMEOUT` error. |
 
@@ -49,18 +49,19 @@ The module **only** connects when the current user is a **GM**
 
 ## 3. Activate on a local Foundry
 
-1. Build a loadable module bundle (see Prerequisites) so
-   `packages/foundry-module/dist/index.js` is self-contained.
+1. Build the loadable bundle: `npm run bundle:module`. This produces a
+   self-contained `packages/foundry-module/dist/index.js` (shared + zod inlined).
 2. Make Foundry see the module: copy or symlink the `packages/foundry-module`
-   folder (containing `module.json` and `dist/`) into your Foundry data dir at
-   `Data/modules/foundry-mcp-bridge`. (Alternatively install via a manifest URL
-   pointing at `module.json`.)
+   folder (it must contain `module.json` and `dist/index.js`) into your Foundry
+   data dir at `Data/modules/foundry-mcp-bridge`. (Alternatively install via a
+   manifest URL pointing at `module.json`.)
 3. In Foundry: **Manage Modules → enable "Foundry MCP Bridge"** in your world.
 4. Open **Module Settings** and set **Relay URL** + **Relay token**.
-5. Start the relay endpoint and the MCP server with matching `RELAY_URL` /
-   `RELAY_TOKEN`.
-6. Reload the world **as the GM**. You should see a "relay connected"
-   notification in the console. The AI's tools now act on this live world.
+5. Start the MCP server with matching `RELAY_URL` / `RELAY_TOKEN` (it hosts the
+   relay and binds the URL's host/port).
+6. Reload the world **as the GM**. You should see a "Foundry module connected"
+   log on the server and a connect notification in Foundry. The AI's tools now
+   act on this live world.
 
 ---
 
@@ -83,17 +84,19 @@ the same way as local — no inbound port to your Foundry is needed.
 
 ---
 
-## 5. Prerequisites (code, not yet shipped)
+## 5. How the relay works
 
-These are the only non-config pieces required for real-Foundry testing:
+- The MCP server hosts the relay (`RelayServer`) and binds the host/port from
+  `relayUrl`. The Foundry module connects out to it on world `ready`, presenting
+  its token as `?token=…`; the server rejects mismatched tokens.
+- Requests and responses are correlated by envelope `id`; a missing/slow module
+  yields a structured `TIMEOUT`.
+- For The Forge (HTTPS), terminate TLS in front of the relay (`wss://`) or use a
+  relay on the GM's own machine (`ws://localhost`).
 
-- **Module bundle** — add an esbuild step producing a single
-  `packages/foundry-module/dist/index.js` with `shared` inlined, so Foundry can
-  load it in the browser.
-- **Relay endpoint** — a WebSocket server both ends use. Recommended: host it in
-  the MCP server so the module connects directly to `relayUrl` (no third
-  process). Correlate request/response by envelope `id` (already implemented in
-  `WebSocketRelayTransport`).
+An alternative external-hub deployment is also available
+(`WebSocketRelayTransport`, a relay *client*) if you prefer a standalone broker.
 
-Everything else — protocol, executor, reliability pipeline, settings, tools —
-is in place and tested against the mock.
+Everything — protocol, executor, reliability pipeline, settings, tools, the
+relay server and the module bundle — is in place and tested (incl. a real
+WebSocket end-to-end test) against the mock.

@@ -33,6 +33,12 @@ npm test
 
 Everything is developed and tested mock-first — no real Foundry required.
 
+To produce the browser-loadable Foundry module bundle:
+
+```bash
+npm run bundle:module   # -> packages/foundry-module/dist/index.js (self-contained)
+```
+
 ## Configuration
 
 The MCP server reads config in exactly one place (`packages/mcp-server/src/config.ts`):

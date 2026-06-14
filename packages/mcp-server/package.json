@@ -16,6 +16,10 @@
   "dependencies": {
     "@foundry-mcp-bridge/shared": "0.1.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "ws": "^8.18.0",
     "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13"
   }
 }

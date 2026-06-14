@@ -6,20 +6,25 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.js";
-import { WebSocketRelayTransport } from "./relay-transport.js";
+import { RelayServer } from "./relay-server.js";
 import { buildServer } from "./server.js";
 
 export { loadConfig } from "./config.js";
 export * from "./relay-transport.js";
+export { RelayServer } from "./relay-server.js";
 export * from "./reliability.js";
 export * from "./tools.js";
 export { buildServer } from "./server.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const transport = new WebSocketRelayTransport({
+  // The MCP server hosts the relay; the Foundry module connects out to it.
+  const transport = new RelayServer({
     url: config.relayUrl,
+    token: config.relayToken,
     defaultTimeoutMs: config.requestTimeoutMs,
+    log: (level, message) =>
+      console.error(`[foundry-mcp-bridge] ${level}: ${message}`),
   });
   const server = buildServer(transport, {
     token: config.relayToken,

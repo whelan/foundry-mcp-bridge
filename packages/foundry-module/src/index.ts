@@ -45,7 +45,7 @@ Hooks.once("ready", () => {
     url: settings.url,
     api: createFoundryRuntimeApi(),
     context: { isGM: true, expectedToken: settings.token },
-    createSocket: (url) => new WebSocket(url),
+    createSocket: (url) => new WebSocket(withToken(url, settings.token)),
     log: (level, message) => console[level === "error" ? "error" : "log"](`[${MODULE_ID}] ${message}`),
   });
   client.connect();
@@ -55,3 +55,10 @@ Hooks.once("closeGame", () => {
   client?.disconnect();
   client = null;
 });
+
+/** Append the relay token as a query param so the relay can authenticate us. */
+function withToken(url: string, token?: string): string {
+  if (!token) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}token=${encodeURIComponent(token)}`;
+}
