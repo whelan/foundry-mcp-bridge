@@ -16,7 +16,7 @@ export * from "./reliability.js";
 export * from "./tools.js";
 export { buildServer } from "./server.js";
 
-async function main(): Promise<void> {
+async function start(): Promise<void> {
   const config = loadConfig();
   // The MCP server hosts the relay; the Foundry module connects out to it.
   const transport = new RelayServer({
@@ -33,9 +33,11 @@ async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
 }
 
-// Run only when executed directly (not when imported by tests).
+export { start };
+
+// Run only when executed directly (not when imported by tests/wrappers).
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((e) => {
+  start().catch((e) => {
     console.error(`[foundry-mcp-bridge] fatal: ${(e as Error).message}`);
     process.exit(1);
   });

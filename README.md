@@ -13,6 +13,8 @@ See the design docs:
   — monorepo layout, config rules, mock-first test strategy.
 - [`docs/setup-foundry-forge.md`](docs/setup-foundry-forge.md) — every
   configurable property and how to activate against local Foundry and The Forge.
+- [`docs/local-test-quickstart.md`](docs/local-test-quickstart.md) — turnkey:
+  check out the branch, open Claude Code, paste one prompt, test in your world.
 
 ## Packages
 

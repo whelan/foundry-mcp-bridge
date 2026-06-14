@@ -1,16 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
-# Only run dependency setup in Claude Code on the web (remote) sessions.
-if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
-  exit 0
-fi
-
 cd "${CLAUDE_PROJECT_DIR:-.}"
 
-# Install workspace dependencies (idempotent; benefits from container caching).
+# Install deps and build artifacts so the session starts ready: the MCP server
+# (dist/) is needed by .mcp.json, and the Foundry module bundle by Foundry.
 npm install
+npm run build
+npm run bundle:module
 
-# Smoke-check the toolchain so the session starts ready to typecheck + test.
-npm run typecheck
-npm test
+# In web/remote sessions also run the full gate (typecheck + tests).
+if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
+  npm run typecheck
+  npm test
+fi

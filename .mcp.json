@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "foundry": {
+      "command": "node",
+      "args": ["scripts/start-mcp-server.mjs"],
+      "env": {
+        "RELAY_URL": "ws://localhost:8787",
+        "RELAY_TOKEN": "local-dev-token"
+      }
+    }
+  }
+}
