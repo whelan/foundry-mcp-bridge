@@ -1,59 +1,70 @@
 # Local test quickstart (Claude Code + your local Foundry)
 
-Everything that can be pre-filled **is** pre-filled in this branch. You only do
-two things: (1) point Foundry at the relay, (2) paste one prompt.
+Everything that can be pre-filled **is** pre-filled in this branch. For a local
+machine you don't type any settings at all — the module defaults to the local
+relay. You only (1) install + enable the module, (2) paste one prompt.
 
-Pre-filled values (in [`.mcp.json`](../.mcp.json)):
+Pre-filled values:
 
-| | Value |
-|---|---|
-| Relay URL | `ws://localhost:8787` |
-| Relay token | `local-dev-token` |
+| | Value | Where |
+|---|---|---|
+| Relay URL | `ws://localhost:8787` | [`.mcp.json`](../.mcp.json) (server) **and** the module's built-in default |
+| Relay token | _none_ (localhost) | optional; set one on both sides only for non-local relays |
 
-> These match what you'll enter in Foundry below. They are local-only dev values;
-> change both sides if you ever expose the relay beyond `localhost`.
+> The localhost default needs no token. For anything beyond your own machine,
+> set a real `wss://` URL + token in both `.mcp.json` (or `.env`) and Module
+> Settings.
 
 ---
 
-## A. One-time machine prep (~1 min)
+## Can my local Claude do all of this?
 
-```bash
-git checkout claude/foundry-mcp-mock-build-9wum69
-npm install
-npm run bundle:module      # builds the server (dist) AND the Foundry module bundle
-npm run selftest           # OPTIONAL: proves server -> relay -> module -> read-back works here
+Yes. Your **local** Claude Code session has shell access to your machine, so you
+can simply ask it to:
+
+```
+Byg projektet og installér Foundry-modulet i min lokale Foundry:
+kør `npm install`, `npm run install:foundry`, og `npm run selftest`.
+Find selv min Foundry data-sti (eller spørg mig). Rapportér resultatet.
 ```
 
-Opening the repo in **Claude Code** also runs these automatically via the
-SessionStart hook, so the MCP server is built and ready before your first prompt.
+It will build, symlink the module into `…/FoundryVTT/Data/modules/`, and run the
+self-test. The only thing it can't do from outside Foundry is click "enable
+module" / load the world — see step B (or ask about the DB option below).
 
 ---
 
-## B. Install the module in your local Foundry (one manual step)
+## A. Build + install (your local Claude, or you)
 
-Foundry settings live inside the world DB, so they can't be committed — this is
-the only thing you set by hand.
+```bash
+npm install
+npm run install:foundry   # builds the module bundle AND symlinks it into Foundry's modules dir
+npm run selftest          # OPTIONAL: proves server -> relay -> module -> read-back on this machine
+```
 
-1. Make Foundry see the module (symlink the package folder into your data dir):
+`install:foundry` autodetects the common Foundry data dir; pass it explicitly if
+needed: `node scripts/install-into-foundry.mjs /path/to/FoundryVTT/Data`.
 
-   ```bash
-   # macOS/Linux — adjust the FoundryVTT data path to yours
-   ln -s "$(pwd)/packages/foundry-module" \
-     "$HOME/Library/Application Support/FoundryVTT/Data/modules/foundry-mcp-bridge"
-   ```
+Opening the repo in **Claude Code** also builds everything via the SessionStart
+hook, so the MCP server is ready before your first prompt.
 
-   (Windows: copy `packages/foundry-module` into
-   `...\FoundryVTT\Data\modules\foundry-mcp-bridge`.) The folder must contain
-   `module.json` and `dist/index.js`.
+---
 
-2. Create a **test world** (any system) and launch it **as the GM**.
-3. **Game Settings → Manage Modules → enable "Foundry MCP Bridge"** → save.
-4. **Game Settings → Configure Settings → Module Settings → Foundry MCP Bridge**:
-   - **Relay URL** = `ws://localhost:8787`
-   - **Relay token** = `local-dev-token`
-5. Reload the world (still as GM). Keep this browser tab open.
+## B. Enable it in your test world (one or two clicks)
 
-> The module connects only for a GM and only while the world tab is open.
+1. Create a **test world** (any system) and launch it **as the GM**.
+2. **Game Settings → Manage Modules → enable "Foundry MCP Bridge"** → save &
+   reload.
+3. That's it for local: the module connects to `ws://localhost:8787`
+   automatically (built-in default, no token). Keep the world tab open.
+
+> Want to set a custom relay/token? **Game Settings → Configure Settings →
+> Module Settings → Foundry MCP Bridge**.
+>
+> Want *zero* clicks in Foundry? Your local Claude can also write the world's
+> settings + module-activation directly into the world's LevelDB — but only
+> while **Foundry is closed** (the DB is locked while running), and the encoding
+> is version-specific. Ask for the DB-write script if you want that.
 
 ---
 

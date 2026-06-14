@@ -17,6 +17,14 @@ import { CommandExecutionError } from "./protocol-executor.js";
 
 export const MODULE_ID = "foundry-mcp-bridge";
 
+/**
+ * Convenience default for local development so the module connects out of the
+ * box after merely enabling it (no settings to type). It is a non-secret
+ * localhost address and is fully overridable in Module Settings — set a real
+ * URL + token for anything beyond a local machine.
+ */
+export const DEFAULT_RELAY_URL = "ws://localhost:8787";
+
 /** Foundry world-collection accessor name for each document type. */
 const COLLECTION: Record<DocumentType, string> = {
   Actor: "actors",
@@ -36,15 +44,15 @@ export interface RelaySettings {
 export function registerSettings(): void {
   game.settings.register(MODULE_ID, "relayUrl", {
     name: "Relay URL",
-    hint: "WebSocket URL of the MCP relay (e.g. ws://localhost:8787).",
+    hint: "WebSocket URL of the MCP relay. Defaults to a local dev relay.",
     scope: "world",
     config: true,
     type: String,
-    default: "",
+    default: DEFAULT_RELAY_URL,
   });
   game.settings.register(MODULE_ID, "relayToken", {
     name: "Relay token",
-    hint: "Shared secret matching the MCP server's token.",
+    hint: "Shared secret matching the MCP server's token. Leave empty for a local ws://localhost relay.",
     scope: "world",
     config: true,
     type: String,
