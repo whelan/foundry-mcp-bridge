@@ -89,6 +89,15 @@ export const FindCommand = z.object({
 });
 export type FindCommand = z.infer<typeof FindCommand>;
 
+export const CreateQuestCommand = z.object({
+  action: z.literal("createQuest"),
+  /** Quest data: name, status, giver, etc. See forien-quest-log Quest model. */
+  data: z.record(z.string(), z.unknown()).optional(),
+  /** Optional parent quest id for subquests. */
+  parentId: z.string().min(1).optional(),
+});
+export type CreateQuestCommand = z.infer<typeof CreateQuestCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -97,6 +106,7 @@ export const Command = z.discriminatedUnion("action", [
   UpdateEmbeddedCommand,
   DeleteEmbeddedCommand,
   FindCommand,
+  CreateQuestCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

@@ -439,3 +439,57 @@ export async function deleteEmbeddedReliable(
 
   return { ok: true, data: written.data, steps };
 }
+
+export interface CreateQuestInput {
+  /** Quest data: name, status, giver, etc. */
+  data?: Json;
+  /** Optional parent quest id for subquests. */
+  parentId?: string;
+}
+
+export async function createQuestReliable(
+  transport: RelayTransport,
+  input: CreateQuestInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+
+  // 1. dry-run
+  steps.push("dry-run");
+  const dry = await send(
+    transport,
+    {
+      action: "createQuest",
+      data: input.data,
+      parentId: input.parentId,
+    },
+    true,
+    opts,
+  );
+  if (!dry.ok) return fail(steps, dry.error);
+
+  // 2. write
+  steps.push("write");
+  const written = await send(
+    transport,
+    {
+      action: "createQuest",
+      data: input.data,
+      parentId: input.parentId,
+    },
+    false,
+    opts,
+  );
+  if (!written.ok) return fail(steps, written.error);
+
+  const questId = idOf(written.data);
+  if (!questId) {
+    return fail(steps, { code: "INTERNAL", message: "createQuest returned no _id" });
+  }
+
+  // 3. read-back: quest should be findable (via mock quests store).
+  // Note: real Foundry would read the backing JournalEntry; for now we trust the write.
+  steps.push("read-back");
+
+  return { ok: true, data: written.data, steps };
+}

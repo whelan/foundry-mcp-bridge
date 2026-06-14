@@ -234,6 +234,8 @@ export class MockFoundry {
         return this.deleteEmbedded(id, command, dryRun);
       case "find":
         return this.find(id, command);
+      case "createQuest":
+        return this.createQuest(id, command, dryRun);
     }
   }
 
@@ -361,5 +363,30 @@ export class MockFoundry {
       Object.entries(cmd.query!).every(([path, value]) => getByPath(doc, path) === value),
     );
     return ok(id, matches);
+  }
+
+  private createQuest(
+    id: string,
+    cmd: Extract<Command, { action: "createQuest" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const questId = randomID();
+    const questData = {
+      _id: questId,
+      name: (cmd.data?.name as string) || "New Quest",
+      status: (cmd.data?.status as string) || "inactive",
+      ...cmd.data,
+    };
+
+    if (cmd.parentId) {
+      questData.parent = cmd.parentId;
+    }
+
+    if (dryRun) {
+      return ok(id, { ...questData, _dryRun: true });
+    }
+
+    this.quests.set(questId, questData);
+    return ok(id, questData);
   }
 }

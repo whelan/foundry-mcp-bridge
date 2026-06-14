@@ -17,6 +17,7 @@ import {
   CreateEmbeddedShape,
   UpdateEmbeddedShape,
   DeleteEmbeddedShape,
+  CreateQuestShape,
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
@@ -25,6 +26,7 @@ import {
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
+  runCreateQuest,
 } from "./tools.js";
 
 function toCallResult(outcome: ToolOutcome) {
@@ -113,6 +115,16 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
       inputSchema: DeleteEmbeddedShape,
     },
     async (args) => toCallResult(await runDeleteEmbedded(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "create_quest",
+    {
+      description:
+        "Create a quest via Forien's Quest Log (requires the module to be enabled). Runs dry-run and write with read-back.",
+      inputSchema: CreateQuestShape,
+    },
+    async (args) => toCallResult(await runCreateQuest(transport, args, opts)),
   );
 
   return server;

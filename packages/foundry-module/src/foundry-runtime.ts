@@ -144,6 +144,40 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         entries.every(([path, value]) => getByPath(doc, path) === value),
       );
     },
+
+    async createQuest(data, parentId, opts) {
+      const fqlModule = game.modules.get("forien-quest-log");
+      if (!fqlModule?.active) {
+        throw new CommandExecutionError(
+          "UNSUPPORTED",
+          "forien-quest-log module is not enabled",
+        );
+      }
+
+      const QuestDB = (fqlModule as any).api?.QuestDB;
+      if (!QuestDB) {
+        throw new CommandExecutionError(
+          "INTERNAL",
+          "forien-quest-log QuestDB API not found",
+        );
+      }
+
+      if (opts.dryRun) {
+        // Dry-run: validate data structure by attempting to instantiate.
+        const Quest = (fqlModule as any).api?.Quest;
+        if (Quest) {
+          new Quest(data || {});
+        }
+        return { _id: "dry-run", name: (data as any)?.name || "Quest" };
+      }
+
+      // Create quest via QuestDB.
+      const quest = await QuestDB.createQuest({ data, parentId });
+      if (!quest) {
+        throw new CommandExecutionError("INTERNAL", "quest creation returned nothing");
+      }
+      return quest.toJSON?.() || (quest as any);
+    },
   } satisfies FoundryDocumentApi;
 }
 
