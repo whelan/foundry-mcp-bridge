@@ -3,23 +3,36 @@
 A step-by-step runbook for activating the bridge against a real world, plus a
 reference for every configurable property.
 
-## The moving parts
+## Two separate components (read this first)
+
+There are **two distinct pieces of software**, running in **two different
+places**. The MCP server is **not** inside the Foundry module.
+
+| Component | What it is | Where it runs | Who starts it | You... |
+|---|---|---|---|---|
+| **MCP server** (`packages/mcp-server`) | Node program that exposes the tools to the AI and **hosts the relay** | On **your computer**, as a normal process | Your **AI client** (Claude Desktop / Claude Code) | register it in the AI client |
+| **Foundry module** (`packages/foundry-module`) | JavaScript that calls Foundry's document API | Inside **Foundry / the GM's browser** | **Foundry**, when you load the world | install it in Foundry |
+
+They are separate on purpose: the AI can only talk to a **local process over
+stdio** (that's the MCP server), while Foundry's API (`Actor.create`, …) only
+exists **inside the running Foundry** (that's the module). They cannot talk
+directly, so a **relay WebSocket bridges them**.
 
 ```
-Your AI client (Claude Desktop / Claude Code)
-   │ spawns over stdio
-   ▼
-MCP server (this repo)  ──hosts──▶  relay (WebSocket) at RELAY_URL
-   ▲                                      ▲
-   │ MCP tools                            │ Foundry module connects OUT
-   │                                      │ (runs in the GM's browser)
-   └──────────────── you ────────────────┘   local Foundry or The Forge
+Claude  ──stdio (MCP)──▶  MCP server (your computer) ──┐
+                                                       │  relay (WebSocket, RELAY_URL)
+Foundry module (in the GM's browser) ──────────────────┘
+        │
+        ▼
+   your running world (Actor / Scene / ...)
 ```
 
-Two sides must agree on **URL + token**: the MCP server (`.env`) and the Foundry
-module (Module Settings). The MCP server hosts the relay; the module connects to
-it. The server is launched by your AI client (it talks MCP over stdio and opens
-the relay as a side effect while running).
+So there are only **two things you touch**: install the module in Foundry, and
+register the MCP server in your AI client. There is **no third/extra server** to
+run — the "relay" is just a WebSocket the MCP server opens while it runs.
+
+The two sides must agree on **URL + token**: the MCP server (config from your AI
+client / `.env`) and the Foundry module (Module Settings).
 
 ---
 
