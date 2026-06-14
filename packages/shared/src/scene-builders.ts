@@ -197,8 +197,6 @@ export function buildScene(input: BuildSceneInput, override?: Json): Json {
     width: input.width ?? 4000,
     height: input.height ?? 3000,
     padding: input.padding ?? 0.25,
-    backgroundColor: input.backgroundColor ?? "#999999",
-    background: input.background ? { src: input.background } : null,
     grid: {
       type: input.gridType ?? GRID_TYPES.SQUARE,
       size: input.gridSize ?? 100,
@@ -207,7 +205,6 @@ export function buildScene(input: BuildSceneInput, override?: Json): Json {
       color: "#000000",
       alpha: 0.2,
     },
-    initial: null,
     tokens: input.tokens ?? [],
     lights: input.lights ?? [],
     notes: input.notes ?? [],
@@ -218,5 +215,32 @@ export function buildScene(input: BuildSceneInput, override?: Json): Json {
     tiles: [],
     regions: [],
   };
+  // Include version-sensitive fields only when explicitly provided. V13 keeps
+  // them at the top level; V14 migrates them into levels[0].background.* on
+  // storage, so we cannot verify them by path after write.
+  if (input.backgroundColor != null) scene.backgroundColor = input.backgroundColor;
+  if (input.background != null) scene.background = { src: input.background };
   return deepMerge(scene, override);
+}
+
+/**
+ * The subset of scene fields used for read-back verification. Excludes fields
+ * that Foundry stores at different paths in V13 vs V14 (backgroundColor,
+ * background, initial) so the same code works against both versions.
+ */
+export function buildSceneVerify(input: BuildSceneInput): Json {
+  return {
+    name: input.name,
+    width: input.width ?? 4000,
+    height: input.height ?? 3000,
+    padding: input.padding ?? 0.25,
+    grid: {
+      type: input.gridType ?? GRID_TYPES.SQUARE,
+      size: input.gridSize ?? 100,
+      distance: input.gridDistance ?? 5,
+      units: input.gridUnits ?? "ft",
+      color: "#000000",
+      alpha: 0.2,
+    },
+  };
 }

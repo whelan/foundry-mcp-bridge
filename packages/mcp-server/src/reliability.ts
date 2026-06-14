@@ -69,6 +69,8 @@ function idOf(data: unknown): string | undefined {
 export interface CreateDocumentInput {
   documentType: DocumentType;
   data: Json;
+  /** Subset used for read-back verification. Defaults to `data` when omitted. */
+  verifyData?: Json;
 }
 
 export async function createDocumentReliable(
@@ -102,13 +104,14 @@ export async function createDocumentReliable(
     false,
     opts,
   );
-  if (!readBack.ok || !isSubset(readBack.data, input.data)) {
+  const expected = input.verifyData ?? input.data;
+  if (!readBack.ok || !isSubset(readBack.data, expected)) {
     steps.push("rollback");
     await send(transport, { action: "delete", documentType: input.documentType, id: newId }, false, opts);
     return fail(steps, {
       code: "READBACK_MISMATCH",
       message: "created document did not match the requested data; rolled back",
-      details: { id: newId, expected: input.data, actual: readBack.ok ? readBack.data : null },
+      details: { id: newId, expected, actual: readBack.ok ? readBack.data : null },
     });
   }
 
@@ -191,4 +194,248 @@ function buildRestoreDiff(snapshot: Json, diff: Json): Json {
     restore[key] = snapshot[key] ?? null;
   }
   return restore;
+}
+
+export interface DeleteDocumentInput {
+  documentType: DocumentType;
+  id: string;
+}
+
+export async function deleteDocumentReliable(
+  transport: RelayTransport,
+  input: DeleteDocumentInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+
+  // 1. dry-run
+  steps.push("dry-run");
+  const dry = await send(
+    transport,
+    { action: "delete", documentType: input.documentType, id: input.id },
+    true,
+    opts,
+  );
+  if (!dry.ok) return fail(steps, dry.error);
+
+  // 2. write
+  steps.push("write");
+  const written = await send(
+    transport,
+    { action: "delete", documentType: input.documentType, id: input.id },
+    false,
+    opts,
+  );
+  if (!written.ok) return fail(steps, written.error);
+
+  return { ok: true, data: written.data, steps };
+}
+
+export interface CreateEmbeddedInput {
+  parentType: DocumentType;
+  parentId: string;
+  embeddedName: string;
+  data: Json[];
+}
+
+export async function createEmbeddedReliable(
+  transport: RelayTransport,
+  input: CreateEmbeddedInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+
+  // 1. dry-run
+  steps.push("dry-run");
+  const dry = await send(
+    transport,
+    {
+      action: "createEmbedded",
+      parentType: input.parentType,
+      parentId: input.parentId,
+      embeddedName: input.embeddedName,
+      data: input.data,
+    },
+    true,
+    opts,
+  );
+  if (!dry.ok) return fail(steps, dry.error);
+
+  // 2. write
+  steps.push("write");
+  const written = await send(
+    transport,
+    {
+      action: "createEmbedded",
+      parentType: input.parentType,
+      parentId: input.parentId,
+      embeddedName: input.embeddedName,
+      data: input.data,
+    },
+    false,
+    opts,
+  );
+  if (!written.ok) return fail(steps, written.error);
+
+  if (!Array.isArray(written.data)) {
+    return fail(steps, { code: "INTERNAL", message: "createEmbedded did not return array" });
+  }
+
+  // 3. read-back verify
+  steps.push("read-back");
+  const readBack = await send(
+    transport,
+    { action: "find", documentType: input.parentType, id: input.parentId },
+    false,
+    opts,
+  );
+  if (!readBack.ok) {
+    steps.push("rollback");
+    // Cannot easily rollback multiple creates; at least mark it in the error.
+    return fail(steps, {
+      code: "READBACK_MISMATCH",
+      message: "embedded documents created but read-back of parent failed; check manually",
+      details: { parentId: input.parentId, created: written.data },
+    });
+  }
+
+  return { ok: true, data: written.data, steps };
+}
+
+export interface UpdateEmbeddedInput {
+  parentType: DocumentType;
+  parentId: string;
+  embeddedName: string;
+  data: Array<Json & { _id: string }>;
+}
+
+export async function updateEmbeddedReliable(
+  transport: RelayTransport,
+  input: UpdateEmbeddedInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+
+  // 0. pre-read snapshot
+  steps.push("pre-read");
+  const before = await send(
+    transport,
+    { action: "find", documentType: input.parentType, id: input.parentId },
+    false,
+    opts,
+  );
+  if (!before.ok) return fail(steps, before.error);
+  const snapshot = before.data as Json;
+
+  // 1. dry-run
+  steps.push("dry-run");
+  const dry = await send(
+    transport,
+    {
+      action: "updateEmbedded",
+      parentType: input.parentType,
+      parentId: input.parentId,
+      embeddedName: input.embeddedName,
+      data: input.data,
+    },
+    true,
+    opts,
+  );
+  if (!dry.ok) return fail(steps, dry.error);
+
+  // 2. write
+  steps.push("write");
+  const written = await send(
+    transport,
+    {
+      action: "updateEmbedded",
+      parentType: input.parentType,
+      parentId: input.parentId,
+      embeddedName: input.embeddedName,
+      data: input.data,
+    },
+    false,
+    opts,
+  );
+  if (!written.ok) return fail(steps, written.error);
+
+  // 3. read-back: parent should contain the updated embedded docs
+  steps.push("read-back");
+  const after = await send(
+    transport,
+    { action: "find", documentType: input.parentType, id: input.parentId },
+    false,
+    opts,
+  );
+  if (!after.ok) {
+    steps.push("rollback");
+    // Restore parent to snapshot.
+    await send(
+      transport,
+      {
+        action: "update",
+        documentType: input.parentType,
+        id: input.parentId,
+        data: snapshot,
+      },
+      false,
+      opts,
+    );
+    return fail(steps, {
+      code: "READBACK_MISMATCH",
+      message: "embedded documents updated but read-back failed; restored parent",
+      details: { parentId: input.parentId, expected: snapshot, actual: null },
+    });
+  }
+
+  return { ok: true, data: written.data, steps };
+}
+
+export interface DeleteEmbeddedInput {
+  parentType: DocumentType;
+  parentId: string;
+  embeddedName: string;
+  ids: string[];
+}
+
+export async function deleteEmbeddedReliable(
+  transport: RelayTransport,
+  input: DeleteEmbeddedInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+
+  // 1. dry-run
+  steps.push("dry-run");
+  const dry = await send(
+    transport,
+    {
+      action: "deleteEmbedded",
+      parentType: input.parentType,
+      parentId: input.parentId,
+      embeddedName: input.embeddedName,
+      ids: input.ids,
+    },
+    true,
+    opts,
+  );
+  if (!dry.ok) return fail(steps, dry.error);
+
+  // 2. write
+  steps.push("write");
+  const written = await send(
+    transport,
+    {
+      action: "deleteEmbedded",
+      parentType: input.parentType,
+      parentId: input.parentId,
+      embeddedName: input.embeddedName,
+      ids: input.ids,
+    },
+    false,
+    opts,
+  );
+  if (!written.ok) return fail(steps, written.error);
+
+  return { ok: true, data: written.data, steps };
 }

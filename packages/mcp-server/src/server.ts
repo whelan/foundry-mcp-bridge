@@ -12,9 +12,19 @@ import {
   CreateDocumentShape,
   CreateSceneShape,
   UpdateDocumentShape,
+  DeleteDocumentShape,
+  FindDocumentsShape,
+  CreateEmbeddedShape,
+  UpdateEmbeddedShape,
+  DeleteEmbeddedShape,
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
+  runDeleteDocument,
+  runFindDocuments,
+  runCreateEmbedded,
+  runUpdateEmbedded,
+  runDeleteEmbedded,
 } from "./tools.js";
 
 function toCallResult(outcome: ToolOutcome) {
@@ -55,6 +65,54 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
       inputSchema: UpdateDocumentShape,
     },
     async (args) => toCallResult(await runUpdateDocument(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "delete_document",
+    {
+      description: "Delete a Foundry document by id. Runs dry-run and write; no rollback possible.",
+      inputSchema: DeleteDocumentShape,
+    },
+    async (args) => toCallResult(await runDeleteDocument(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "find_documents",
+    {
+      description:
+        "Query and read Foundry documents. Pass id for a single document, or query for shallow field matching. Returns document(s) for inspection.",
+      inputSchema: FindDocumentsShape,
+    },
+    async (args) => toCallResult(await runFindDocuments(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "create_embedded",
+    {
+      description:
+        "Create embedded documents (e.g., tokens, items, effects) within a parent. Runs the full reliability pipeline with read-back of the parent.",
+      inputSchema: CreateEmbeddedShape,
+    },
+    async (args) => toCallResult(await runCreateEmbedded(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "update_embedded",
+    {
+      description:
+        "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch.",
+      inputSchema: UpdateEmbeddedShape,
+    },
+    async (args) => toCallResult(await runUpdateEmbedded(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "delete_embedded",
+    {
+      description: "Delete embedded documents by id. Runs dry-run and write.",
+      inputSchema: DeleteEmbeddedShape,
+    },
+    async (args) => toCallResult(await runDeleteEmbedded(transport, args, opts)),
   );
 
   return server;
