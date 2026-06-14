@@ -184,6 +184,71 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       const questData = quest.toJSON?.() || {};
       return { ...questData, _id: (quest as any).id };
     },
+
+    async updateQuest(id, data, opts) {
+      const fqlModule = game.modules.get("forien-quest-log");
+      if (!fqlModule?.active) {
+        throw new CommandExecutionError(
+          "UNSUPPORTED",
+          "forien-quest-log module is not enabled",
+        );
+      }
+
+      const QuestAPI = (fqlModule as any).public?.QuestAPI;
+      const QuestDB = QuestAPI?.DB;
+      if (!QuestDB) {
+        throw new CommandExecutionError(
+          "INTERNAL",
+          "forien-quest-log QuestDB shim not found",
+        );
+      }
+
+      const quest = QuestDB.getQuest(id);
+      if (!quest) {
+        throw new CommandExecutionError("NOT_FOUND", `quest ${id} not found`);
+      }
+
+      if (opts.dryRun) {
+        return { _id: id, name: (data as any)?.name || quest.name };
+      }
+
+      // Update quest: merge data into quest object and save.
+      for (const [key, value] of Object.entries(data)) {
+        (quest as any)[key] = value;
+      }
+      await quest.save();
+
+      const questData = quest.toJSON?.() || {};
+      return { ...questData, _id: (quest as any).id };
+    },
+
+    async deleteQuest(id, opts) {
+      const fqlModule = game.modules.get("forien-quest-log");
+      if (!fqlModule?.active) {
+        throw new CommandExecutionError(
+          "UNSUPPORTED",
+          "forien-quest-log module is not enabled",
+        );
+      }
+
+      const QuestAPI = (fqlModule as any).public?.QuestAPI;
+      const QuestDB = QuestAPI?.DB;
+      if (!QuestDB) {
+        throw new CommandExecutionError(
+          "INTERNAL",
+          "forien-quest-log QuestDB shim not found",
+        );
+      }
+
+      const quest = QuestDB.getQuest(id);
+      if (!quest) {
+        throw new CommandExecutionError("NOT_FOUND", `quest ${id} not found`);
+      }
+
+      if (!opts.dryRun) {
+        await QuestDB.deleteQuest(id);
+      }
+    },
   } satisfies FoundryDocumentApi;
 }
 

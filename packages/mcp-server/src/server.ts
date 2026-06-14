@@ -18,6 +18,8 @@ import {
   UpdateEmbeddedShape,
   DeleteEmbeddedShape,
   CreateQuestShape,
+  UpdateQuestShape,
+  DeleteQuestShape,
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
@@ -27,6 +29,8 @@ import {
   runUpdateEmbedded,
   runDeleteEmbedded,
   runCreateQuest,
+  runUpdateQuest,
+  runDeleteQuest,
 } from "./tools.js";
 
 function toCallResult(outcome: ToolOutcome) {
@@ -125,6 +129,25 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
       inputSchema: CreateQuestShape,
     },
     async (args) => toCallResult(await runCreateQuest(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "update_quest",
+    {
+      description:
+        "Update a quest by id. Partial update with read-back verification of changed fields.",
+      inputSchema: UpdateQuestShape,
+    },
+    async (args) => toCallResult(await runUpdateQuest(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "delete_quest",
+    {
+      description: "Delete a quest by id. Runs dry-run and write.",
+      inputSchema: DeleteQuestShape,
+    },
+    async (args) => toCallResult(await runDeleteQuest(transport, args, opts)),
   );
 
   return server;

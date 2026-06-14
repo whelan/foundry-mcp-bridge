@@ -67,6 +67,8 @@ export interface FoundryDocumentApi {
   ): Promise<void>;
   find(type: DocumentType, selector: FindSelector): Promise<DocData | DocData[]>;
   createQuest(data: DocData | undefined, parentId: string | undefined, opts: ExecuteOptions): Promise<DocData>;
+  updateQuest(id: string, data: DocData, opts: ExecuteOptions): Promise<DocData>;
+  deleteQuest(id: string, opts: ExecuteOptions): Promise<void>;
 }
 
 export interface ExecutorContext {
@@ -160,5 +162,10 @@ async function dispatch(
       return api.find(command.documentType, { id: command.id, query: command.query });
     case "createQuest":
       return api.createQuest(command.data, command.parentId, opts);
+    case "updateQuest":
+      return api.updateQuest(command.id, command.data, opts);
+    case "deleteQuest":
+      await api.deleteQuest(command.id, opts);
+      return { _id: command.id, deleted: true };
   }
 }

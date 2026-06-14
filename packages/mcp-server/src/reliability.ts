@@ -493,3 +493,97 @@ export async function createQuestReliable(
 
   return { ok: true, data: written.data, steps };
 }
+
+export interface UpdateQuestInput {
+  id: string;
+  data: Json;
+}
+
+export async function updateQuestReliable(
+  transport: RelayTransport,
+  input: UpdateQuestInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+
+  // 1. dry-run
+  steps.push("dry-run");
+  const dry = await send(
+    transport,
+    {
+      action: "updateQuest",
+      id: input.id,
+      data: input.data,
+    },
+    true,
+    opts,
+  );
+  if (!dry.ok) return fail(steps, dry.error);
+
+  // 2. write
+  steps.push("write");
+  const written = await send(
+    transport,
+    {
+      action: "updateQuest",
+      id: input.id,
+      data: input.data,
+    },
+    false,
+    opts,
+  );
+  if (!written.ok) return fail(steps, written.error);
+
+  // 3. read-back: verify fields were updated
+  steps.push("read-back");
+  const expanded = expandObject(input.data);
+  if (!isSubset(written.data, expanded)) {
+    return fail(steps, {
+      code: "READBACK_MISMATCH",
+      message: "quest update did not match the requested data",
+      details: { id: input.id, expected: expanded, actual: written.data },
+    });
+  }
+
+  return { ok: true, data: written.data, steps };
+}
+
+export interface DeleteQuestInput {
+  id: string;
+}
+
+export async function deleteQuestReliable(
+  transport: RelayTransport,
+  input: DeleteQuestInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+
+  // 1. dry-run
+  steps.push("dry-run");
+  const dry = await send(
+    transport,
+    {
+      action: "deleteQuest",
+      id: input.id,
+    },
+    true,
+    opts,
+  );
+  if (!dry.ok) return fail(steps, dry.error);
+
+  // 2. write
+  steps.push("write");
+  const written = await send(
+    transport,
+    {
+      action: "deleteQuest",
+      id: input.id,
+    },
+    false,
+    opts,
+  );
+  if (!written.ok) return fail(steps, written.error);
+
+  return { ok: true, data: written.data, steps };
+}

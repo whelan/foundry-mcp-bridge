@@ -236,6 +236,10 @@ export class MockFoundry {
         return this.find(id, command);
       case "createQuest":
         return this.createQuest(id, command, dryRun);
+      case "updateQuest":
+        return this.updateQuest(id, command, dryRun);
+      case "deleteQuest":
+        return this.deleteQuest(id, command, dryRun);
     }
   }
 
@@ -388,5 +392,38 @@ export class MockFoundry {
 
     this.quests.set(questId, questData);
     return ok(id, questData);
+  }
+
+  private updateQuest(
+    id: string,
+    cmd: Extract<Command, { action: "updateQuest" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const quest = this.quests.get(cmd.id);
+    if (!quest) return err(id, "NOT_FOUND", `quest ${cmd.id} not found`);
+
+    const updated = { ...quest, ...cmd.data, _id: cmd.id };
+    if (dryRun) {
+      return ok(id, { ...updated, _dryRun: true });
+    }
+
+    this.quests.set(cmd.id, updated);
+    return ok(id, updated);
+  }
+
+  private deleteQuest(
+    id: string,
+    cmd: Extract<Command, { action: "deleteQuest" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    if (!this.quests.has(cmd.id)) {
+      return err(id, "NOT_FOUND", `quest ${cmd.id} not found`);
+    }
+
+    if (!dryRun) {
+      this.quests.delete(cmd.id);
+    }
+
+    return ok(id, { _id: cmd.id, deleted: true });
   }
 }

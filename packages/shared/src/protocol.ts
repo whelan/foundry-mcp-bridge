@@ -98,6 +98,22 @@ export const CreateQuestCommand = z.object({
 });
 export type CreateQuestCommand = z.infer<typeof CreateQuestCommand>;
 
+export const UpdateQuestCommand = z.object({
+  action: z.literal("updateQuest"),
+  /** Quest id to update. */
+  id: z.string().min(1),
+  /** Partial quest data to merge. */
+  data: z.record(z.string(), z.unknown()),
+});
+export type UpdateQuestCommand = z.infer<typeof UpdateQuestCommand>;
+
+export const DeleteQuestCommand = z.object({
+  action: z.literal("deleteQuest"),
+  /** Quest id to delete. */
+  id: z.string().min(1),
+});
+export type DeleteQuestCommand = z.infer<typeof DeleteQuestCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -107,6 +123,8 @@ export const Command = z.discriminatedUnion("action", [
   DeleteEmbeddedCommand,
   FindCommand,
   CreateQuestCommand,
+  UpdateQuestCommand,
+  DeleteQuestCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

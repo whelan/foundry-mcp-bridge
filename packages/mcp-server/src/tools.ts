@@ -20,6 +20,8 @@ import {
   updateEmbeddedReliable,
   deleteEmbeddedReliable,
   createQuestReliable,
+  updateQuestReliable,
+  deleteQuestReliable,
   type PipelineOptions,
   type ToolOutcome,
 } from "./reliability.js";
@@ -218,4 +220,37 @@ export function runCreateQuest(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return createQuestReliable(transport, args, opts);
+}
+
+// --- update_quest -----------------------------------------------------------
+
+export const UpdateQuestShape = {
+  id: z.string().min(1),
+  data: z.record(z.string(), z.unknown()),
+};
+const UpdateQuest = z.object(UpdateQuestShape);
+export type UpdateQuestArgs = z.infer<typeof UpdateQuest>;
+
+export function runUpdateQuest(
+  transport: RelayTransport,
+  args: UpdateQuestArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return updateQuestReliable(transport, args, opts);
+}
+
+// --- delete_quest -----------------------------------------------------------
+
+export const DeleteQuestShape = {
+  id: z.string().min(1),
+};
+const DeleteQuest = z.object(DeleteQuestShape);
+export type DeleteQuestArgs = z.infer<typeof DeleteQuest>;
+
+export function runDeleteQuest(
+  transport: RelayTransport,
+  args: DeleteQuestArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return deleteQuestReliable(transport, args, opts);
 }
