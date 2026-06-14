@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "tsc --build",
-    "typecheck": "tsc --build --force",
+    "typecheck": "tsc --build && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "tsc --build --clean"
