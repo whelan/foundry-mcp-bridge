@@ -9,8 +9,9 @@
  */
 
 import { WebSocketServer, type WebSocket } from "ws";
-import { CommandResult, type CommandEnvelope } from "@foundry-mcp-bridge/shared";
+import type { CommandEnvelope, CommandResult } from "@foundry-mcp-bridge/shared";
 import {
+  PendingRequests,
   TimeoutError,
   withTimeout,
   type RelayTransport,
@@ -47,7 +48,7 @@ export class RelayServer implements RelayTransport {
 
   private client: WebSocket | null = null;
   private clientWaiters: Array<() => void> = [];
-  private readonly pending = new Map<string, (result: CommandResult) => void>();
+  private readonly pending = new PendingRequests();
 
   constructor(options: RelayServerOptions) {
     this.endpoint = parseEndpoint(options.url);
@@ -94,27 +95,11 @@ export class RelayServer implements RelayTransport {
     this.log("info", "Foundry module connected");
     for (const wake of this.clientWaiters.splice(0)) wake();
 
-    socket.on("message", (data) => this.onMessage(data.toString()));
+    socket.on("message", (data) => this.pending.settle(data.toString()));
     socket.on("close", () => {
       if (this.client === socket) this.client = null;
       this.log("warn", "Foundry module disconnected");
     });
-  }
-
-  private onMessage(raw: string): void {
-    let json: unknown;
-    try {
-      json = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    const parsed = CommandResult.safeParse(json);
-    if (!parsed.success) return;
-    const resolve = this.pending.get(parsed.data.id);
-    if (resolve) {
-      this.pending.delete(parsed.data.id);
-      resolve(parsed.data);
-    }
   }
 
   private waitForClient(timeoutMs: number): Promise<void> {
@@ -133,15 +118,9 @@ export class RelayServer implements RelayTransport {
     const client = this.client;
     if (!client) throw new TimeoutError("no Foundry module connected to the relay");
 
-    const response = new Promise<CommandResult>((resolve) => {
-      this.pending.set(envelope.id, resolve);
-      client.send(JSON.stringify(envelope));
-    });
-    try {
-      return await withTimeout(response, timeoutMs);
-    } finally {
-      this.pending.delete(envelope.id);
-    }
+    return this.pending.awaitResult(envelope.id, timeoutMs, () =>
+      client.send(JSON.stringify(envelope)),
+    );
   }
 
   close(): void {

@@ -15,7 +15,8 @@ import {
   type DocumentType,
   type CommandError,
   type Json,
-  PROTOCOL_VERSION,
+  COLLECTIONS,
+  checkEnvelopeGuards,
   randomID,
   ok,
   err,
@@ -27,17 +28,6 @@ import {
 // ---------------------------------------------------------------------------
 // Foundry key conventions
 // ---------------------------------------------------------------------------
-
-/** Top-level collection name for each document type (Foundry's db key segment). */
-const COLLECTION: Record<DocumentType, string> = {
-  Actor: "actors",
-  Scene: "scenes",
-  JournalEntry: "journal",
-  RollTable: "tables",
-  Item: "items",
-  Macro: "macros",
-  Playlist: "playlists",
-};
 
 /** Field name an embedded document lives under on its parent. */
 const EMBEDDED_FIELD: Record<string, string> = {
@@ -56,7 +46,7 @@ const EMBEDDED_FIELD: Record<string, string> = {
 
 /** `!actors!{id}` for a top-level document. */
 export function documentKey(type: DocumentType, id: string): string {
-  return `!${COLLECTION[type]}!${id}`;
+  return `!${COLLECTIONS[type]}!${id}`;
 }
 
 /** `!scenes.tokens!{parentId}.{embeddedId}` for an embedded document. */
@@ -67,7 +57,7 @@ export function embeddedKey(
   embeddedId: string,
 ): string {
   const field = EMBEDDED_FIELD[embeddedName] ?? embeddedName.toLowerCase();
-  return `!${COLLECTION[parentType]}.${field}!${parentId}.${embeddedId}`;
+  return `!${COLLECTIONS[parentType]}.${field}!${parentId}.${embeddedId}`;
 }
 
 // Re-export the shared object helpers used to mirror Foundry's update semantics
@@ -179,7 +169,7 @@ export class MockFoundry {
   }
 
   private list(type: DocumentType): Json[] {
-    const prefix = `!${COLLECTION[type]}!`;
+    const prefix = `!${COLLECTIONS[type]}!`;
     return [...this.store.entries()]
       .filter(([k]) => k.startsWith(prefix))
       .map(([, v]) => v);
@@ -201,15 +191,11 @@ export class MockFoundry {
       return { id: envelope.id, ok: false, error: failure.result };
     }
 
-    if (envelope.protocolVersion !== PROTOCOL_VERSION) {
-      return err(envelope.id, "VALIDATION", "protocol version mismatch");
-    }
-    if (this.token !== undefined && envelope.token !== this.token) {
-      return err(envelope.id, "AUTH", "invalid or missing token");
-    }
-    if (!this.isGM) {
-      return err(envelope.id, "AUTH", "GM privileges required");
-    }
+    const guardError = checkEnvelopeGuards(envelope, {
+      isGM: this.isGM,
+      expectedToken: this.token,
+    });
+    if (guardError) return { id: envelope.id, ok: false, error: guardError };
 
     try {
       return this.dispatch(envelope.id, envelope.command, envelope.dryRun);
@@ -290,22 +276,31 @@ export class MockFoundry {
     return parent[field] as Json[];
   }
 
+  /** Resolve a parent's embedded collection, or a NOT_FOUND result. */
+  private resolveEmbedded(
+    id: string,
+    cmd: { parentType: DocumentType; parentId: string; embeddedName: string },
+  ): { arr: Json[] } | { error: CommandResult } {
+    const parent = this.get(cmd.parentType, cmd.parentId);
+    if (!parent) {
+      return { error: err(id, "NOT_FOUND", `${cmd.parentType} ${cmd.parentId} not found`) };
+    }
+    return { arr: this.embeddedArray(parent, cmd.embeddedName) };
+  }
+
   private createEmbedded(
     id: string,
     cmd: Extract<Command, { action: "createEmbedded" }>,
     dryRun: boolean,
   ): CommandResult {
-    const parent = this.get(cmd.parentType, cmd.parentId);
-    if (!parent) {
-      return err(id, "NOT_FOUND", `${cmd.parentType} ${cmd.parentId} not found`);
-    }
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
     const created = cmd.data.map((entry) => ({
       ...entry,
       _id: typeof entry._id === "string" && entry._id ? entry._id : randomID(),
     }));
     if (dryRun) return ok(id, created.map((c) => ({ ...c, _dryRun: true })));
-    const arr = this.embeddedArray(parent, cmd.embeddedName);
-    arr.push(...created);
+    resolved.arr.push(...created);
     return ok(id, created);
   }
 
@@ -314,11 +309,9 @@ export class MockFoundry {
     cmd: Extract<Command, { action: "updateEmbedded" }>,
     dryRun: boolean,
   ): CommandResult {
-    const parent = this.get(cmd.parentType, cmd.parentId);
-    if (!parent) {
-      return err(id, "NOT_FOUND", `${cmd.parentType} ${cmd.parentId} not found`);
-    }
-    const arr = this.embeddedArray(parent, cmd.embeddedName);
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
+    const arr = resolved.arr;
     const updated: Json[] = [];
     for (const diff of cmd.data) {
       const idx = arr.findIndex((e) => e._id === diff._id);
@@ -337,11 +330,9 @@ export class MockFoundry {
     cmd: Extract<Command, { action: "deleteEmbedded" }>,
     dryRun: boolean,
   ): CommandResult {
-    const parent = this.get(cmd.parentType, cmd.parentId);
-    if (!parent) {
-      return err(id, "NOT_FOUND", `${cmd.parentType} ${cmd.parentId} not found`);
-    }
-    const arr = this.embeddedArray(parent, cmd.embeddedName);
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
+    const arr = resolved.arr;
     const deleted: string[] = [];
     for (const embeddedId of cmd.ids) {
       const idx = arr.findIndex((e) => e._id === embeddedId);

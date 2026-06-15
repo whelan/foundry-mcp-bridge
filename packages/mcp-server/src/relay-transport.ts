@@ -45,6 +45,49 @@ export interface RelayTransport {
   close(): void;
 }
 
+/**
+ * Correlates outbound envelopes with their results by id, with per-request
+ * timeouts. Shared by both transports so the correlation logic lives in one
+ * place (and a timed-out entry never leaks).
+ */
+export class PendingRequests {
+  private readonly map = new Map<string, (result: CommandResult) => void>();
+
+  /** Parse a raw inbound message and resolve the matching pending request. */
+  settle(raw: unknown): void {
+    let json: unknown;
+    try {
+      json = typeof raw === "string" ? JSON.parse(raw) : raw;
+    } catch {
+      return;
+    }
+    const parsed = CommandResult.safeParse(json);
+    if (!parsed.success) return;
+    const resolve = this.map.get(parsed.data.id);
+    if (resolve) {
+      this.map.delete(parsed.data.id);
+      resolve(parsed.data);
+    }
+  }
+
+  /** Register request `id`, run `send`, then await its result within `timeoutMs`. */
+  async awaitResult(
+    id: string,
+    timeoutMs: number,
+    send: () => void,
+  ): Promise<CommandResult> {
+    const response = new Promise<CommandResult>((resolve) => {
+      this.map.set(id, resolve);
+      send();
+    });
+    try {
+      return await withTimeout(response, timeoutMs);
+    } finally {
+      this.map.delete(id);
+    }
+  }
+}
+
 /** Minimal browser/Node WebSocket surface used by the client transport. */
 export interface WsLike {
   send(data: string): void;
@@ -71,13 +114,10 @@ export interface WebSocketRelayTransportOptions {
 }
 
 export class WebSocketRelayTransport implements RelayTransport {
-  private socket: WsLike;
+  private readonly socket: WsLike;
   private readonly defaultTimeoutMs: number;
   private readonly ready: Promise<void>;
-  private readonly pending = new Map<
-    string,
-    { resolve: (r: CommandResult) => void; reject: (e: Error) => void }
-  >();
+  private readonly pending = new PendingRequests();
 
   constructor(options: WebSocketRelayTransportOptions) {
     this.defaultTimeoutMs = options.defaultTimeoutMs;
@@ -86,33 +126,15 @@ export class WebSocketRelayTransport implements RelayTransport {
     this.ready = new Promise<void>((resolve) => {
       this.socket.addEventListener("open", () => resolve());
     });
-    this.socket.addEventListener("message", (ev) => this.onMessage(ev.data));
-  }
-
-  private onMessage(raw: unknown): void {
-    const parsed = CommandResult.safeParse(
-      typeof raw === "string" ? JSON.parse(raw) : raw,
-    );
-    if (!parsed.success) return;
-    const entry = this.pending.get(parsed.data.id);
-    if (entry) {
-      this.pending.delete(parsed.data.id);
-      entry.resolve(parsed.data);
-    }
+    this.socket.addEventListener("message", (ev) => this.pending.settle(ev.data));
   }
 
   async request(envelope: CommandEnvelope, opts?: RequestOptions): Promise<CommandResult> {
     await this.ready;
     const timeoutMs = opts?.timeoutMs ?? this.defaultTimeoutMs;
-    const response = new Promise<CommandResult>((resolve, reject) => {
-      this.pending.set(envelope.id, { resolve, reject });
-      this.socket.send(JSON.stringify(envelope));
-    });
-    try {
-      return await withTimeout(response, timeoutMs);
-    } finally {
-      this.pending.delete(envelope.id);
-    }
+    return this.pending.awaitResult(envelope.id, timeoutMs, () =>
+      this.socket.send(JSON.stringify(envelope)),
+    );
   }
 
   close(): void {

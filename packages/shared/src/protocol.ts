@@ -24,6 +24,21 @@ export const DocumentType = z.enum([
 ]);
 export type DocumentType = z.infer<typeof DocumentType>;
 
+/**
+ * World-collection name for each document type (Foundry's db key segment and
+ * the `game.<collection>` accessor). Shared so the module, the mock and any key
+ * formatting stay in lockstep when a document type is added.
+ */
+export const COLLECTIONS: Record<DocumentType, string> = {
+  Actor: "actors",
+  Scene: "scenes",
+  JournalEntry: "journal",
+  RollTable: "tables",
+  Item: "items",
+  Macro: "macros",
+  Playlist: "playlists",
+};
+
 /** Arbitrary Foundry document data — validated structurally, not field-by-field. */
 const DocumentData = z.record(z.string(), z.unknown());
 
@@ -186,4 +201,35 @@ export function err(
   details?: unknown,
 ): CommandResult {
   return { id, ok: false, error: { code, message, details } };
+}
+
+/** Context for the envelope guards: who is executing and the expected token. */
+export interface GuardContext {
+  isGM: boolean;
+  expectedToken?: string;
+}
+
+/**
+ * Protocol-level guards run identically by the module executor and the mock:
+ * protocol version, auth token, then GM privilege. Returns a structured error
+ * to reject with, or null when the envelope may proceed.
+ */
+export function checkEnvelopeGuards(
+  envelope: CommandEnvelope,
+  ctx: GuardContext,
+): CommandError | null {
+  if (envelope.protocolVersion !== PROTOCOL_VERSION) {
+    return {
+      code: "VALIDATION",
+      message: "protocol version mismatch",
+      details: { expected: PROTOCOL_VERSION, received: envelope.protocolVersion },
+    };
+  }
+  if (ctx.expectedToken !== undefined && envelope.token !== ctx.expectedToken) {
+    return { code: "AUTH", message: "invalid or missing token" };
+  }
+  if (!ctx.isGM) {
+    return { code: "AUTH", message: "GM privileges required" };
+  }
+  return null;
 }
