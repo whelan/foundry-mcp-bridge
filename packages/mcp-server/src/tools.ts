@@ -8,7 +8,6 @@
  * (reusing the shared scene builders) and update_document.
  */
 
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { DocumentType, buildScene, buildSceneVerify } from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
@@ -24,6 +23,7 @@ import {
   updateQuestReliable,
   deleteQuestReliable,
   uploadAssetReliable,
+  runRead,
   type PipelineOptions,
   type ToolOutcome,
 } from "./reliability.js";
@@ -138,35 +138,17 @@ export const FindDocumentsShape = {
 const FindDocuments = z.object(FindDocumentsShape);
 export type FindDocumentsArgs = z.infer<typeof FindDocuments>;
 
-export async function runFindDocuments(
+export function runFindDocuments(
   transport: RelayTransport,
   args: FindDocumentsArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  const steps: string[] = ["find"];
-  const envelope = {
-    id: randomUUID(),
-    protocolVersion: "1" as const,
-    dryRun: false,
-    token: opts.token,
-    command: { action: "find" as const, documentType: args.documentType, id: args.id, query: args.query },
-  };
-  try {
-    const result = await transport.request(envelope, { timeoutMs: opts.timeoutMs });
-    if (!result.ok) {
-      return { ok: false, error: result.error, steps };
-    }
-    return { ok: true, data: result.data, steps };
-  } catch (e) {
-    return {
-      ok: false,
-      error: {
-        code: e instanceof Error && "code" in e ? (e as any).code : "INTERNAL",
-        message: (e as Error).message,
-      },
-      steps,
-    };
-  }
+  return runRead(
+    transport,
+    { action: "find", documentType: args.documentType, id: args.id, query: args.query },
+    "find",
+    opts,
+  );
 }
 
 // --- get_world_info ---------------------------------------------------------
@@ -175,35 +157,12 @@ export const GetWorldInfoShape = {};
 const GetWorldInfo = z.object(GetWorldInfoShape);
 export type GetWorldInfoArgs = z.infer<typeof GetWorldInfo>;
 
-export async function runGetWorldInfo(
+export function runGetWorldInfo(
   transport: RelayTransport,
   _args: GetWorldInfoArgs = {},
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  const steps: string[] = ["get-world-info"];
-  const envelope = {
-    id: randomUUID(),
-    protocolVersion: "1" as const,
-    dryRun: false,
-    token: opts.token,
-    command: { action: "getWorldInfo" as const },
-  };
-  try {
-    const result = await transport.request(envelope, { timeoutMs: opts.timeoutMs });
-    if (!result.ok) {
-      return { ok: false, error: result.error, steps };
-    }
-    return { ok: true, data: result.data, steps };
-  } catch (e) {
-    return {
-      ok: false,
-      error: {
-        code: e instanceof Error && "code" in e ? (e as any).code : "INTERNAL",
-        message: (e as Error).message,
-      },
-      steps,
-    };
-  }
+  return runRead(transport, { action: "getWorldInfo" }, "get-world-info", opts);
 }
 
 // --- upload_asset -----------------------------------------------------------

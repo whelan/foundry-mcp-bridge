@@ -54,6 +54,23 @@ async function send(
   }
 }
 
+/**
+ * Read-only command: a single round-trip (no dry-run, no read-back). Shares the
+ * envelope/timeout/error handling of {@link send} so read tools don't hand-roll it.
+ */
+export async function runRead(
+  transport: RelayTransport,
+  command: Command,
+  stepName: string,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps = [stepName];
+  const res = await send(transport, command, false, opts);
+  return res.ok
+    ? { ok: true, data: res.data, steps }
+    : { ok: false, error: res.error, steps };
+}
+
 function fail(steps: string[], error: CommandError): ToolOutcome {
   return { ok: false, error, steps };
 }

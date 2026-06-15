@@ -84,7 +84,7 @@ on mismatch). Categories differ in which steps apply and why:
 | embedded create/update | dry-run, write, read-back, [rollback] | read-back fetches the **parent**; content isn't deep-verified today (improvement opportunity). On read-back failure, create rolls back by deleting the new embedded ids (from the write result); update restores the parent from its pre-read snapshot. |
 | embedded delete | dry-run, write | terminal. |
 | quest create/update/delete | dry-run, write, read-back* | quests aren't queryable via `find`; create/delete skip real read-back; update verifies the **write result** is a subset of the requested data. |
-| find / get_world_info | find / get-world-info | read-only; not mutations, hand-rolled in `tools.ts`. |
+| find / get_world_info | find / get-world-info | read-only; not mutations; single round-trip via the shared `runRead` helper. |
 | upload_asset | dry-run, write | terminal: FilePicker upload, no read-back. |
 
 Step names accumulate in the `steps: string[]` returned in the `ToolOutcome`
