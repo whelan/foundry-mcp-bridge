@@ -515,3 +515,32 @@ export function deleteQuestReliable(
   // Terminal: dry-run → write, no read-back/rollback.
   return runTerminal(transport, { action: "deleteQuest", id: input.id }, opts);
 }
+
+export interface UploadAssetInput {
+  source: "data" | "forgevtt";
+  target: string;
+  filename: string;
+  contentBase64: string;
+  mimeType?: string;
+}
+
+export function uploadAssetReliable(
+  transport: RelayTransport,
+  input: UploadAssetInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  // Terminal write: dry-run validates the target, write uploads. No read-back
+  // (uploads aren't document reads); the write result carries the stored path.
+  return runTerminal(
+    transport,
+    {
+      action: "uploadAsset",
+      source: input.source,
+      target: input.target,
+      filename: input.filename,
+      contentBase64: input.contentBase64,
+      mimeType: input.mimeType,
+    },
+    opts,
+  );
+}

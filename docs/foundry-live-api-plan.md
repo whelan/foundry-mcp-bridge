@@ -101,6 +101,10 @@ Tools are added incrementally; each ships with the full reliability pipeline.
 8. `get_world_info` — read-only world snapshot (Foundry/system versions, world
    id/title, folders) so the AI can resolve folder placement and system fields
    before importing. No mutation, no read-back.
+9. `upload_asset` — upload a base64 file to Foundry storage via `FilePicker`
+   (local `data` or `forgevtt`), returning the stored path to reference as a
+   scene background / token image. Terminal write (dry-run validates, write
+   uploads); no read-back.
 
 ### 7.1 Forien's Quest Log
 

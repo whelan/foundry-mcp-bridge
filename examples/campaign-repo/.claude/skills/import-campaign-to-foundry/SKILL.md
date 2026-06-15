@@ -79,6 +79,13 @@ document's own description field as HTML.
    was deleted in Foundry; ask whether to re-create (which mints a new id).
 5. **Report** a table: note → created/updated/failed, new `_id`, error if any.
 
+## Scene images
+
+For `generated/scenes/`, upload the local image first with `upload_asset`
+(base64 content → returns the stored path), then pass that path as the scene
+`background` via `create_scene`. Don't reference image paths that aren't in the
+world.
+
 ## Guardrails
 
 - Writes hit the **live** world. For more than ~3 documents, show the plan

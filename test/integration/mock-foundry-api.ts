@@ -89,6 +89,9 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
     async getWorldInfo() {
       return (await run({ action: "getWorldInfo" }, { dryRun: false })) as WorldInfo;
     },
+    async uploadAsset(params, opts) {
+      return (await run({ action: "uploadAsset", ...params }, opts)) as { path: string };
+    },
     async createQuest(data, parentId, opts) {
       return (await run({ action: "createQuest", data, parentId }, opts)) as DocData;
     },

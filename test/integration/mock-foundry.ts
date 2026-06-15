@@ -93,9 +93,14 @@ export class MockFilePicker {
     target: string,
     file: { name: string },
   ): Promise<{ path: string }> {
-    const path = `${target.replace(/\/$/, "")}/${file.name}`;
+    return this.put(source, target, file.name);
+  }
+
+  /** Synchronous core of upload, callable from the (sync) command dispatch. */
+  put(source: FilePickerSource, target: string, name: string): { path: string } {
+    const path = `${target.replace(/\/$/, "")}/${name}`;
     this.files[source].add(path);
-    this.uploads.push({ source, path, name: file.name });
+    this.uploads.push({ source, path, name });
     return { path };
   }
 
@@ -238,6 +243,11 @@ export class MockFoundry {
         return this.find(id, command);
       case "getWorldInfo":
         return ok(id, this.worldInfo as unknown as Json);
+      case "uploadAsset": {
+        const target = command.target.replace(/\/$/, "");
+        if (dryRun) return ok(id, { path: `${target}/${command.filename}` });
+        return ok(id, this.filePicker.put(command.source, target, command.filename));
+      }
       case "createQuest":
         return this.createQuest(id, command, dryRun);
       case "updateQuest":

@@ -11,6 +11,7 @@ import type {
   ExecuteOptions,
   FindSelector,
   FoundryDocumentApi,
+  UploadAssetParams,
   WorldInfo,
 } from "./protocol-executor.js";
 import { CommandExecutionError } from "./protocol-executor.js";
@@ -162,6 +163,20 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
           type: String(f.type),
         })),
       };
+    },
+
+    async uploadAsset(params: UploadAssetParams, opts) {
+      const target = params.target.replace(/\/$/, "");
+      // Dry-run: don't write the file; return the path it would land at.
+      if (opts.dryRun) return { path: `${target}/${params.filename}` };
+      const bytes = Uint8Array.from(atob(params.contentBase64), (c) => c.charCodeAt(0));
+      const file = new File([bytes], params.filename, params.mimeType ? { type: params.mimeType } : undefined);
+      const result = await (FilePicker as any).upload(params.source, target, file, {});
+      const path = result?.path;
+      if (typeof path !== "string" || !path) {
+        throw new CommandExecutionError("INTERNAL", "FilePicker.upload returned no path");
+      }
+      return { path };
     },
 
     async createQuest(data, parentId, opts) {

@@ -46,6 +46,15 @@ export interface WorldInfo {
   folders: WorldFolder[];
 }
 
+/** Parameters for an asset upload via Foundry's FilePicker. */
+export interface UploadAssetParams {
+  source: "data" | "forgevtt";
+  target: string;
+  filename: string;
+  contentBase64: string;
+  mimeType?: string;
+}
+
 /**
  * The narrow surface the executor needs from Foundry. The real implementation
  * (foundry-runtime.ts) calls `Actor.create`, `document.update`, embedded CRUD,
@@ -89,6 +98,7 @@ export interface FoundryDocumentApi {
   ): Promise<void>;
   find(type: DocumentType, selector: FindSelector): Promise<DocData | DocData[]>;
   getWorldInfo(): Promise<WorldInfo>;
+  uploadAsset(params: UploadAssetParams, opts: ExecuteOptions): Promise<{ path: string }>;
   createQuest(data: DocData | undefined, parentId: string | undefined, opts: ExecuteOptions): Promise<DocData>;
   updateQuest(id: string, data: DocData, opts: ExecuteOptions): Promise<DocData>;
   deleteQuest(id: string, opts: ExecuteOptions): Promise<void>;
@@ -177,6 +187,17 @@ async function dispatch(
       return api.find(command.documentType, { id: command.id, query: command.query });
     case "getWorldInfo":
       return api.getWorldInfo();
+    case "uploadAsset":
+      return api.uploadAsset(
+        {
+          source: command.source,
+          target: command.target,
+          filename: command.filename,
+          contentBase64: command.contentBase64,
+          mimeType: command.mimeType,
+        },
+        opts,
+      );
     case "createQuest":
       return api.createQuest(command.data, command.parentId, opts);
     case "updateQuest":

@@ -186,6 +186,43 @@ describe("embedded documents", () => {
   });
 });
 
+describe("uploadAsset", () => {
+  it("uploads via FilePicker and returns the stored path", async () => {
+    const f = new MockFoundry();
+    const res = await f.execute(
+      envelope({
+        action: "uploadAsset",
+        source: "data",
+        target: "worlds/cos/scenes/",
+        filename: "tavern.webp",
+        contentBase64: "AAAA",
+      }),
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect((res.data as { path: string }).path).toBe("worlds/cos/scenes/tavern.webp");
+    expect(f.filePicker.uploads.length).toBe(1);
+  });
+
+  it("does not write on dry-run but predicts the path", async () => {
+    const f = new MockFoundry();
+    const res = await f.execute(
+      envelope(
+        {
+          action: "uploadAsset",
+          source: "data",
+          target: "worlds/cos",
+          filename: "x.webp",
+          contentBase64: "AAAA",
+        },
+        { dryRun: true },
+      ),
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect((res.data as { path: string }).path).toBe("worlds/cos/x.webp");
+    expect(f.filePicker.uploads.length).toBe(0);
+  });
+});
+
 describe("dry-run", () => {
   it("does not persist on dryRun create", async () => {
     const f = new MockFoundry();

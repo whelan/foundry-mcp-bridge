@@ -16,6 +16,7 @@ import {
   DuplicateDocumentShape,
   FindDocumentsShape,
   GetWorldInfoShape,
+  UploadAssetShape,
   CreateEmbeddedShape,
   UpdateEmbeddedShape,
   DeleteEmbeddedShape,
@@ -29,6 +30,7 @@ import {
   runDuplicateDocument,
   runFindDocuments,
   runGetWorldInfo,
+  runUploadAsset,
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
@@ -114,6 +116,16 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
       inputSchema: GetWorldInfoShape,
     },
     async (args) => toCallResult(await runGetWorldInfo(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "upload_asset",
+    {
+      description:
+        "Upload a file (base64) to Foundry storage via FilePicker — e.g. a scene background or token image. Returns the stored path to reference on a document. source 'data' (local) or 'forgevtt' (The Forge).",
+      inputSchema: UploadAssetShape,
+    },
+    async (args) => toCallResult(await runUploadAsset(transport, args, opts)),
   );
 
   server.registerTool(

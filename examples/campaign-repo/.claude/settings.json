@@ -10,6 +10,7 @@
       "mcp__foundry__update_document",
       "mcp__foundry__duplicate_document",
       "mcp__foundry__create_scene",
+      "mcp__foundry__upload_asset",
       "mcp__foundry__create_embedded",
       "mcp__foundry__update_embedded",
       "mcp__foundry__create_quest",

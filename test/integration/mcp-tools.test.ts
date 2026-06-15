@@ -12,6 +12,7 @@ import {
   runUpdateDocument,
   runDuplicateDocument,
   runGetWorldInfo,
+  runUploadAsset,
 } from "../../packages/mcp-server/src/tools.js";
 
 /** Transport that drives the mock-foundry, with hooks to exercise the pipeline. */
@@ -142,6 +143,22 @@ describe("get_world_info", () => {
     const info = out.ok ? (out.data as any) : null;
     expect(info.system.id).toBe("dnd5e");
     expect(info.folders).toEqual([{ _id: "f1", name: "NPCs", type: "Actor" }]);
+  });
+});
+
+describe("upload_asset", () => {
+  it("uploads through dry-run then write and returns the path", async () => {
+    const { mock, transport } = setup();
+    const out = await runUploadAsset(transport, {
+      source: "data",
+      target: "worlds/cos/scenes",
+      filename: "tavern.webp",
+      contentBase64: "AAAA",
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write"]);
+    expect(out.ok && (out.data as any).path).toBe("worlds/cos/scenes/tavern.webp");
+    expect(mock.filePicker.uploads.length).toBe(1);
   });
 });
 

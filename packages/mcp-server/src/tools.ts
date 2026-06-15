@@ -23,6 +23,7 @@ import {
   createQuestReliable,
   updateQuestReliable,
   deleteQuestReliable,
+  uploadAssetReliable,
   type PipelineOptions,
   type ToolOutcome,
 } from "./reliability.js";
@@ -202,6 +203,26 @@ export async function runGetWorldInfo(
       steps,
     };
   }
+}
+
+// --- upload_asset -----------------------------------------------------------
+
+export const UploadAssetShape = {
+  source: z.enum(["data", "forgevtt"]).default("data"),
+  target: z.string().min(1),
+  filename: z.string().min(1),
+  contentBase64: z.string().min(1),
+  mimeType: z.string().optional(),
+};
+const UploadAsset = z.object(UploadAssetShape);
+export type UploadAssetArgs = z.infer<typeof UploadAsset>;
+
+export function runUploadAsset(
+  transport: RelayTransport,
+  args: UploadAssetArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return uploadAssetReliable(transport, args, opts);
 }
 
 // --- create_embedded --------------------------------------------------------
