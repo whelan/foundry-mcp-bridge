@@ -13,6 +13,7 @@ import {
   CreateSceneShape,
   UpdateDocumentShape,
   DeleteDocumentShape,
+  DuplicateDocumentShape,
   FindDocumentsShape,
   CreateEmbeddedShape,
   UpdateEmbeddedShape,
@@ -24,6 +25,7 @@ import {
   runCreateScene,
   runUpdateDocument,
   runDeleteDocument,
+  runDuplicateDocument,
   runFindDocuments,
   runCreateEmbedded,
   runUpdateEmbedded,
@@ -80,6 +82,16 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
       inputSchema: DeleteDocumentShape,
     },
     async (args) => toCallResult(await runDeleteDocument(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "duplicate_document",
+    {
+      description:
+        "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure.",
+      inputSchema: DuplicateDocumentShape,
+    },
+    async (args) => toCallResult(await runDuplicateDocument(transport, args, opts)),
   );
 
   server.registerTool(

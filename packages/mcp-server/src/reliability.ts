@@ -237,6 +237,38 @@ export async function deleteDocumentReliable(
   return { ok: true, data: written.data, steps };
 }
 
+export interface DuplicateDocumentInput {
+  documentType: DocumentType;
+  id: string;
+  overrides?: Json;
+}
+
+export function duplicateDocumentReliable(
+  transport: RelayTransport,
+  input: DuplicateDocumentInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runMutation(
+    transport,
+    {
+      documentType: input.documentType,
+      mutate: {
+        action: "duplicate",
+        documentType: input.documentType,
+        id: input.id,
+        overrides: input.overrides,
+      },
+      // The copy's _id comes from the write; read-back confirms it exists and
+      // that any requested overrides took effect.
+      expected: input.overrides ? expandObject(input.overrides) : {},
+      rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
+      mismatchMessage: "duplicated document did not match the requested overrides; rolled back",
+    },
+    opts,
+    [],
+  );
+}
+
 export interface CreateEmbeddedInput {
   parentType: DocumentType;
   parentId: string;

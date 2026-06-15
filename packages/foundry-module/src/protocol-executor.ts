@@ -44,6 +44,12 @@ export interface FoundryDocumentApi {
     opts: ExecuteOptions,
   ): Promise<DocData>;
   remove(type: DocumentType, id: string, opts: ExecuteOptions): Promise<void>;
+  duplicate(
+    type: DocumentType,
+    id: string,
+    overrides: DocData | undefined,
+    opts: ExecuteOptions,
+  ): Promise<DocData>;
   createEmbedded(
     parentType: DocumentType,
     parentId: string,
@@ -123,6 +129,8 @@ async function dispatch(
     case "delete":
       await api.remove(command.documentType, command.id, opts);
       return { _id: command.id, deleted: true };
+    case "duplicate":
+      return api.duplicate(command.documentType, command.id, command.overrides, opts);
     case "createEmbedded":
       return api.createEmbedded(
         command.parentType,

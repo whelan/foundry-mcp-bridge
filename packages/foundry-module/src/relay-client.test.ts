@@ -35,6 +35,9 @@ function stubApi(): FoundryDocumentApi {
       return { ...diff, _id };
     },
     async remove() {},
+    async duplicate(_type, _id, overrides) {
+      return { ...overrides, _id: "duplicated" };
+    },
     async createEmbedded(_p, _id, _name, data) {
       return data;
     },

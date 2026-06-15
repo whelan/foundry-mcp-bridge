@@ -65,6 +65,16 @@ export const DeleteCommand = z.object({
 });
 export type DeleteCommand = z.infer<typeof DeleteCommand>;
 
+export const DuplicateCommand = z.object({
+  action: z.literal("duplicate"),
+  documentType: DocumentType,
+  /** Id of the source document to clone. */
+  id: z.string().min(1),
+  /** Optional field overrides merged into the copy (e.g. a new name). */
+  overrides: DocumentData.optional(),
+});
+export type DuplicateCommand = z.infer<typeof DuplicateCommand>;
+
 export const CreateEmbeddedCommand = z.object({
   action: z.literal("createEmbedded"),
   parentType: DocumentType,
@@ -133,6 +143,7 @@ export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
   DeleteCommand,
+  DuplicateCommand,
   CreateEmbeddedCommand,
   UpdateEmbeddedCommand,
   DeleteEmbeddedCommand,

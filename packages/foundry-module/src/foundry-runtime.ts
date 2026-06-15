@@ -103,6 +103,15 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       if (!opts.dryRun) await doc.delete();
     },
 
+    async duplicate(type, id, overrides, opts) {
+      const doc = requireDoc(type, id);
+      // doc.clone() merges overrides (dot-notation supported) and assigns a
+      // fresh _id; {save:true} persists and returns a promise.
+      if (opts.dryRun) return doc.clone(overrides ?? {}).toObject();
+      const created = await doc.clone(overrides ?? {}, { save: true });
+      return created.toObject();
+    },
+
     async createEmbedded(parentType, parentId, embeddedName, data, opts) {
       const parent = requireDoc(parentType, parentId);
       if (opts.dryRun) return data;

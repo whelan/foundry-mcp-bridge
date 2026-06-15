@@ -49,6 +49,12 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
     async remove(type, id, opts) {
       await run({ action: "delete", documentType: type, id }, opts);
     },
+    async duplicate(type, id, overrides, opts) {
+      return (await run(
+        { action: "duplicate", documentType: type, id, overrides },
+        opts,
+      )) as DocData;
+    },
     async createEmbedded(parentType, parentId, embeddedName, data, opts) {
       return (await run(
         { action: "createEmbedded", parentType, parentId, embeddedName, data },

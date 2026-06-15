@@ -10,6 +10,7 @@ import {
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
+  runDuplicateDocument,
 } from "../../packages/mcp-server/src/tools.js";
 
 /** Transport that drives the mock-foundry, with hooks to exercise the pipeline. */
@@ -122,5 +123,62 @@ describe("update_document pipeline", () => {
     });
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.error.code).toBe("NOT_FOUND");
+  });
+});
+
+describe("duplicate_document pipeline", () => {
+  async function seedGoblin(mock: MockFoundry) {
+    await mock.execute({
+      id: "seed",
+      protocolVersion: "1",
+      dryRun: false,
+      command: {
+        action: "create",
+        documentType: "Actor",
+        data: { _id: "g1", name: "Goblin", system: { hp: { value: 7 } } },
+      },
+    });
+  }
+
+  it("clones a document with overrides, leaving the original intact", async () => {
+    const { mock, transport } = setup();
+    await seedGoblin(mock);
+    const out = await runDuplicateDocument(transport, {
+      documentType: "Actor",
+      id: "g1",
+      overrides: { name: "Goblin Boss" },
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write", "read-back"]);
+    const actors = mock.documents("Actor") as Array<{ name: string; system: { hp: { value: number } } }>;
+    expect(actors.length).toBe(2);
+    const names = actors.map((a) => a.name).sort();
+    expect(names).toEqual(["Goblin", "Goblin Boss"]);
+    // The copy inherited the source's nested data.
+    const copy = actors.find((a) => a.name === "Goblin Boss")!;
+    expect(copy.system.hp.value).toBe(7);
+  });
+
+  it("returns NOT_FOUND when the source does not exist", async () => {
+    const { transport } = setup();
+    const out = await runDuplicateDocument(transport, { documentType: "Actor", id: "ghost" });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe("NOT_FOUND");
+  });
+
+  it("rolls back the copy when read-back does not match the overrides", async () => {
+    const { mock, transport } = setup();
+    await seedGoblin(mock);
+    transport.corruptReadBack = true;
+    const out = await runDuplicateDocument(transport, {
+      documentType: "Actor",
+      id: "g1",
+      overrides: { name: "Goblin Boss" },
+    });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe("READBACK_MISMATCH");
+    expect(out.steps).toContain("rollback");
+    // Only the original survives; the rolled-back copy is gone.
+    expect(mock.documents("Actor").length).toBe(1);
   });
 });

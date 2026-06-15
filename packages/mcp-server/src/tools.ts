@@ -16,6 +16,7 @@ import {
   createDocumentReliable,
   updateDocumentReliable,
   deleteDocumentReliable,
+  duplicateDocumentReliable,
   createEmbeddedReliable,
   updateEmbeddedReliable,
   deleteEmbeddedReliable,
@@ -105,6 +106,24 @@ export function runDeleteDocument(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return deleteDocumentReliable(transport, args, opts);
+}
+
+// --- duplicate_document -----------------------------------------------------
+
+export const DuplicateDocumentShape = {
+  documentType: DocumentType,
+  id: z.string().min(1),
+  overrides: documentData.optional(),
+};
+const DuplicateDocument = z.object(DuplicateDocumentShape);
+export type DuplicateDocumentArgs = z.infer<typeof DuplicateDocument>;
+
+export function runDuplicateDocument(
+  transport: RelayTransport,
+  args: DuplicateDocumentArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return duplicateDocumentReliable(transport, args, opts);
 }
 
 // --- find_documents ---------------------------------------------------------

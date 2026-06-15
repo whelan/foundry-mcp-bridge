@@ -212,6 +212,8 @@ export class MockFoundry {
         return this.update(id, command.documentType, command.id, command.data, dryRun);
       case "delete":
         return this.delete(id, command.documentType, command.id, dryRun);
+      case "duplicate":
+        return this.duplicate(id, command.documentType, command.id, command.overrides, dryRun);
       case "createEmbedded":
         return this.createEmbedded(id, command, dryRun);
       case "updateEmbedded":
@@ -268,6 +270,25 @@ export class MockFoundry {
     if (!this.store.has(key)) return err(id, "NOT_FOUND", `${type} ${docId} not found`);
     if (!dryRun) this.store.delete(key);
     return ok(id, { _id: docId, deleted: true });
+  }
+
+  private duplicate(
+    id: string,
+    type: DocumentType,
+    docId: string,
+    overrides: Json | undefined,
+    dryRun: boolean,
+  ): CommandResult {
+    const existing = this.get(type, docId);
+    if (!existing) return err(id, "NOT_FOUND", `${type} ${docId} not found`);
+    // applyUpdate clones the source (structuredClone), so the original is intact;
+    // a fresh _id makes the copy a distinct document.
+    const newId = randomID();
+    const copy = overrides ? applyUpdate(existing, overrides) : structuredClone(existing);
+    copy._id = newId;
+    if (dryRun) return ok(id, { ...copy, _id: null, _dryRun: true });
+    this.store.set(documentKey(type, newId), copy);
+    return ok(id, copy);
   }
 
   private embeddedArray(parent: Json, embeddedName: string): Json[] {
