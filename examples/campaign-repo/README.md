@@ -26,14 +26,20 @@ your-campaign-repo/
    and its Module Settings pointing at the **same** `RELAY_URL` + token.
 5. **Open Claude Code** in your campaign repo. The MCP server starts on demand
    (it auto-builds on first run) and *hosts the relay* the module connects to.
-6. Ask, e.g. *"import the NPCs in `npcs/` into Foundry"* — the
+6. Ask, e.g. *"import `generated/journals/` into Foundry"* — the
    `import-campaign-to-foundry` skill takes over.
 
 ## Notes
 
+- The included `import-campaign-to-foundry` skill is tailored to the
+  **Curse of Strahd** repo layout and its **upsert contract** (empty front-matter
+  `id` → create then write the new id back; filled `id` → update). Adjust the
+  paths table in the skill if your layout differs.
 - The MCP server **is** the relay hub; the Foundry module dials out to it. One
   process, started by your MCP client over stdio.
 - `delete_*` tools are intentionally **not** in the auto-allow list — deletes are
   terminal, so they'll prompt for confirmation.
+- This skill uses the **live** MCP path. The repo's `scripts/import-*.js`
+  (offline LevelDB) are a separate route; the skill won't invoke them on its own.
 - See the bridge's `docs/setup-foundry-forge.md` for local vs. The Forge specifics
   (tokens, URLs, the relay).

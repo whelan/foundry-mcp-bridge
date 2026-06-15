@@ -1,82 +1,73 @@
 ---
 name: import-campaign-to-foundry
-description: Turn this repo's campaign notes (markdown/frontmatter) into documents in the running Foundry world via the foundry MCP tools. Use when the user wants to "import", "push", "sync", or "create in Foundry" their NPCs, locations/scenes, handouts/lore, items, roll tables, or quests — e.g. "import the NPCs in npcs/ into Foundry", "create a scene for the tavern", "sync this session's notes".
+description: Import this Curse of Strahd repo's notes (generated/ and journals/) into the running Foundry world via the foundry MCP tools, following the empty-id=create / filled-id=update upsert contract. Use when the user wants to "import", "push", "sync", or "create in Foundry" journals, NPCs/actors, or scenes — e.g. "import generated/journals into Foundry", "push the Lejren scene note", "sync the new NPCs".
 ---
 
-# Import campaign notes into Foundry
+# Import Curse of Strahd notes into Foundry (live MCP path)
 
-This repo holds campaign content as files; the **foundry** MCP server exposes
-tools that create/update documents in the **live** Foundry world (a GM must be
-logged in). This skill is the bridge: read the notes, map them to document types,
-and write them with the reliable tools.
+This repo has **two** ways into Foundry:
+- `scripts/import-*.js` — an **offline LevelDB** bridge (writes the world DB directly).
+- the **foundry MCP tools** (`mcp__foundry__*`) — the **live** path, into a running
+  world with a GM logged in. **This skill uses the live MCP path only.** Don't shell
+  out to the LevelDB scripts unless the user explicitly asks.
 
-## Preconditions (check first)
+## The upsert contract (authoritative)
 
-- The `foundry` MCP server is connected and its tools (`mcp__foundry__*`) are
-  available. If not, the world isn't reachable — tell the user to start Foundry
-  (GM logged in) with the module enabled and pointing at the same relay
-  URL/token; don't guess.
-- Writes hit the live world. For anything beyond a couple of documents, **show
-  the user a plan first** (what will be created/updated, with names) and get a
-  go-ahead before bulk-writing.
+Each note's front-matter `id` decides the operation:
 
-## What the tools already do for you
+- **`id: ""` (empty)** → `create_document`. On success, **write the returned `_id`
+  back into the note's front-matter** so the next run updates instead of duplicating.
+- **`id: "<16-char id>"` (filled)** → `update_document` with that `documentType`+`id`.
 
-Every mutating tool runs the reliability pipeline (dry-run → write → read-back
-verify → rollback on mismatch). You do **not** need to dry-run manually — just
-call the tool and read its `steps`/`ok` in the result. A non-`ok` result carries
-a structured `error.code` (`NOT_FOUND`, `VALIDATION`, `READBACK_MISMATCH`,
-`AUTH`, `TIMEOUT`, …) — surface it, don't retry blindly.
+This is the plan §7.2 upsert pattern. The id round-trip is what keeps imports
+idempotent — never skip writing the new id back.
 
-## Note type → tool mapping
+## Classify by folder, not by title
 
-Adapt the paths to this repo's actual layout (see "Layout" below).
+| Path | documentType | Tool | Notes |
+| --- | --- | --- | --- |
+| `generated/journals/*.md` | `JournalEntry` | create/update_document | New hand-written GM notes (Danish). Titled "Scene: …" are still **journals** (roleplay/GM notes), not maps. |
+| `journals/*.md` | `JournalEntry` | update_document | Extracted from Foundry; ids/folders are real. Usually already in the world → update. |
+| `generated/npcs/*.md` | `Actor` | create/update_document | |
+| `generated/scenes/*.md` | `Scene` | create_scene (new) / update_document (existing) | Actual maps/battle scenes. |
+| `actors/npcs/*.json` | `Actor` | create_document data source | Full extracted actor JSON — usable as `data`. Read-only source; strip/ignore its `_id` when creating fresh, or treat as upsert. |
+| `actors/`, `journals/` (extracted), `rules/` | — | — | Source/reference. **Read-only — never write back here.** |
 
-| Notes | Document | Tool |
-| --- | --- | --- |
-| NPCs / monsters | Actor | `create_document` (documentType `"Actor"`) |
-| Player handouts / lore / session recaps | JournalEntry | `create_document` (`"JournalEntry"`) |
-| Locations / battle maps | Scene | `create_scene` (high-level params) |
-| Items / loot | Item | `create_document` (`"Item"`) |
-| Random/loot tables | RollTable | `create_document` (`"RollTable"`) |
-| Quests (Forien's Quest Log) | quest | `create_quest` |
-| Tokens/lights/notes on a scene | embedded | `create_embedded` (parent = the Scene) |
+## Front-matter
+
+```yaml
+id: ""                 # "" = create; 16-char id = update
+name: "…"              # required; becomes the document name
+folder: null           # null, or a real Foundry folder id (pass through on the document)
+tags: [..]             # repo-side metadata; do NOT send as Foundry data
+```
+
+Map to tool input: `name` → `data.name`; `folder` (when a real id) → `data.folder`;
+the markdown **body** → the document's prose field as **HTML** (convert markdown;
+don't dump raw markdown). `tags` stay in the repo, not in Foundry.
 
 ## Workflow
 
-1. **Locate** the source notes the user named (or the whole category). Use Glob/Grep.
-2. **Parse** each note: front-matter for structured fields (name, type, system
-   data), body for description. Name is required.
-3. **Be idempotent.** Before creating, `find_documents` by name
-   (`{ documentType, query: { name } }`). If it exists, prefer `update_document`
-   on its `_id` (or ask whether to update vs. `duplicate_document`) so re-running
-   doesn't pile up duplicates.
-4. **Create/update** via the mapped tool. Keep `data` minimal and valid: always
-   `name`; only add `system.*` fields you're confident the active game system
-   accepts (e.g. dnd5e). When unsure of system schema, create the document with
-   name + description and tell the user which fields you left out.
-5. **Report** a concise table: each note → created/updated/skipped, with the new
-   `_id` and any errors. Stop and ask if several writes fail the same way.
+1. **Scope** the files the user named (Glob, e.g. `generated/journals/*.md`).
+2. For each note, parse front-matter + body and pick the tool from the table.
+3. **Upsert:**
+   - empty `id` → `create_document` (or `create_scene` for `generated/scenes/`);
+     then edit the note's front-matter `id` to the returned `_id`.
+   - filled `id` → `update_document` `{ documentType, id, data }`.
+4. The tools run dry-run → write → read-back → rollback themselves; read each
+   result's `ok`/`steps`. On a non-`ok` result, surface `error.code`
+   (`NOT_FOUND` for a stale id, `VALIDATION`, `READBACK_MISMATCH`, `AUTH`,
+   `TIMEOUT`) — don't blindly retry. A `NOT_FOUND` on a filled id means the doc
+   was deleted in Foundry; ask whether to re-create (which mints a new id).
+5. **Report** a table: note → created/updated/failed, new `_id`, error if any.
 
-## Field tips
+## Guardrails
 
-- Rich-text fields (e.g. JournalEntry pages, descriptions) take HTML. Convert
-  markdown to simple HTML; don't dump raw markdown into a prose field.
-- Scenes: prefer `create_scene`'s parameters (`name`, `width`, `height`,
-  `gridSize`, `background`, …) over hand-building scene data.
-- Quests aren't queryable via `find_documents`; you can't read them back, so you
-  can't de-dupe quests by name — confirm with the user before re-creating.
-- Deletes are destructive and not auto-allowed; always confirm before deleting.
-
-## Layout (edit me)
-
-Describe this repo's actual structure so future runs are unambiguous, e.g.:
-
-```
-npcs/*.md          → Actor       (front-matter: name, type, cr, system)
-locations/*.md     → Scene       (front-matter: name, width, height, grid, background)
-handouts/*.md      → JournalEntry
-items/*.md         → Item
-tables/*.md        → RollTable
-quests/*.md        → quest
-```
+- Writes hit the **live** world. For more than ~3 documents, show the plan
+  (files, op, names) and get a go-ahead before bulk-writing.
+- Confirm before any delete (deletes are terminal and not auto-allowed).
+- Content in `generated/` is Danish; extracted `journals/` are often English —
+  preserve each note's language; don't translate unless asked.
+- If `mcp__foundry__*` tools aren't present, the world isn't reachable: tell the
+  user to start Foundry (GM logged in, module enabled, matching relay URL/token).
+  Don't fall back to the LevelDB scripts on your own.
