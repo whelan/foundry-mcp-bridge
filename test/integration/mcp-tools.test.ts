@@ -11,6 +11,7 @@ import {
   runCreateScene,
   runUpdateDocument,
   runDuplicateDocument,
+  runGetWorldInfo,
 } from "../../packages/mcp-server/src/tools.js";
 
 /** Transport that drives the mock-foundry, with hooks to exercise the pipeline. */
@@ -123,6 +124,24 @@ describe("update_document pipeline", () => {
     });
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.error.code).toBe("NOT_FOUND");
+  });
+});
+
+describe("get_world_info", () => {
+  it("returns the world snapshot for import planning", async () => {
+    const mock = new MockFoundry({
+      worldInfo: {
+        system: { id: "dnd5e", version: "3.3.1" },
+        folders: [{ _id: "f1", name: "NPCs", type: "Actor" }],
+      },
+    });
+    const transport = new MockTransport(mock);
+    const out = await runGetWorldInfo(transport);
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["get-world-info"]);
+    const info = out.ok ? (out.data as any) : null;
+    expect(info.system.id).toBe("dnd5e");
+    expect(info.folders).toEqual([{ _id: "f1", name: "NPCs", type: "Actor" }]);
   });
 });
 

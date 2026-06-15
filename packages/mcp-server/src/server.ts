@@ -15,6 +15,7 @@ import {
   DeleteDocumentShape,
   DuplicateDocumentShape,
   FindDocumentsShape,
+  GetWorldInfoShape,
   CreateEmbeddedShape,
   UpdateEmbeddedShape,
   DeleteEmbeddedShape,
@@ -27,6 +28,7 @@ import {
   runDeleteDocument,
   runDuplicateDocument,
   runFindDocuments,
+  runGetWorldInfo,
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
@@ -102,6 +104,16 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
       inputSchema: FindDocumentsShape,
     },
     async (args) => toCallResult(await runFindDocuments(transport, args, opts)),
+  );
+
+  server.registerTool(
+    "get_world_info",
+    {
+      description:
+        "Read world metadata for safe importing: Foundry version, game system (id/version), world id/title, and the list of folders (id/name/type) for resolving folder placement. Read-only.",
+      inputSchema: GetWorldInfoShape,
+    },
+    async (args) => toCallResult(await runGetWorldInfo(transport, args, opts)),
   );
 
   server.registerTool(

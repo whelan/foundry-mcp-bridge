@@ -11,6 +11,7 @@ import type {
   ExecuteOptions,
   FindSelector,
   FoundryDocumentApi,
+  WorldInfo,
 } from "./protocol-executor.js";
 import { CommandExecutionError } from "./protocol-executor.js";
 
@@ -140,6 +141,27 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       return docs.filter((doc) =>
         entries.every(([path, value]) => getByPath(doc, path) === value),
       );
+    },
+
+    async getWorldInfo(): Promise<WorldInfo> {
+      const folders: any[] = (game as any).folders?.contents ?? [];
+      return {
+        foundryVersion: String((game as any).version ?? ""),
+        system: {
+          id: String(game.system?.id ?? ""),
+          version: String((game.system as any)?.version ?? ""),
+          title: (game.system as any)?.title,
+        },
+        world: {
+          id: String((game.world as any)?.id ?? ""),
+          title: String((game.world as any)?.title ?? ""),
+        },
+        folders: folders.map((f) => ({
+          _id: String(f.id),
+          name: String(f.name),
+          type: String(f.type),
+        })),
+      };
     },
 
     async createQuest(data, parentId, opts) {

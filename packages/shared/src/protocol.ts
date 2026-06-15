@@ -139,6 +139,11 @@ export const DeleteQuestCommand = z.object({
 });
 export type DeleteQuestCommand = z.infer<typeof DeleteQuestCommand>;
 
+export const GetWorldInfoCommand = z.object({
+  action: z.literal("getWorldInfo"),
+});
+export type GetWorldInfoCommand = z.infer<typeof GetWorldInfoCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -151,6 +156,7 @@ export const Command = z.discriminatedUnion("action", [
   CreateQuestCommand,
   UpdateQuestCommand,
   DeleteQuestCommand,
+  GetWorldInfoCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

@@ -167,6 +167,43 @@ export async function runFindDocuments(
   }
 }
 
+// --- get_world_info ---------------------------------------------------------
+
+export const GetWorldInfoShape = {};
+const GetWorldInfo = z.object(GetWorldInfoShape);
+export type GetWorldInfoArgs = z.infer<typeof GetWorldInfo>;
+
+export async function runGetWorldInfo(
+  transport: RelayTransport,
+  _args: GetWorldInfoArgs = {},
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps: string[] = ["get-world-info"];
+  const envelope = {
+    id: randomUUID(),
+    protocolVersion: "1" as const,
+    dryRun: false,
+    token: opts.token,
+    command: { action: "getWorldInfo" as const },
+  };
+  try {
+    const result = await transport.request(envelope, { timeoutMs: opts.timeoutMs });
+    if (!result.ok) {
+      return { ok: false, error: result.error, steps };
+    }
+    return { ok: true, data: result.data, steps };
+  } catch (e) {
+    return {
+      ok: false,
+      error: {
+        code: e instanceof Error && "code" in e ? (e as any).code : "INTERNAL",
+        message: (e as Error).message,
+      },
+      steps,
+    };
+  }
+}
+
 // --- create_embedded --------------------------------------------------------
 
 export const CreateEmbeddedShape = {

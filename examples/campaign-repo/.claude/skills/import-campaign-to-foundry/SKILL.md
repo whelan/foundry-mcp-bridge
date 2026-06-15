@@ -61,6 +61,11 @@ document's own description field as HTML.
 
 ## Workflow
 
+0. **Orient.** Call `get_world_info` once: it returns the game system (e.g.
+   `dnd5e`), Foundry version, and the folder list (`_id`/`name`/`type`). Use it to
+   resolve a note's target `folder` by name, and to know which `system.*` fields
+   are safe. If a needed folder doesn't exist, ask the user (folder creation isn't
+   exposed yet) or import to the root.
 1. **Scope** the files the user named (Glob, e.g. `generated/journals/*.md`).
 2. For each note, parse front-matter + body and pick the tool from the table.
 3. **Upsert:**

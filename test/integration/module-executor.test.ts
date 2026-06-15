@@ -115,4 +115,15 @@ describe("module executeCommand against mock-foundry", () => {
     const scene = mock.documents("Scene")[0] as { tokens: unknown[] };
     expect(scene.tokens.length).toBe(1);
   });
+
+  it("returns world info via getWorldInfo", async () => {
+    const { api, context } = setup();
+    const res = await executeCommand(
+      env({ command: { action: "getWorldInfo" } }),
+      api,
+      context,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect((res.data as any).system.id).toBe("dnd5e");
+  });
 });

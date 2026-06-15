@@ -48,6 +48,14 @@ function stubApi(): FoundryDocumentApi {
     async find() {
       return [];
     },
+    async getWorldInfo() {
+      return {
+        foundryVersion: "13.0.0",
+        system: { id: "dnd5e", version: "3.0.0" },
+        world: { id: "w", title: "World" },
+        folders: [],
+      };
+    },
     async createQuest(data) {
       return { ...data, _id: "quest" };
     },

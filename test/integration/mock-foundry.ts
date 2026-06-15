@@ -24,6 +24,7 @@ import {
   getByPath,
   applyUpdate,
 } from "@foundry-mcp-bridge/shared";
+import type { WorldInfo } from "../../packages/foundry-module/src/protocol-executor.js";
 
 // ---------------------------------------------------------------------------
 // Foundry key conventions
@@ -127,6 +128,8 @@ export interface MockFoundryOptions {
   isGM?: boolean;
   /** Expected auth token; when set, envelopes must match it. */
   token?: string;
+  /** Override the world snapshot returned by getWorldInfo. */
+  worldInfo?: Partial<WorldInfo>;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,10 +145,19 @@ export class MockFoundry {
   private readonly failures: QueuedFailure[] = [];
   /** Forien's Quest Log store — quests are NOT raw JournalEntries (§7.1). */
   readonly quests = new Map<string, Json>();
+  /** World snapshot returned by getWorldInfo (overridable for tests). */
+  readonly worldInfo: WorldInfo;
 
   constructor(options: MockFoundryOptions = {}) {
     this.isGM = options.isGM ?? true;
     this.token = options.token;
+    this.worldInfo = {
+      foundryVersion: "13.0.0",
+      system: { id: "dnd5e", version: "3.0.0" },
+      world: { id: "test-world", title: "Test World" },
+      folders: [],
+      ...options.worldInfo,
+    };
   }
 
   /** Queue a one-shot injected failure consumed by the next execute(). */
@@ -224,6 +236,8 @@ export class MockFoundry {
         return this.deleteEmbedded(id, command, dryRun);
       case "find":
         return this.find(id, command);
+      case "getWorldInfo":
+        return ok(id, this.worldInfo as unknown as Json);
       case "createQuest":
         return this.createQuest(id, command, dryRun);
       case "updateQuest":

@@ -4,6 +4,7 @@
   "permissions": {
     "allow": [
       "mcp__foundry",
+      "mcp__foundry__get_world_info",
       "mcp__foundry__find_documents",
       "mcp__foundry__create_document",
       "mcp__foundry__update_document",

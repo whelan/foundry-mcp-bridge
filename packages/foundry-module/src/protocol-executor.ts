@@ -30,6 +30,22 @@ export interface FindSelector {
   query?: Record<string, unknown>;
 }
 
+/** A folder in the world, used to resolve `folder` ids when importing. */
+export interface WorldFolder {
+  _id: string;
+  name: string;
+  /** The document type the folder organizes, e.g. "Actor", "JournalEntry". */
+  type: string;
+}
+
+/** Read-only snapshot of the world: versions, game system and folders. */
+export interface WorldInfo {
+  foundryVersion: string;
+  system: { id: string; version: string; title?: string };
+  world: { id: string; title: string };
+  folders: WorldFolder[];
+}
+
 /**
  * The narrow surface the executor needs from Foundry. The real implementation
  * (foundry-runtime.ts) calls `Actor.create`, `document.update`, embedded CRUD,
@@ -72,6 +88,7 @@ export interface FoundryDocumentApi {
     opts: ExecuteOptions,
   ): Promise<void>;
   find(type: DocumentType, selector: FindSelector): Promise<DocData | DocData[]>;
+  getWorldInfo(): Promise<WorldInfo>;
   createQuest(data: DocData | undefined, parentId: string | undefined, opts: ExecuteOptions): Promise<DocData>;
   updateQuest(id: string, data: DocData, opts: ExecuteOptions): Promise<DocData>;
   deleteQuest(id: string, opts: ExecuteOptions): Promise<void>;
@@ -158,6 +175,8 @@ async function dispatch(
       return { deleted: command.ids };
     case "find":
       return api.find(command.documentType, { id: command.id, query: command.query });
+    case "getWorldInfo":
+      return api.getWorldInfo();
     case "createQuest":
       return api.createQuest(command.data, command.parentId, opts);
     case "updateQuest":
