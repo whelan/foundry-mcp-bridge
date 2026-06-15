@@ -12,6 +12,13 @@ import {
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
+  runDeleteDocument,
+  runDuplicateDocument,
+  runFindDocuments,
+  runGetWorldInfo,
+  runUploadAsset,
+  runCreateEmbedded,
+  runCreateQuest,
 } from "../packages/mcp-server/dist/index.js";
 
 // --- tiny in-memory "Foundry" stub (stands in for the module) ---------------
@@ -67,6 +74,37 @@ function handle(env) {
     case "delete":
       store.delete(`${c.documentType}:${c.id}`);
       return ok({ _id: c.id, deleted: true });
+    case "duplicate": {
+      const src = store.get(`${c.documentType}:${c.id}`);
+      if (!src) return err("NOT_FOUND", `${c.documentType} ${c.id}`);
+      const _id = rid();
+      const copy = merge(structuredClone(src), c.overrides ? expand(c.overrides) : {});
+      copy._id = _id;
+      if (!env.dryRun) store.set(`${c.documentType}:${_id}`, copy);
+      return ok(copy);
+    }
+    case "createEmbedded": {
+      const k = `${c.parentType}:${c.parentId}`;
+      const parent = store.get(k);
+      if (!parent) return err("NOT_FOUND", `${c.parentType} ${c.parentId}`);
+      const created = c.data.map((d) => ({ ...d, _id: d._id || rid() }));
+      if (!env.dryRun) {
+        parent[c.embeddedName] = [...(parent[c.embeddedName] || []), ...created];
+        store.set(k, parent);
+      }
+      return ok(created);
+    }
+    case "getWorldInfo":
+      return ok({
+        foundryVersion: "selftest",
+        system: { id: "dnd5e", version: "0" },
+        world: { id: "w", title: "Self Test" },
+        folders: [],
+      });
+    case "uploadAsset":
+      return ok({ path: `${c.target.replace(/\/$/, "")}/${c.filename}` });
+    case "createQuest":
+      return ok({ ...(c.data || {}), _id: rid() });
     default:
       return err("UNSUPPORTED", c.action);
   }
@@ -100,6 +138,14 @@ show("create_scene ('Self Test Scene')", await runCreateScene(server, { name: "S
 const created = show("create_document (Actor to update)", await runCreateDocument(server, { documentType: "Actor", data: { name: "Updatable" } }, opts));
 const newId = created.ok ? created.data._id : "missing";
 show("update_document (rename)", await runUpdateDocument(server, { documentType: "Actor", id: newId, data: { name: "Updated" } }, opts));
+show("duplicate_document (clone)", await runDuplicateDocument(server, { documentType: "Actor", id: newId, overrides: { name: "Clone" } }, opts));
+show("find_documents (by id)", await runFindDocuments(server, { documentType: "Actor", id: newId }, opts));
+show("get_world_info", await runGetWorldInfo(server, {}, opts));
+show("upload_asset", await runUploadAsset(server, { source: "data", target: "worlds/selftest", filename: "probe.webp", contentBase64: "AAAA" }, opts));
+show("create_document (Scene parent)", await runCreateDocument(server, { documentType: "Scene", data: { _id: "scene-self", name: "Embedded Parent" }, keepId: true }, opts));
+show("create_embedded (Token)", await runCreateEmbedded(server, { parentType: "Scene", parentId: "scene-self", embeddedName: "Token", data: [{ name: "Goblin" }] }, opts));
+show("create_quest", await runCreateQuest(server, { data: { name: "Find the Amulet" } }, opts));
+show("delete_document", await runDeleteDocument(server, { documentType: "Actor", id: newId }, opts));
 
 ws.close();
 server.close();
