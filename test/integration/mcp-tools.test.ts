@@ -13,15 +13,26 @@ import {
   runDuplicateDocument,
   runGetWorldInfo,
   runUploadAsset,
+  runCreateEmbedded,
 } from "../../packages/mcp-server/src/tools.js";
 
 /** Transport that drives the mock-foundry, with hooks to exercise the pipeline. */
 class MockTransport implements RelayTransport {
   corruptReadBack = false;
+  /** One-shot: make the next read-back find return a NOT_FOUND error. */
+  failNextFind = false;
   constructor(private readonly mock: MockFoundry) {}
 
   async request(envelope: CommandEnvelope, opts?: RequestOptions) {
     const exec = (async () => {
+      if (this.failNextFind && envelope.command.action === "find") {
+        this.failNextFind = false;
+        return {
+          id: envelope.id,
+          ok: false as const,
+          error: { code: "NOT_FOUND" as const, message: "read-back failed" },
+        };
+      }
       const res = await this.mock.execute(envelope);
       if (
         this.corruptReadBack &&
@@ -154,6 +165,31 @@ describe("get_world_info", () => {
     const info = out.ok ? (out.data as any) : null;
     expect(info.system.id).toBe("dnd5e");
     expect(info.folders).toEqual([{ _id: "f1", name: "NPCs", type: "Actor" }]);
+  });
+});
+
+describe("create_embedded pipeline", () => {
+  it("rolls back the created embedded docs when parent read-back fails", async () => {
+    const { mock, transport } = setup();
+    await mock.execute({
+      id: "seed",
+      protocolVersion: "1",
+      dryRun: false,
+      command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" } },
+    });
+    transport.failNextFind = true;
+    const out = await runCreateEmbedded(transport, {
+      parentType: "Scene",
+      parentId: "s1",
+      embeddedName: "Token",
+      data: [{ _id: "t1", name: "Goblin" }],
+    });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe("READBACK_MISMATCH");
+    expect(out.steps).toContain("rollback");
+    // The created token was removed by the rollback.
+    const scene = mock.documents("Scene")[0] as { tokens: unknown[] };
+    expect(scene.tokens.length).toBe(0);
   });
 });
 

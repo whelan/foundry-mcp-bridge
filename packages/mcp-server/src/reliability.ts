@@ -321,6 +321,7 @@ export async function createEmbeddedReliable(
   if (!Array.isArray(phase.data)) {
     return fail(steps, { code: "INTERNAL", message: "createEmbedded did not return array" });
   }
+  const created = phase.data;
 
   // Read-back verify the parent exists/loads (embedded content isn't deep-verified).
   steps.push("read-back");
@@ -331,16 +332,36 @@ export async function createEmbeddedReliable(
     opts,
   );
   if (!readBack.ok) {
-    steps.push("rollback");
-    // Cannot easily rollback multiple creates; at least mark it in the error.
+    // The write result carries the new ids, so we can roll back the creates.
+    const createdIds = created
+      .map((d) => (d && typeof d === "object" ? (d as { _id?: unknown })._id : undefined))
+      .filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (createdIds.length > 0) {
+      steps.push("rollback");
+      await send(
+        transport,
+        {
+          action: "deleteEmbedded",
+          parentType: input.parentType,
+          parentId: input.parentId,
+          embeddedName: input.embeddedName,
+          ids: createdIds,
+        },
+        false,
+        opts,
+      );
+    }
     return fail(steps, {
       code: "READBACK_MISMATCH",
-      message: "embedded documents created but read-back of parent failed; check manually",
-      details: { parentId: input.parentId, created: phase.data },
+      message:
+        createdIds.length > 0
+          ? "embedded documents created but read-back of parent failed; rolled back"
+          : "embedded documents created but read-back of parent failed and no ids to roll back; check manually",
+      details: { parentId: input.parentId, created },
     });
   }
 
-  return { ok: true, data: phase.data, steps };
+  return { ok: true, data: created, steps };
 }
 
 export interface UpdateEmbeddedInput {
