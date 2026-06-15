@@ -67,10 +67,45 @@ function idOf(data: unknown): string | undefined {
 }
 
 /**
- * Shared backbone for every mutating tool: dry-run → write → read-back verify →
- * structured error / rollback. Callers supply the mutating command, the expected
- * read-back subset, the document id (known up-front for updates, derived from the
- * write for creates) and how to roll back. `steps` may already contain a
+ * The dry-run → write phase shared by every mutating tool: dry-runs the command
+ * (push "dry-run"), then writes it (push "write"), short-circuiting on either
+ * failure. Returns the write payload on success, or a ready-made failure outcome.
+ */
+type WritePhase = { ok: true; data: unknown } | { ok: false; outcome: ToolOutcome };
+
+async function dryRunThenWrite(
+  transport: RelayTransport,
+  command: Command,
+  opts: PipelineOptions,
+  steps: string[],
+): Promise<WritePhase> {
+  steps.push("dry-run");
+  const dry = await send(transport, command, true, opts);
+  if (!dry.ok) return { ok: false, outcome: fail(steps, dry.error) };
+
+  steps.push("write");
+  const written = await send(transport, command, false, opts);
+  if (!written.ok) return { ok: false, outcome: fail(steps, written.error) };
+
+  return { ok: true, data: written.data };
+}
+
+/** Terminal mutation (deletes): dry-run → write, no read-back or rollback. */
+async function runTerminal(
+  transport: RelayTransport,
+  command: Command,
+  opts: PipelineOptions,
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+  const phase = await dryRunThenWrite(transport, command, opts, steps);
+  return phase.ok ? { ok: true, data: phase.data, steps } : phase.outcome;
+}
+
+/**
+ * Shared backbone for read-back-verified mutations: dry-run → write → read-back
+ * verify → structured error / rollback. Callers supply the mutating command, the
+ * expected read-back subset, the document id (known up-front for updates, derived
+ * from the write for creates) and how to roll back. `steps` may already contain a
  * preceding step (e.g. update's "pre-read").
  */
 interface Mutation {
@@ -92,15 +127,11 @@ async function runMutation(
   opts: PipelineOptions,
   steps: string[],
 ): Promise<ToolOutcome> {
-  steps.push("dry-run");
-  const dry = await send(transport, m.mutate, true, opts);
-  if (!dry.ok) return fail(steps, dry.error);
+  const phase = await dryRunThenWrite(transport, m.mutate, opts, steps);
+  if (!phase.ok) return phase.outcome;
+  const written = phase.data;
 
-  steps.push("write");
-  const written = await send(transport, m.mutate, false, opts);
-  if (!written.ok) return fail(steps, written.error);
-
-  const id = m.knownId ?? idOf(written.data);
+  const id = m.knownId ?? idOf(written);
   if (!id) return fail(steps, { code: "INTERNAL", message: "write returned no _id" });
 
   steps.push("read-back");
@@ -120,7 +151,7 @@ async function runMutation(
     });
   }
 
-  return { ok: true, data: written.data, steps };
+  return { ok: true, data: written, steps };
 }
 
 export interface CreateDocumentInput {
@@ -208,33 +239,17 @@ export interface DeleteDocumentInput {
   id: string;
 }
 
-export async function deleteDocumentReliable(
+export function deleteDocumentReliable(
   transport: RelayTransport,
   input: DeleteDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  const steps: string[] = [];
-
-  // Delete operations skip read-back (no rollback, delete is terminal).
-  steps.push("dry-run");
-  const dry = await send(
+  // Delete is terminal: no read-back, no rollback.
+  return runTerminal(
     transport,
     { action: "delete", documentType: input.documentType, id: input.id },
-    true,
     opts,
   );
-  if (!dry.ok) return fail(steps, dry.error);
-
-  steps.push("write");
-  const written = await send(
-    transport,
-    { action: "delete", documentType: input.documentType, id: input.id },
-    false,
-    opts,
-  );
-  if (!written.ok) return fail(steps, written.error);
-
-  return { ok: true, data: written.data, steps };
 }
 
 export interface DuplicateDocumentInput {
@@ -282,9 +297,7 @@ export async function createEmbeddedReliable(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   const steps: string[] = [];
-
-  steps.push("dry-run");
-  const dry = await send(
+  const phase = await dryRunThenWrite(
     transport,
     {
       action: "createEmbedded",
@@ -293,31 +306,16 @@ export async function createEmbeddedReliable(
       embeddedName: input.embeddedName,
       data: input.data,
     },
-    true,
     opts,
+    steps,
   );
-  if (!dry.ok) return fail(steps, dry.error);
+  if (!phase.ok) return phase.outcome;
 
-  steps.push("write");
-  const written = await send(
-    transport,
-    {
-      action: "createEmbedded",
-      parentType: input.parentType,
-      parentId: input.parentId,
-      embeddedName: input.embeddedName,
-      data: input.data,
-    },
-    false,
-    opts,
-  );
-  if (!written.ok) return fail(steps, written.error);
-
-  if (!Array.isArray(written.data)) {
+  if (!Array.isArray(phase.data)) {
     return fail(steps, { code: "INTERNAL", message: "createEmbedded did not return array" });
   }
 
-  // Read-back verify
+  // Read-back verify the parent exists/loads (embedded content isn't deep-verified).
   steps.push("read-back");
   const readBack = await send(
     transport,
@@ -331,11 +329,11 @@ export async function createEmbeddedReliable(
     return fail(steps, {
       code: "READBACK_MISMATCH",
       message: "embedded documents created but read-back of parent failed; check manually",
-      details: { parentId: input.parentId, created: written.data },
+      details: { parentId: input.parentId, created: phase.data },
     });
   }
 
-  return { ok: true, data: written.data, steps };
+  return { ok: true, data: phase.data, steps };
 }
 
 export interface UpdateEmbeddedInput {
@@ -352,7 +350,7 @@ export async function updateEmbeddedReliable(
 ): Promise<ToolOutcome> {
   const steps: string[] = [];
 
-  // Pre-read snapshot
+  // Pre-read snapshot (rollback baseline).
   steps.push("pre-read");
   const before = await send(
     transport,
@@ -363,8 +361,7 @@ export async function updateEmbeddedReliable(
   if (!before.ok) return fail(steps, before.error);
   const snapshot = before.data as Json;
 
-  steps.push("dry-run");
-  const dry = await send(
+  const phase = await dryRunThenWrite(
     transport,
     {
       action: "updateEmbedded",
@@ -373,27 +370,12 @@ export async function updateEmbeddedReliable(
       embeddedName: input.embeddedName,
       data: input.data,
     },
-    true,
     opts,
+    steps,
   );
-  if (!dry.ok) return fail(steps, dry.error);
+  if (!phase.ok) return phase.outcome;
 
-  steps.push("write");
-  const written = await send(
-    transport,
-    {
-      action: "updateEmbedded",
-      parentType: input.parentType,
-      parentId: input.parentId,
-      embeddedName: input.embeddedName,
-      data: input.data,
-    },
-    false,
-    opts,
-  );
-  if (!written.ok) return fail(steps, written.error);
-
-  if (!Array.isArray(written.data)) {
+  if (!Array.isArray(phase.data)) {
     return fail(steps, { code: "INTERNAL", message: "updateEmbedded did not return array" });
   }
 
@@ -423,11 +405,11 @@ export async function updateEmbeddedReliable(
     return fail(steps, {
       code: "READBACK_MISMATCH",
       message: "embedded documents updated but read-back of parent failed; rolled back",
-      details: { parentId: input.parentId, updated: written.data },
+      details: { parentId: input.parentId, updated: phase.data },
     });
   }
 
-  return { ok: true, data: written.data, steps };
+  return { ok: true, data: phase.data, steps };
 }
 
 export interface DeleteEmbeddedInput {
@@ -437,15 +419,13 @@ export interface DeleteEmbeddedInput {
   ids: string[];
 }
 
-export async function deleteEmbeddedReliable(
+export function deleteEmbeddedReliable(
   transport: RelayTransport,
   input: DeleteEmbeddedInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  const steps: string[] = [];
-
-  steps.push("dry-run");
-  const dry = await send(
+  // Terminal like delete: dry-run → write, no read-back/rollback.
+  return runTerminal(
     transport,
     {
       action: "deleteEmbedded",
@@ -454,27 +434,8 @@ export async function deleteEmbeddedReliable(
       embeddedName: input.embeddedName,
       ids: input.ids,
     },
-    true,
     opts,
   );
-  if (!dry.ok) return fail(steps, dry.error);
-
-  steps.push("write");
-  const written = await send(
-    transport,
-    {
-      action: "deleteEmbedded",
-      parentType: input.parentType,
-      parentId: input.parentId,
-      embeddedName: input.embeddedName,
-      ids: input.ids,
-    },
-    false,
-    opts,
-  );
-  if (!written.ok) return fail(steps, written.error);
-
-  return { ok: true, data: written.data, steps };
 }
 
 export interface CreateQuestInput {
@@ -490,42 +451,22 @@ export async function createQuestReliable(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   const steps: string[] = [];
-
-  steps.push("dry-run");
-  const dry = await send(
+  const phase = await dryRunThenWrite(
     transport,
-    {
-      action: "createQuest",
-      data: input.data,
-      parentId: input.parentId,
-    },
-    true,
+    { action: "createQuest", data: input.data, parentId: input.parentId },
     opts,
+    steps,
   );
-  if (!dry.ok) return fail(steps, dry.error);
+  if (!phase.ok) return phase.outcome;
 
-  steps.push("write");
-  const written = await send(
-    transport,
-    {
-      action: "createQuest",
-      data: input.data,
-      parentId: input.parentId,
-    },
-    false,
-    opts,
-  );
-  if (!written.ok) return fail(steps, written.error);
-
-  const questId = idOf(written.data);
-  if (!questId) {
+  if (!idOf(phase.data)) {
     return fail(steps, { code: "INTERNAL", message: "createQuest returned no _id" });
   }
 
-  // Quests are not queryable via standard find, so skip read-back.
+  // Quests are not queryable via standard find, so the read-back is a no-op.
   steps.push("read-back");
 
-  return { ok: true, data: written.data, steps };
+  return { ok: true, data: phase.data, steps };
 }
 
 export interface UpdateQuestInput {
@@ -539,82 +480,38 @@ export async function updateQuestReliable(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   const steps: string[] = [];
-
-  steps.push("dry-run");
-  const dry = await send(
+  const phase = await dryRunThenWrite(
     transport,
-    {
-      action: "updateQuest",
-      id: input.id,
-      data: input.data,
-    },
-    true,
+    { action: "updateQuest", id: input.id, data: input.data },
     opts,
+    steps,
   );
-  if (!dry.ok) return fail(steps, dry.error);
+  if (!phase.ok) return phase.outcome;
 
-  steps.push("write");
-  const written = await send(
-    transport,
-    {
-      action: "updateQuest",
-      id: input.id,
-      data: input.data,
-    },
-    false,
-    opts,
-  );
-  if (!written.ok) return fail(steps, written.error);
-
-  // Quests are not queryable via standard find, so skip read-back verification.
-  // Instead, check that the write result contains the expected fields.
+  // Quests aren't queryable via find, so verify the write result itself rather
+  // than re-reading.
   steps.push("read-back");
   const expanded = expandObject(input.data);
-  if (!isSubset(written.data, expanded)) {
+  if (!isSubset(phase.data, expanded)) {
     return fail(steps, {
       code: "READBACK_MISMATCH",
       message: "quest update did not match the requested data",
-      details: { id: input.id, expected: expanded, actual: written.data },
+      details: { id: input.id, expected: expanded, actual: phase.data },
     });
   }
 
-  return { ok: true, data: written.data, steps };
+  return { ok: true, data: phase.data, steps };
 }
 
 export interface DeleteQuestInput {
   id: string;
 }
 
-export async function deleteQuestReliable(
+export function deleteQuestReliable(
   transport: RelayTransport,
   input: DeleteQuestInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  const steps: string[] = [];
-
-  steps.push("dry-run");
-  const dry = await send(
-    transport,
-    {
-      action: "deleteQuest",
-      id: input.id,
-    },
-    true,
-    opts,
-  );
-  if (!dry.ok) return fail(steps, dry.error);
-
-  steps.push("write");
-  const written = await send(
-    transport,
-    {
-      action: "deleteQuest",
-      id: input.id,
-    },
-    false,
-    opts,
-  );
-  if (!written.ok) return fail(steps, written.error);
-
-  return { ok: true, data: written.data, steps };
+  // Terminal: dry-run → write, no read-back/rollback.
+  return runTerminal(transport, { action: "deleteQuest", id: input.id }, opts);
 }
