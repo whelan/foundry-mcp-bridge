@@ -270,22 +270,31 @@ export class MockFoundry {
     return parent[field] as Json[];
   }
 
+  /** Resolve a parent's embedded collection, or a NOT_FOUND result. */
+  private resolveEmbedded(
+    id: string,
+    cmd: { parentType: DocumentType; parentId: string; embeddedName: string },
+  ): { arr: Json[] } | { error: CommandResult } {
+    const parent = this.get(cmd.parentType, cmd.parentId);
+    if (!parent) {
+      return { error: err(id, "NOT_FOUND", `${cmd.parentType} ${cmd.parentId} not found`) };
+    }
+    return { arr: this.embeddedArray(parent, cmd.embeddedName) };
+  }
+
   private createEmbedded(
     id: string,
     cmd: Extract<Command, { action: "createEmbedded" }>,
     dryRun: boolean,
   ): CommandResult {
-    const parent = this.get(cmd.parentType, cmd.parentId);
-    if (!parent) {
-      return err(id, "NOT_FOUND", `${cmd.parentType} ${cmd.parentId} not found`);
-    }
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
     const created = cmd.data.map((entry) => ({
       ...entry,
       _id: typeof entry._id === "string" && entry._id ? entry._id : randomID(),
     }));
     if (dryRun) return ok(id, created.map((c) => ({ ...c, _dryRun: true })));
-    const arr = this.embeddedArray(parent, cmd.embeddedName);
-    arr.push(...created);
+    resolved.arr.push(...created);
     return ok(id, created);
   }
 
@@ -294,11 +303,9 @@ export class MockFoundry {
     cmd: Extract<Command, { action: "updateEmbedded" }>,
     dryRun: boolean,
   ): CommandResult {
-    const parent = this.get(cmd.parentType, cmd.parentId);
-    if (!parent) {
-      return err(id, "NOT_FOUND", `${cmd.parentType} ${cmd.parentId} not found`);
-    }
-    const arr = this.embeddedArray(parent, cmd.embeddedName);
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
+    const arr = resolved.arr;
     const updated: Json[] = [];
     for (const diff of cmd.data) {
       const idx = arr.findIndex((e) => e._id === diff._id);
@@ -317,11 +324,9 @@ export class MockFoundry {
     cmd: Extract<Command, { action: "deleteEmbedded" }>,
     dryRun: boolean,
   ): CommandResult {
-    const parent = this.get(cmd.parentType, cmd.parentId);
-    if (!parent) {
-      return err(id, "NOT_FOUND", `${cmd.parentType} ${cmd.parentId} not found`);
-    }
-    const arr = this.embeddedArray(parent, cmd.embeddedName);
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
+    const arr = resolved.arr;
     const deleted: string[] = [];
     for (const embeddedId of cmd.ids) {
       const idx = arr.findIndex((e) => e._id === embeddedId);
