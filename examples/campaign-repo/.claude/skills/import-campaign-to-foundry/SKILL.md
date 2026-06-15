@@ -18,6 +18,10 @@ Each note's front-matter `id` decides the operation:
 - **`id: ""` (empty)** → `create_document`. On success, **write the returned `_id`
   back into the note's front-matter** so the next run updates instead of duplicating.
 - **`id: "<16-char id>"` (filled)** → `update_document` with that `documentType`+`id`.
+  If that id returns `NOT_FOUND` (the doc isn't in the world — e.g. re-importing
+  extracted `journals/` into a fresh world) and you want to keep the original id so
+  cross-references resolve, `create_document` with `data._id` set and
+  `keepId: true`.
 
 This is the plan §7.2 upsert pattern. The id round-trip is what keeps imports
 idempotent — never skip writing the new id back.

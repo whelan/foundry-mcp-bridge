@@ -59,6 +59,17 @@ describe("create_document pipeline", () => {
     expect(mock.documents("Actor").length).toBe(1);
   });
 
+  it("preserves an explicit _id when keepId is set", async () => {
+    const { mock, transport } = setup();
+    const out = await runCreateDocument(transport, {
+      documentType: "JournalEntry",
+      data: { _id: "UbHNCnZu4BEtnAmI", name: "Spare Bedroom" },
+      keepId: true,
+    });
+    expect(out.ok).toBe(true);
+    expect(mock.store.has("!journal!UbHNCnZu4BEtnAmI")).toBe(true);
+  });
+
   it("rolls back when read-back does not match", async () => {
     const { mock, transport } = setup();
     transport.corruptReadBack = true;

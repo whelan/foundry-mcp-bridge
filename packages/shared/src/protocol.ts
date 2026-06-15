@@ -49,6 +49,12 @@ export const CreateCommand = z.object({
   action: z.literal("create"),
   documentType: DocumentType,
   data: DocumentData,
+  /**
+   * Preserve an explicit `data._id` instead of letting Foundry mint a new one
+   * (Foundry's `{ keepId: true }`). Used to re-import extracted documents under
+   * their original ids so cross-references stay intact.
+   */
+  keepId: z.boolean().optional(),
 });
 export type CreateCommand = z.infer<typeof CreateCommand>;
 

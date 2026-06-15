@@ -35,6 +35,7 @@ const documentData = z.record(z.string(), z.unknown());
 export const CreateDocumentShape = {
   documentType: DocumentType,
   data: documentData,
+  keepId: z.boolean().optional(),
 };
 const CreateDocument = z.object(CreateDocumentShape);
 export type CreateDocumentArgs = z.infer<typeof CreateDocument>;

@@ -159,6 +159,8 @@ export interface CreateDocumentInput {
   data: Json;
   /** Optional: subset of data to verify on read-back (e.g. for scenes with stable fields). */
   verifyData?: Json;
+  /** Preserve an explicit data._id (Foundry keepId) instead of minting a new one. */
+  keepId?: boolean;
 }
 
 export function createDocumentReliable(
@@ -170,7 +172,12 @@ export function createDocumentReliable(
     transport,
     {
       documentType: input.documentType,
-      mutate: { action: "create", documentType: input.documentType, data: input.data },
+      mutate: {
+        action: "create",
+        documentType: input.documentType,
+        data: input.data,
+        keepId: input.keepId,
+      },
       expected: input.verifyData ?? input.data,
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "created document did not match the requested data; rolled back",

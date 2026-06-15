@@ -85,7 +85,7 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         // Construct to trigger validation without persisting.
         return new cls(data).toObject();
       }
-      const doc = await cls.create(data);
+      const doc = await cls.create(data, opts.keepId ? { keepId: true } : {});
       return doc.toObject();
     },
 

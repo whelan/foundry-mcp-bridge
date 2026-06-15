@@ -39,7 +39,10 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
 
   return {
     async create(type, data, opts) {
-      return (await run({ action: "create", documentType: type, data }, opts)) as DocData;
+      return (await run(
+        { action: "create", documentType: type, data, keepId: opts.keepId },
+        opts,
+      )) as DocData;
     },
     async update(type, id, diff, opts) {
       return (await run(

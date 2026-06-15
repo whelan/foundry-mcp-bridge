@@ -24,6 +24,11 @@ export interface ExecuteOptions {
   dryRun: boolean;
 }
 
+/** Create-only options: preserve an explicit `data._id` (Foundry keepId). */
+export interface CreateOptions extends ExecuteOptions {
+  keepId?: boolean;
+}
+
 /** Selector for a find operation. */
 export interface FindSelector {
   id?: string;
@@ -61,7 +66,7 @@ export interface UploadAssetParams {
  * etc.; tests back it with the mock-foundry.
  */
 export interface FoundryDocumentApi {
-  create(type: DocumentType, data: DocData, opts: ExecuteOptions): Promise<DocData>;
+  create(type: DocumentType, data: DocData, opts: CreateOptions): Promise<DocData>;
   update(
     type: DocumentType,
     id: string,
@@ -150,7 +155,7 @@ async function dispatch(
 ): Promise<unknown> {
   switch (command.action) {
     case "create":
-      return api.create(command.documentType, command.data, opts);
+      return api.create(command.documentType, command.data, { ...opts, keepId: command.keepId });
     case "update":
       return api.update(command.documentType, command.id, command.data, opts);
     case "delete":
