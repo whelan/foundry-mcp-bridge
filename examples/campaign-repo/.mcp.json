@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "foundry": {
+      "command": "node",
+      "args": ["/ABSOLUTE/PATH/TO/foundry-mcp-bridge/scripts/start-mcp-server.mjs"],
+      "env": {
+        "RELAY_URL": "ws://localhost:8787",
+        "RELAY_TOKEN": "your-shared-secret"
+      }
+    }
+  }
+}
