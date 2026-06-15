@@ -42,9 +42,22 @@ folder: null           # null, or a real Foundry folder id (pass through on the 
 tags: [..]             # repo-side metadata; do NOT send as Foundry data
 ```
 
-Map to tool input: `name` → `data.name`; `folder` (when a real id) → `data.folder`;
-the markdown **body** → the document's prose field as **HTML** (convert markdown;
-don't dump raw markdown). `tags` stay in the repo, not in Foundry.
+Map to tool input: `name` → `data.name`; `folder` (when a real id) → `data.folder`.
+`tags` stay in the repo, not in Foundry.
+
+### Journal content lives in pages (v10+)
+
+A `JournalEntry` is a container; its prose is **not** a top-level field. Create the
+entry first, then add its content as embedded `JournalEntryPage` documents:
+
+1. `create_document` (`"JournalEntry"`) with just `name` (+ `folder`) → get the entry `_id`.
+2. `create_embedded` with `parentType: "JournalEntry"`, `parentId: <entry id>`,
+   `embeddedName: "JournalEntryPage"`, `data: [{ name, type: "text",
+   text: { content: "<p>…</p>" } }]`. Convert the markdown **body** to HTML for
+   `text.content`; don't dump raw markdown.
+
+For other documents (Actor, Item, …) the markdown body still goes into that
+document's own description field as HTML.
 
 ## Workflow
 

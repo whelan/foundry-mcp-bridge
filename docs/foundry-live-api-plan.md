@@ -112,7 +112,9 @@ explicitly out of scope to avoid producing quests the module cannot manage.
 - Updates are **partial merges** (Foundry `document.update(diff)` semantics).
 - Nested keys use Foundry dot-notation (`"system.attributes.hp.value"`).
 - Embedded collections are modified via embedded CRUD, never by replacing the
-  whole parent.
+  whole parent. This includes **`JournalEntry` content**: in v10+ a journal's prose
+  lives in embedded `JournalEntryPage` documents (`embeddedName: "JournalEntryPage"`),
+  so create the entry first, then add pages via `create_embedded`.
 - Every write is followed by a read-back of the affected paths (§11).
 
 ## 8. Configuration

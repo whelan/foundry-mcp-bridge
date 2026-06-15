@@ -146,6 +146,44 @@ describe("embedded documents", () => {
     expect(del.ok).toBe(true);
     expect(scene.tokens.length).toBe(0);
   });
+
+  it("creates and updates JournalEntryPage documents on a journal (v10+ pages)", async () => {
+    const f = new MockFoundry();
+    await f.execute(
+      envelope({ action: "create", documentType: "JournalEntry", data: { _id: "j1", name: "Lore" } }),
+    );
+
+    // Pages map to the `pages` collection, not `journalentrypage`.
+    expect(embeddedKey("JournalEntry", "JournalEntryPage", "j1", "p1")).toBe(
+      "!journal.pages!j1.p1",
+    );
+
+    const created = await f.execute(
+      envelope({
+        action: "createEmbedded",
+        parentType: "JournalEntry",
+        parentId: "j1",
+        embeddedName: "JournalEntryPage",
+        data: [{ _id: "p1", name: "Intro", type: "text", text: { content: "<p>Hello</p>" } }],
+      }),
+    );
+    expect(created.ok).toBe(true);
+    const journal = f.store.get(documentKey("JournalEntry", "j1")) as { pages: unknown[] };
+    expect(journal.pages.length).toBe(1);
+
+    await f.execute(
+      envelope({
+        action: "updateEmbedded",
+        parentType: "JournalEntry",
+        parentId: "j1",
+        embeddedName: "JournalEntryPage",
+        data: [{ _id: "p1", text: { content: "<p>Updated</p>" } }],
+      }),
+    );
+    expect((journal.pages[0] as { text: { content: string } }).text.content).toBe(
+      "<p>Updated</p>",
+    );
+  });
 });
 
 describe("dry-run", () => {

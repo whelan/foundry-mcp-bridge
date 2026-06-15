@@ -42,6 +42,8 @@ const EMBEDDED_FIELD: Record<string, string> = {
   MeasuredTemplate: "templates",
   Tile: "tiles",
   Region: "regions",
+  // v10+ JournalEntry content lives in embedded JournalEntryPage documents.
+  JournalEntryPage: "pages",
 };
 
 /** `!actors!{id}` for a top-level document. */
