@@ -61,6 +61,20 @@ describe("create / find / update / delete", () => {
     }
   });
 
+  it("creates a Folder (for organizing imports) under the folders key", async () => {
+    const f = new MockFoundry();
+    const res = await f.execute(
+      envelope({
+        action: "create",
+        documentType: "Folder",
+        data: { _id: "fld1", name: "NPCs", type: "Actor" },
+      }),
+    );
+    expect(res.ok).toBe(true);
+    expect(documentKey("Folder", "fld1")).toBe("!folders!fld1");
+    expect(f.store.has(documentKey("Folder", "fld1"))).toBe(true);
+  });
+
   it("finds by id and by query", async () => {
     const f = new MockFoundry();
     await f.execute(

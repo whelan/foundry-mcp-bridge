@@ -21,6 +21,7 @@ export const DocumentType = z.enum([
   "Item",
   "Macro",
   "Playlist",
+  "Folder",
 ]);
 export type DocumentType = z.infer<typeof DocumentType>;
 
@@ -37,6 +38,8 @@ export const COLLECTIONS: Record<DocumentType, string> = {
   Item: "items",
   Macro: "macros",
   Playlist: "playlists",
+  // Folders organize other documents; `data.type` names which type they hold.
+  Folder: "folders",
 };
 
 /** Arbitrary Foundry document data — validated structurally, not field-by-field. */
