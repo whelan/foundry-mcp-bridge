@@ -79,5 +79,14 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
         { dryRun: false },
       )) as DocData | DocData[];
     },
+    async createQuest(data, parentId, opts) {
+      return (await run({ action: "createQuest", data, parentId }, opts)) as DocData;
+    },
+    async updateQuest(id, data, opts) {
+      return (await run({ action: "updateQuest", id, data }, opts)) as DocData;
+    },
+    async deleteQuest(id, opts) {
+      await run({ action: "deleteQuest", id }, opts);
+    },
   } satisfies FoundryDocumentApi;
 }

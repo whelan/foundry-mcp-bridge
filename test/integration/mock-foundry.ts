@@ -366,7 +366,7 @@ export class MockFoundry {
     dryRun: boolean,
   ): CommandResult {
     const questId = randomID();
-    const questData = {
+    const questData: Json = {
       _id: questId,
       name: (cmd.data?.name as string) || "New Quest",
       status: (cmd.data?.status as string) || "inactive",

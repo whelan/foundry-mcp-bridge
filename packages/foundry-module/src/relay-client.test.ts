@@ -45,6 +45,13 @@ function stubApi(): FoundryDocumentApi {
     async find() {
       return [];
     },
+    async createQuest(data) {
+      return { ...data, _id: "quest" };
+    },
+    async updateQuest(id, data) {
+      return { ...data, _id: id };
+    },
+    async deleteQuest() {},
   };
 }
 
