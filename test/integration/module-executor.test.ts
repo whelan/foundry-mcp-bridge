@@ -97,7 +97,7 @@ describe("module executeCommand against mock-foundry", () => {
 
   it("round-trips embedded token CRUD", async () => {
     const { mock, api, context } = setup();
-    await mock.execute(env({ command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" } } }));
+    await mock.execute(env({ command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true } }));
     const created = await executeCommand(
       env({
         command: {

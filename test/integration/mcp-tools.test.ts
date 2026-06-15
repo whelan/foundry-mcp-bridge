@@ -14,26 +14,34 @@ import {
   runGetWorldInfo,
   runUploadAsset,
   runCreateEmbedded,
+  runUpdateEmbedded,
+  runDeleteEmbedded,
 } from "../../packages/mcp-server/src/tools.js";
 
 /** Transport that drives the mock-foundry, with hooks to exercise the pipeline. */
 class MockTransport implements RelayTransport {
   corruptReadBack = false;
-  /** One-shot: make the next read-back find return a NOT_FOUND error. */
-  failNextFind = false;
+  /** Fail the Nth `find` (1-indexed) with NOT_FOUND; null disables. Lets tests
+   *  target the read-back find specifically (e.g. after an update's pre-read). */
+  failFindAtCall: number | null = null;
+  private findCalls = 0;
   constructor(private readonly mock: MockFoundry) {}
 
   async request(envelope: CommandEnvelope, opts?: RequestOptions) {
     const exec = (async () => {
-      if (this.failNextFind && envelope.command.action === "find") {
-        this.failNextFind = false;
-        return {
-          id: envelope.id,
-          ok: false as const,
-          error: { code: "NOT_FOUND" as const, message: "read-back failed" },
-        };
+      if (envelope.command.action === "find") {
+        this.findCalls += 1;
+        if (this.findCalls === this.failFindAtCall) {
+          return {
+            id: envelope.id,
+            ok: false as const,
+            error: { code: "NOT_FOUND" as const, message: "read-back failed" },
+          };
+        }
       }
-      const res = await this.mock.execute(envelope);
+      // Clone like the real WebSocket transport serializes results, so callers
+      // never alias the mock's live store (e.g. an update's pre-read snapshot).
+      const res = structuredClone(await this.mock.execute(envelope));
       if (
         this.corruptReadBack &&
         envelope.command.action === "find" &&
@@ -126,7 +134,7 @@ describe("update_document pipeline", () => {
       id: "seed",
       protocolVersion: "1",
       dryRun: false,
-      command: { action: "create", documentType: "Actor", data: { _id: "a1", name: "Bob", system: { hp: { value: 1 } } } },
+      command: { action: "create", documentType: "Actor", data: { _id: "a1", name: "Bob", system: { hp: { value: 1 } } }, keepId: true },
     });
     const out = await runUpdateDocument(transport, {
       documentType: "Actor",
@@ -175,9 +183,9 @@ describe("create_embedded pipeline", () => {
       id: "seed",
       protocolVersion: "1",
       dryRun: false,
-      command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" } },
+      command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true },
     });
-    transport.failNextFind = true;
+    transport.failFindAtCall = 1; // createEmbedded's only find is the read-back
     const out = await runCreateEmbedded(transport, {
       parentType: "Scene",
       parentId: "s1",
@@ -188,6 +196,96 @@ describe("create_embedded pipeline", () => {
     if (!out.ok) expect(out.error.code).toBe("READBACK_MISMATCH");
     expect(out.steps).toContain("rollback");
     // The created token was removed by the rollback.
+    const scene = mock.documents("Scene")[0] as { tokens: unknown[] };
+    expect(scene.tokens.length).toBe(0);
+  });
+});
+
+describe("update_embedded pipeline", () => {
+  async function seedSceneWithToken(mock: MockFoundry) {
+    await mock.execute({
+      id: "seed",
+      protocolVersion: "1",
+      dryRun: false,
+      command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true },
+    });
+    await mock.execute({
+      id: "seed2",
+      protocolVersion: "1",
+      dryRun: false,
+      command: {
+        action: "createEmbedded",
+        parentType: "Scene",
+        parentId: "s1",
+        embeddedName: "Token",
+        data: [{ _id: "t1", name: "Goblin", x: 0 }],
+      },
+    });
+  }
+
+  it("updates an embedded doc and verifies via the parent read-back", async () => {
+    const { mock, transport } = setup();
+    await seedSceneWithToken(mock);
+    const out = await runUpdateEmbedded(transport, {
+      parentType: "Scene",
+      parentId: "s1",
+      embeddedName: "Token",
+      data: [{ _id: "t1", x: 250 }],
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["pre-read", "dry-run", "write", "read-back"]);
+    const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
+    expect(scene.tokens[0]!.x).toBe(250);
+  });
+
+  it("restores the prior embedded state when parent read-back fails", async () => {
+    const { mock, transport } = setup();
+    await seedSceneWithToken(mock);
+    transport.failFindAtCall = 2; // 1 = pre-read (must succeed), 2 = read-back (fails)
+    const out = await runUpdateEmbedded(transport, {
+      parentType: "Scene",
+      parentId: "s1",
+      embeddedName: "Token",
+      data: [{ _id: "t1", x: 999 }],
+    });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe("READBACK_MISMATCH");
+    expect(out.steps).toContain("rollback");
+    // Rollback restored the token's pre-update x (0), not the failed 999.
+    const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
+    expect(scene.tokens[0]!.x).toBe(0);
+  });
+});
+
+describe("delete_embedded pipeline", () => {
+  it("deletes embedded docs as a terminal write (no read-back)", async () => {
+    const { mock, transport } = setup();
+    await mock.execute({
+      id: "seed",
+      protocolVersion: "1",
+      dryRun: false,
+      command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true },
+    });
+    await mock.execute({
+      id: "seed2",
+      protocolVersion: "1",
+      dryRun: false,
+      command: {
+        action: "createEmbedded",
+        parentType: "Scene",
+        parentId: "s1",
+        embeddedName: "Token",
+        data: [{ _id: "t1", name: "Goblin" }],
+      },
+    });
+    const out = await runDeleteEmbedded(transport, {
+      parentType: "Scene",
+      parentId: "s1",
+      embeddedName: "Token",
+      ids: ["t1"],
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write"]);
     const scene = mock.documents("Scene")[0] as { tokens: unknown[] };
     expect(scene.tokens.length).toBe(0);
   });
@@ -219,6 +317,7 @@ describe("duplicate_document pipeline", () => {
         action: "create",
         documentType: "Actor",
         data: { _id: "g1", name: "Goblin", system: { hp: { value: 7 } } },
+        keepId: true,
       },
     });
   }

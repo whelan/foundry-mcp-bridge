@@ -226,7 +226,7 @@ export class MockFoundry {
   private dispatch(id: string, command: Command, dryRun: boolean): CommandResult {
     switch (command.action) {
       case "create":
-        return this.create(id, command.documentType, command.data, dryRun);
+        return this.create(id, command.documentType, command.data, command.keepId ?? false, dryRun);
       case "update":
         return this.update(id, command.documentType, command.id, command.data, dryRun);
       case "delete":
@@ -261,9 +261,12 @@ export class MockFoundry {
     id: string,
     type: DocumentType,
     data: Json,
+    keepId: boolean,
     dryRun: boolean,
   ): CommandResult {
-    const _id = typeof data._id === "string" && data._id ? data._id : randomID();
+    // Mirror Foundry: an explicit data._id is honored only with keepId; otherwise
+    // a fresh id is minted (so tests can't rely on ids the live system wouldn't keep).
+    const _id = keepId && typeof data._id === "string" && data._id ? data._id : randomID();
     const doc: Json = { ...data, _id };
     if (dryRun) return ok(id, { ...doc, _id: null, _dryRun: true });
     this.store.set(documentKey(type, _id), doc);

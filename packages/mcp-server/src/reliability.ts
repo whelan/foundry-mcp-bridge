@@ -433,28 +433,56 @@ export async function updateEmbeddedReliable(
     opts,
   );
   if (!readBack.ok) {
-    steps.push("rollback");
-    // Restore to previous state
-    await send(
-      transport,
-      {
-        action: "updateEmbedded",
-        parentType: input.parentType,
-        parentId: input.parentId,
-        embeddedName: input.embeddedName,
-        data: (snapshot as any)[input.embeddedName] || [],
-      },
-      false,
-      opts,
-    );
+    // Restore the prior versions of the updated docs. The server doesn't know
+    // Foundry's field name for an embeddedName (e.g. "Token" -> "tokens"), so
+    // find the pre-update docs by _id across the parent snapshot's array fields.
+    const updatedIds = new Set(input.data.map((d) => d._id));
+    const prior = embeddedById(snapshot, updatedIds);
+    if (prior.length > 0) {
+      steps.push("rollback");
+      await send(
+        transport,
+        {
+          action: "updateEmbedded",
+          parentType: input.parentType,
+          parentId: input.parentId,
+          embeddedName: input.embeddedName,
+          data: prior as Array<Json & { _id: string }>,
+        },
+        false,
+        opts,
+      );
+    }
     return fail(steps, {
       code: "READBACK_MISMATCH",
-      message: "embedded documents updated but read-back of parent failed; rolled back",
+      message:
+        prior.length > 0
+          ? "embedded documents updated but read-back of parent failed; rolled back"
+          : "embedded documents updated but read-back of parent failed and no prior state to restore; check manually",
       details: { parentId: input.parentId, updated: phase.data },
     });
   }
 
   return { ok: true, data: phase.data, steps };
+}
+
+/** Collect embedded docs (by `_id`) from a parent snapshot's array-valued fields. */
+function embeddedById(snapshot: Json, ids: Set<string>): Array<Json & { _id: string }> {
+  const found: Array<Json & { _id: string }> = [];
+  for (const value of Object.values(snapshot)) {
+    if (!Array.isArray(value)) continue;
+    for (const item of value) {
+      if (
+        item &&
+        typeof item === "object" &&
+        typeof (item as { _id?: unknown })._id === "string" &&
+        ids.has((item as { _id: string })._id)
+      ) {
+        found.push(item as Json & { _id: string });
+      }
+    }
+  }
+  return found;
 }
 
 export interface DeleteEmbeddedInput {
