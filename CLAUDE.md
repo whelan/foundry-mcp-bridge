@@ -34,7 +34,14 @@ pass while `tsc` is broken. Always run `npm run typecheck` before considering wo
 CI type-checks both the source projects and `tsconfig.test.json` (the test files import
 the module's `FoundryDocumentApi`, so adding a method to that interface breaks the test
 doubles until they're updated). For a change that touches the live path, also run
-`npm run selftest`.
+`npm run selftest`. The **`verify-bridge`** skill encodes this gate.
+
+## Skills
+
+- **`add-foundry-command`** — adding a new MCP tool / protocol command (or document type)
+  end-to-end. Walks the lockstep across all layers so typecheck and tests stay green.
+- **`verify-bridge`** — the verification gate (build → typecheck → test → selftest) in the
+  right order, including why `npm test` alone is insufficient.
 
 ## Architecture
 
@@ -102,6 +109,9 @@ MCP client → mcp-server (tools → reliability pipeline → RelayTransport)
 
 ## Design docs
 
-`docs/foundry-live-api-plan.md` is the spec — tools (§7), Forien's Quest Log (§7.1), update
-semantics (§7.2), reliability (§11). `docs/foundry-mcp-bridge-project-plan.md` covers the
-monorepo layout, config rules, and mock-first strategy.
+`docs/command-lifecycle.md` is the contributor spec — the exact path a command takes, the
+**lockstep checklist** for adding one, the per-category reliability-pipeline contract, and
+the error taxonomy. Read it before adding or changing a command. `docs/foundry-live-api-plan.md`
+is the design spec — tools (§7), Forien's Quest Log (§7.1), update semantics (§7.2),
+reliability (§11). `docs/foundry-mcp-bridge-project-plan.md` covers the monorepo layout,
+config rules, and mock-first strategy.
