@@ -12,7 +12,7 @@ import {
   type CommandResult,
   type DocumentType,
   type ErrorCode,
-  PROTOCOL_VERSION,
+  checkEnvelopeGuards,
   ok,
   err,
 } from "@foundry-mcp-bridge/shared";
@@ -92,18 +92,8 @@ export async function executeCommand(
   api: FoundryDocumentApi,
   ctx: ExecutorContext,
 ): Promise<CommandResult> {
-  if (envelope.protocolVersion !== PROTOCOL_VERSION) {
-    return err(envelope.id, "VALIDATION", "protocol version mismatch", {
-      expected: PROTOCOL_VERSION,
-      received: envelope.protocolVersion,
-    });
-  }
-  if (ctx.expectedToken !== undefined && envelope.token !== ctx.expectedToken) {
-    return err(envelope.id, "AUTH", "invalid or missing token");
-  }
-  if (!ctx.isGM) {
-    return err(envelope.id, "AUTH", "GM privileges required");
-  }
+  const guardError = checkEnvelopeGuards(envelope, ctx);
+  if (guardError) return { id: envelope.id, ok: false, error: guardError };
 
   const opts: ExecuteOptions = { dryRun: envelope.dryRun };
   try {

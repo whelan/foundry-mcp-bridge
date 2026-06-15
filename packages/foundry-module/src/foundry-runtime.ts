@@ -6,9 +6,8 @@
  * protocol logic is tested against the mock. Kept thin and obvious on purpose.
  */
 
-import type { DocumentType } from "@foundry-mcp-bridge/shared";
+import { COLLECTIONS, getByPath, type DocumentType } from "@foundry-mcp-bridge/shared";
 import type {
-  DocData,
   ExecuteOptions,
   FindSelector,
   FoundryDocumentApi,
@@ -24,17 +23,6 @@ export const MODULE_ID = "foundry-mcp-bridge";
  * URL + token for anything beyond a local machine.
  */
 export const DEFAULT_RELAY_URL = "ws://localhost:8787";
-
-/** Foundry world-collection accessor name for each document type. */
-const COLLECTION: Record<DocumentType, string> = {
-  Actor: "actors",
-  Scene: "scenes",
-  JournalEntry: "journal",
-  RollTable: "tables",
-  Item: "items",
-  Macro: "macros",
-  Playlist: "playlists",
-};
 
 export interface RelaySettings {
   url: string;
@@ -73,7 +61,7 @@ export function readSettings(): RelaySettings {
 }
 
 function collection(type: DocumentType): any {
-  const accessor = COLLECTION[type];
+  const accessor = COLLECTIONS[type];
   const coll = game[accessor];
   if (!coll) {
     throw new CommandExecutionError("UNSUPPORTED", `no collection for ${type}`);
@@ -145,11 +133,4 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       );
     },
   } satisfies FoundryDocumentApi;
-}
-
-function getByPath(obj: DocData, path: string): unknown {
-  return path.split(".").reduce<unknown>((acc, key) => {
-    if (acc && typeof acc === "object") return (acc as Record<string, unknown>)[key];
-    return undefined;
-  }, obj);
 }

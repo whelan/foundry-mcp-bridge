@@ -15,7 +15,8 @@ import {
   type DocumentType,
   type CommandError,
   type Json,
-  PROTOCOL_VERSION,
+  COLLECTIONS,
+  checkEnvelopeGuards,
   randomID,
   ok,
   err,
@@ -27,17 +28,6 @@ import {
 // ---------------------------------------------------------------------------
 // Foundry key conventions
 // ---------------------------------------------------------------------------
-
-/** Top-level collection name for each document type (Foundry's db key segment). */
-const COLLECTION: Record<DocumentType, string> = {
-  Actor: "actors",
-  Scene: "scenes",
-  JournalEntry: "journal",
-  RollTable: "tables",
-  Item: "items",
-  Macro: "macros",
-  Playlist: "playlists",
-};
 
 /** Field name an embedded document lives under on its parent. */
 const EMBEDDED_FIELD: Record<string, string> = {
@@ -56,7 +46,7 @@ const EMBEDDED_FIELD: Record<string, string> = {
 
 /** `!actors!{id}` for a top-level document. */
 export function documentKey(type: DocumentType, id: string): string {
-  return `!${COLLECTION[type]}!${id}`;
+  return `!${COLLECTIONS[type]}!${id}`;
 }
 
 /** `!scenes.tokens!{parentId}.{embeddedId}` for an embedded document. */
@@ -67,7 +57,7 @@ export function embeddedKey(
   embeddedId: string,
 ): string {
   const field = EMBEDDED_FIELD[embeddedName] ?? embeddedName.toLowerCase();
-  return `!${COLLECTION[parentType]}.${field}!${parentId}.${embeddedId}`;
+  return `!${COLLECTIONS[parentType]}.${field}!${parentId}.${embeddedId}`;
 }
 
 // Re-export the shared object helpers used to mirror Foundry's update semantics
@@ -179,7 +169,7 @@ export class MockFoundry {
   }
 
   private list(type: DocumentType): Json[] {
-    const prefix = `!${COLLECTION[type]}!`;
+    const prefix = `!${COLLECTIONS[type]}!`;
     return [...this.store.entries()]
       .filter(([k]) => k.startsWith(prefix))
       .map(([, v]) => v);
@@ -201,15 +191,11 @@ export class MockFoundry {
       return { id: envelope.id, ok: false, error: failure.result };
     }
 
-    if (envelope.protocolVersion !== PROTOCOL_VERSION) {
-      return err(envelope.id, "VALIDATION", "protocol version mismatch");
-    }
-    if (this.token !== undefined && envelope.token !== this.token) {
-      return err(envelope.id, "AUTH", "invalid or missing token");
-    }
-    if (!this.isGM) {
-      return err(envelope.id, "AUTH", "GM privileges required");
-    }
+    const guardError = checkEnvelopeGuards(envelope, {
+      isGM: this.isGM,
+      expectedToken: this.token,
+    });
+    if (guardError) return { id: envelope.id, ok: false, error: guardError };
 
     try {
       return this.dispatch(envelope.id, envelope.command, envelope.dryRun);
