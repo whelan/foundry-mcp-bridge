@@ -66,53 +66,85 @@ function idOf(data: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Shared backbone for every mutating tool: dry-run → write → read-back verify →
+ * structured error / rollback. Callers supply the mutating command, the expected
+ * read-back subset, the document id (known up-front for updates, derived from the
+ * write for creates) and how to roll back. `steps` may already contain a
+ * preceding step (e.g. update's "pre-read").
+ */
+interface Mutation {
+  documentType: DocumentType;
+  mutate: Command;
+  /** Fields the read-back must contain (subset match). */
+  expected: Json;
+  /** Known target id (updates); creates derive it from the write result. */
+  knownId?: string;
+  /** Rollback command run when read-back fails. */
+  rollback: (id: string) => Command;
+  /** Message for the READBACK_MISMATCH error. */
+  mismatchMessage: string;
+}
+
+async function runMutation(
+  transport: RelayTransport,
+  m: Mutation,
+  opts: PipelineOptions,
+  steps: string[],
+): Promise<ToolOutcome> {
+  steps.push("dry-run");
+  const dry = await send(transport, m.mutate, true, opts);
+  if (!dry.ok) return fail(steps, dry.error);
+
+  steps.push("write");
+  const written = await send(transport, m.mutate, false, opts);
+  if (!written.ok) return fail(steps, written.error);
+
+  const id = m.knownId ?? idOf(written.data);
+  if (!id) return fail(steps, { code: "INTERNAL", message: "write returned no _id" });
+
+  steps.push("read-back");
+  const readBack = await send(
+    transport,
+    { action: "find", documentType: m.documentType, id },
+    false,
+    opts,
+  );
+  if (!readBack.ok || !isSubset(readBack.data, m.expected)) {
+    steps.push("rollback");
+    await send(transport, m.rollback(id), false, opts);
+    return fail(steps, {
+      code: "READBACK_MISMATCH",
+      message: m.mismatchMessage,
+      details: { id, expected: m.expected, actual: readBack.ok ? readBack.data : null },
+    });
+  }
+
+  return { ok: true, data: written.data, steps };
+}
+
 export interface CreateDocumentInput {
   documentType: DocumentType;
   data: Json;
 }
 
-export async function createDocumentReliable(
+export function createDocumentReliable(
   transport: RelayTransport,
   input: CreateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  const steps: string[] = [];
-  const create: Command = { action: "create", documentType: input.documentType, data: input.data };
-
-  // 1. dry-run
-  steps.push("dry-run");
-  const dry = await send(transport, create, true, opts);
-  if (!dry.ok) return fail(steps, dry.error);
-
-  // 2. write
-  steps.push("write");
-  const written = await send(transport, create, false, opts);
-  if (!written.ok) return fail(steps, written.error);
-
-  const newId = idOf(written.data);
-  if (!newId) {
-    return fail(steps, { code: "INTERNAL", message: "create returned no _id" });
-  }
-
-  // 3. read-back verify
-  steps.push("read-back");
-  const readBack = await send(
+  return runMutation(
     transport,
-    { action: "find", documentType: input.documentType, id: newId },
-    false,
+    {
+      documentType: input.documentType,
+      mutate: { action: "create", documentType: input.documentType, data: input.data },
+      expected: input.data,
+      rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
+      mismatchMessage: "created document did not match the requested data; rolled back",
+    },
     opts,
+    [],
   );
-  if (!readBack.ok || !isSubset(readBack.data, input.data)) {
-    steps.push("rollback");
-    await send(transport, { action: "delete", documentType: input.documentType, id: newId }, false, opts);
-    return fail(steps, {
-      code: "READBACK_MISMATCH",
-      message: "created document did not match the requested data; rolled back",
-      details: { id: newId, expected: input.data, actual: readBack.ok ? readBack.data : null },
-    });
-  }
-
-  return { ok: true, data: written.data, steps };
 }
 
 export interface UpdateDocumentInput {
@@ -128,7 +160,7 @@ export async function updateDocumentReliable(
 ): Promise<ToolOutcome> {
   const steps: string[] = [];
 
-  // 0. pre-read snapshot (existence + rollback baseline)
+  // Pre-read for existence and as the rollback baseline.
   steps.push("pre-read");
   const before = await send(
     transport,
@@ -138,50 +170,26 @@ export async function updateDocumentReliable(
   );
   if (!before.ok) return fail(steps, before.error);
   const snapshot = before.data as Json;
+  const expected = expandObject(input.data);
 
-  const update: Command = {
-    action: "update",
-    documentType: input.documentType,
-    id: input.id,
-    data: input.data,
-  };
-
-  // 1. dry-run
-  steps.push("dry-run");
-  const dry = await send(transport, update, true, opts);
-  if (!dry.ok) return fail(steps, dry.error);
-
-  // 2. write
-  steps.push("write");
-  const written = await send(transport, update, false, opts);
-  if (!written.ok) return fail(steps, written.error);
-
-  // 3. read-back verify the changed fields
-  steps.push("read-back");
-  const expanded = expandObject(input.data);
-  const after = await send(
+  return runMutation(
     transport,
-    { action: "find", documentType: input.documentType, id: input.id },
-    false,
+    {
+      documentType: input.documentType,
+      mutate: { action: "update", documentType: input.documentType, id: input.id, data: input.data },
+      expected,
+      knownId: input.id,
+      rollback: (id) => ({
+        action: "update",
+        documentType: input.documentType,
+        id,
+        data: buildRestoreDiff(snapshot, expected),
+      }),
+      mismatchMessage: "updated document did not match the requested data; restored previous values",
+    },
     opts,
+    steps,
   );
-  if (!after.ok || !isSubset(after.data, expanded)) {
-    steps.push("rollback");
-    const restore = buildRestoreDiff(snapshot, expanded);
-    await send(
-      transport,
-      { action: "update", documentType: input.documentType, id: input.id, data: restore },
-      false,
-      opts,
-    );
-    return fail(steps, {
-      code: "READBACK_MISMATCH",
-      message: "updated document did not match the requested data; restored previous values",
-      details: { id: input.id, expected: expanded, actual: after.ok ? after.data : null },
-    });
-  }
-
-  return { ok: true, data: written.data, steps };
 }
 
 /** Previous values for the top-level keys touched by `diff`, for rollback. */
