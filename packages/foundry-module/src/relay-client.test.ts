@@ -122,4 +122,73 @@ describe("RelayClient", () => {
     c.disconnect();
     expect(socket.closed).toBe(true);
   });
+
+  it("reconnects with exponential backoff after an unexpected close", () => {
+    const sockets = [new FakeWebSocket(), new FakeWebSocket(), new FakeWebSocket()];
+    let made = 0;
+    const timers: { fn: () => void; ms: number }[] = [];
+    const c = new RelayClient({
+      url: "ws://test",
+      api: stubApi(),
+      context: { isGM: true },
+      createSocket: () => sockets[made++]!,
+      reconnectBaseDelayMs: 1000,
+      reconnectMaxDelayMs: 30000,
+      setTimer: (fn, ms) => timers.push({ fn, ms }) - 1,
+      clearTimer: () => {},
+    });
+    c.connect();
+    expect(made).toBe(1);
+
+    // First drop → reconnect scheduled at the base delay.
+    sockets[0]!.onclose?.({});
+    expect(timers[0]!.ms).toBe(1000);
+    timers[0]!.fn();
+    expect(made).toBe(2);
+
+    // Still failing → delay doubles.
+    sockets[1]!.onclose?.({});
+    expect(timers[1]!.ms).toBe(2000);
+    timers[1]!.fn();
+    expect(made).toBe(3);
+
+    // A clean open resets the backoff to the base delay.
+    sockets[2]!.onopen?.({});
+    sockets[2]!.onclose?.({});
+    expect(timers[2]!.ms).toBe(1000);
+  });
+
+  it("does not reconnect after an intentional disconnect", () => {
+    const socket = new FakeWebSocket();
+    const timers: { fn: () => void; ms: number }[] = [];
+    const c = new RelayClient({
+      url: "ws://test",
+      api: stubApi(),
+      context: { isGM: true },
+      createSocket: () => socket,
+      setTimer: (fn, ms) => timers.push({ fn, ms }) - 1,
+      clearTimer: () => {},
+    });
+    c.connect();
+    c.disconnect();
+    socket.onclose?.({}); // the close event still fires
+    expect(timers.length).toBe(0);
+  });
+
+  it("honors reconnect: false", () => {
+    const socket = new FakeWebSocket();
+    const timers: { fn: () => void; ms: number }[] = [];
+    const c = new RelayClient({
+      url: "ws://test",
+      api: stubApi(),
+      context: { isGM: true },
+      createSocket: () => socket,
+      reconnect: false,
+      setTimer: (fn, ms) => timers.push({ fn, ms }) - 1,
+      clearTimer: () => {},
+    });
+    c.connect();
+    socket.onclose?.({});
+    expect(timers.length).toBe(0);
+  });
 });

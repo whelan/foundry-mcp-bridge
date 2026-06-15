@@ -37,28 +37,81 @@ export interface RelayClientOptions {
   createSocket: WebSocketFactory;
   /** Optional logger; defaults to no-op. */
   log?: (level: "info" | "warn" | "error", message: string) => void;
+  /** Auto-reconnect on an unexpected close. Default: true. */
+  reconnect?: boolean;
+  /** First backoff delay; doubles each attempt. Default: 1000ms. */
+  reconnectBaseDelayMs?: number;
+  /** Backoff cap. Default: 30000ms. */
+  reconnectMaxDelayMs?: number;
+  /** Injectable timer (testing); defaults to global setTimeout/clearTimeout. */
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
 }
 
 export class RelayClient {
   private socket: WebSocketLike | null = null;
   private readonly log: NonNullable<RelayClientOptions["log"]>;
+  /** Set by disconnect() so a deliberate close doesn't trigger a reconnect. */
+  private intentionalClose = false;
+  private reconnectAttempts = 0;
+  private reconnectHandle: unknown = null;
+  private readonly reconnectEnabled: boolean;
+  private readonly baseDelay: number;
+  private readonly maxDelay: number;
+  private readonly setTimer: NonNullable<RelayClientOptions["setTimer"]>;
+  private readonly clearTimer: NonNullable<RelayClientOptions["clearTimer"]>;
 
   constructor(private readonly options: RelayClientOptions) {
     this.log = options.log ?? (() => {});
+    this.reconnectEnabled = options.reconnect ?? true;
+    this.baseDelay = options.reconnectBaseDelayMs ?? 1000;
+    this.maxDelay = options.reconnectMaxDelayMs ?? 30000;
+    this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+    this.clearTimer =
+      options.clearTimer ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
   }
 
   connect(): void {
+    this.intentionalClose = false;
+    this.openSocket();
+  }
+
+  private openSocket(): void {
     const socket = this.options.createSocket(this.options.url);
     this.socket = socket;
-    socket.onopen = () => this.log("info", `relay connected: ${this.options.url}`);
+    socket.onopen = () => {
+      this.reconnectAttempts = 0; // a clean open resets the backoff
+      this.log("info", `relay connected: ${this.options.url}`);
+    };
     socket.onerror = () => this.log("error", "relay socket error");
-    socket.onclose = () => this.log("warn", "relay socket closed");
+    socket.onclose = () => {
+      this.log("warn", "relay socket closed");
+      this.scheduleReconnect();
+    };
     socket.onmessage = (ev) => {
       void this.handleMessage(ev.data);
     };
   }
 
+  /** Schedule a reconnect with exponential backoff, unless closed on purpose. */
+  private scheduleReconnect(): void {
+    if (this.intentionalClose || !this.reconnectEnabled) return;
+    const delay = Math.min(this.baseDelay * 2 ** this.reconnectAttempts, this.maxDelay);
+    this.reconnectAttempts += 1;
+    this.log("info", `relay reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    this.reconnectHandle = this.setTimer(() => {
+      this.reconnectHandle = null;
+      if (this.intentionalClose) return;
+      this.openSocket();
+    }, delay);
+  }
+
   disconnect(): void {
+    this.intentionalClose = true;
+    if (this.reconnectHandle != null) {
+      this.clearTimer(this.reconnectHandle);
+      this.reconnectHandle = null;
+    }
     this.socket?.close();
     this.socket = null;
   }
