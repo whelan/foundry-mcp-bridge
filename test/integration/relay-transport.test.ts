@@ -88,6 +88,20 @@ describe("WebSocketRelayTransport", () => {
     if (!res.ok) expect(res.error.code).toBe("INTERNAL");
   });
 
+  it("fails fast for a request issued after close()", async () => {
+    const ws = new FakeWs();
+    const t = new WebSocketRelayTransport({
+      url: "ws://x",
+      defaultTimeoutMs: 60_000,
+      createSocket: () => ws,
+    });
+    ws.fire("open");
+    t.close();
+    const res = await t.request(findEnvelope("post-close"));
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe("INTERNAL");
+  });
+
   it("drains pending and removes listeners on close()", async () => {
     const ws = new FakeWs();
     const t = new WebSocketRelayTransport({

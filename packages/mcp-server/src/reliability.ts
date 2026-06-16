@@ -518,7 +518,9 @@ export async function updateEmbeddedReliable(
           return actual != null && isSubset(actual, expandObject(d));
         });
       },
-      // Restore the pre-update versions of the touched docs.
+      // Restore the pre-update versions of the touched docs. (`?? []` only
+      // satisfies the type: an unmapped type returns true from verify and never
+      // reaches rollback, so embeddedEntries is non-null here in practice.)
       deriveRollback: () => {
         const prior = (embeddedEntries(snapshot, input.embeddedName) ?? []).filter((e) => {
           const id = idOf(e);
