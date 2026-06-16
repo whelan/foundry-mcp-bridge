@@ -49,6 +49,7 @@ export class RelayServer implements RelayTransport {
   private client: WebSocket | null = null;
   private clientWaiters: Array<() => void> = [];
   private readonly pending = new PendingRequests();
+  private closed = false;
 
   constructor(options: RelayServerOptions) {
     this.endpoint = parseEndpoint(options.url);
@@ -136,8 +137,15 @@ export class RelayServer implements RelayTransport {
   }
 
   close(): void {
+    if (this.closed) return; // idempotent
+    this.closed = true;
     this.client?.close();
     this.client = null;
+    // The socket's own close handler won't drain now (client is null), so do it
+    // here: fail in-flight requests and wake any waiters so callers don't hang
+    // until their timeouts on an intentional shutdown.
+    this.pending.failAll((id) => err(id, "INTERNAL", "relay server closed"));
+    for (const wake of this.clientWaiters.splice(0)) wake();
     this.wss.close();
   }
 }
