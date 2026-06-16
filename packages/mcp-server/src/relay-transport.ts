@@ -129,26 +129,37 @@ export class WebSocketRelayTransport implements RelayTransport {
   private readonly socket: WsLike;
   private readonly defaultTimeoutMs: number;
   private readonly ready: Promise<void>;
+  private resolveReady!: () => void;
+  private dropped = false;
   private readonly pending = new PendingRequests();
   private readonly onMessage = (ev: { data?: unknown }) => this.pending.settle(ev.data);
   // A dropped socket (remote close / error) must fail in-flight requests fast,
   // not leave them to time out — symmetric with RelayServer's disconnect drain.
-  private readonly onDrop = () => this.drain("relay connection lost");
+  private readonly onDrop = () => {
+    this.dropped = true;
+    this.resolveReady(); // unblock anything awaiting open
+    this.drain("relay connection lost");
+  };
 
   constructor(options: WebSocketRelayTransportOptions) {
     this.defaultTimeoutMs = options.defaultTimeoutMs;
     const factory = options.createSocket ?? defaultWsFactory;
     this.socket = factory(options.url);
     this.ready = new Promise<void>((resolve) => {
-      this.socket.addEventListener("open", () => resolve());
+      this.resolveReady = resolve;
     });
+    this.socket.addEventListener("open", () => this.resolveReady());
     this.socket.addEventListener("message", this.onMessage);
     this.socket.addEventListener("close", this.onDrop);
     this.socket.addEventListener("error", this.onDrop);
   }
 
   async request(envelope: CommandEnvelope, opts?: RequestOptions): Promise<CommandResult> {
+    if (this.dropped) return err(envelope.id, "INTERNAL", "relay connection lost");
     await this.ready;
+    // The socket may have dropped while we awaited open; fail fast rather than
+    // sending on a dead socket and waiting out the timeout.
+    if (this.dropped) return err(envelope.id, "INTERNAL", "relay connection lost");
     const timeoutMs = opts?.timeoutMs ?? this.defaultTimeoutMs;
     return this.pending.awaitResult(envelope.id, timeoutMs, () =>
       this.socket.send(JSON.stringify(envelope)),
@@ -160,6 +171,7 @@ export class WebSocketRelayTransport implements RelayTransport {
   }
 
   close(): void {
+    this.dropped = true;
     this.socket.removeEventListener?.("message", this.onMessage);
     this.socket.removeEventListener?.("close", this.onDrop);
     this.socket.removeEventListener?.("error", this.onDrop);

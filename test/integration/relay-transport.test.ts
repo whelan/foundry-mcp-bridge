@@ -58,6 +58,36 @@ describe("WebSocketRelayTransport", () => {
     if (!res.ok) expect(res.error.code).toBe("INTERNAL");
   });
 
+  it("fails in-flight requests on a socket 'error' event too", async () => {
+    const ws = new FakeWs();
+    const t = new WebSocketRelayTransport({
+      url: "ws://x",
+      defaultTimeoutMs: 60_000,
+      createSocket: () => ws,
+    });
+    ws.fire("open");
+    const pending = t.request(findEnvelope("e1"));
+    await flush();
+    ws.fire("error");
+    const res = await pending;
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe("INTERNAL");
+  });
+
+  it("fails fast for a request issued after the socket already dropped", async () => {
+    const ws = new FakeWs();
+    const t = new WebSocketRelayTransport({
+      url: "ws://x",
+      defaultTimeoutMs: 60_000,
+      createSocket: () => ws,
+    });
+    ws.fire("open");
+    ws.fire("close");
+    const res = await t.request(findEnvelope("late"));
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe("INTERNAL");
+  });
+
   it("drains pending and removes listeners on close()", async () => {
     const ws = new FakeWs();
     const t = new WebSocketRelayTransport({

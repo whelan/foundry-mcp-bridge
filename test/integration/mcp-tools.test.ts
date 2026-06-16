@@ -30,12 +30,16 @@ class MockTransport implements RelayTransport {
   /** Strip the Nth `find` result to just `{_id}`, so read-back verification fails
    *  even though the find succeeded (e.g. an embedded change that didn't land). */
   corruptFindAtCall: number | null = null;
+  /** Strip quest write echoes to `{_id}`, simulating module normalization — a
+   *  content-verify (if it existed) would then false-fail. */
+  corruptQuestWrite = false;
   private findCalls = 0;
   constructor(private readonly mock: MockFoundry) {}
 
   async request(envelope: CommandEnvelope, opts?: RequestOptions) {
     const exec = (async () => {
-      const isFind = envelope.command.action === "find";
+      const action = envelope.command.action;
+      const isFind = action === "find";
       if (isFind) {
         this.findCalls += 1;
         if (this.findCalls === this.failFindAtCall) {
@@ -49,11 +53,15 @@ class MockTransport implements RelayTransport {
       // Clone like the real WebSocket transport serializes results, so callers
       // never alias the mock's live store (e.g. an update's pre-read snapshot).
       const res = structuredClone(await this.mock.execute(envelope));
+      const isQuestWrite =
+        !envelope.dryRun && (action === "createQuest" || action === "updateQuest");
       const corrupt =
-        res.ok && isFind && (this.corruptReadBack || this.findCalls === this.corruptFindAtCall);
+        res.ok &&
+        ((isFind && (this.corruptReadBack || this.findCalls === this.corruptFindAtCall)) ||
+          (isQuestWrite && this.corruptQuestWrite));
       if (corrupt) {
         this.corruptReadBack = false;
-        // Strip everything but the id so read-back verification fails.
+        // Strip everything but the id; a content read-back/verify would fail here.
         return { id: res.id, ok: true as const, data: { _id: (res.data as { _id: string })._id } };
       }
       return res;
@@ -291,6 +299,32 @@ describe("update_embedded pipeline", () => {
     const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
     expect(scene.tokens[0]!.x).toBe(0);
   });
+
+  it("does not verify/roll back for an embedded type with no known field mapping", async () => {
+    const { mock, transport } = setup();
+    await seed(mock, {
+      action: "create",
+      documentType: "Playlist",
+      data: { _id: "pl1", name: "Tunes" },
+      keepId: true,
+    });
+    await seed(mock, {
+      action: "createEmbedded",
+      parentType: "Playlist",
+      parentId: "pl1",
+      embeddedName: "PlaylistSound",
+      data: [{ _id: "ps1", name: "Theme", volume: 0.5 }],
+    });
+    transport.corruptFindAtCall = 2; // strip the read-back (find #1 is the pre-read)
+    const out = await runUpdateEmbedded(transport, {
+      parentType: "Playlist",
+      parentId: "pl1",
+      embeddedName: "PlaylistSound",
+      data: [{ _id: "ps1", volume: 1 }],
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).not.toContain("rollback");
+  });
 });
 
 describe("delete_embedded pipeline", () => {
@@ -311,18 +345,23 @@ describe("delete_embedded pipeline", () => {
 });
 
 describe("quest pipeline", () => {
-  it("create_quest confirms via write + _id without a content read-back", async () => {
+  it("create_quest succeeds even when the write echo omits the requested fields", async () => {
     const { transport } = setup();
-    // status casing differs from what a module would store; must NOT false-fail.
-    const out = await runCreateQuest(transport, { data: { name: "Find the Amulet", status: "Available" } });
+    // Simulate the module normalizing/dropping fields in its echo; a content
+    // verify (which we removed) would false-fail here. Success proves it's gone.
+    transport.corruptQuestWrite = true;
+    const out = await runCreateQuest(transport, {
+      data: { name: "Find the Amulet", status: "Available" },
+    });
     expect(out.ok).toBe(true);
     expect(out.steps).toEqual(["dry-run", "write"]);
   });
 
-  it("update_quest confirms the write without re-verifying normalized content", async () => {
+  it("update_quest succeeds even when the write echo omits the requested fields", async () => {
     const { transport } = setup();
     const created = await runCreateQuest(transport, { data: { name: "Q" } });
     const id = created.ok ? (created.data as { _id: string })._id : "missing";
+    transport.corruptQuestWrite = true;
     const out = await runUpdateQuest(transport, { id, data: { status: "Active" } });
     expect(out.ok).toBe(true);
     expect(out.steps).toEqual(["dry-run", "write"]);

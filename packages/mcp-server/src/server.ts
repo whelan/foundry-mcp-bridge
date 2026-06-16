@@ -151,13 +151,13 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
   );
   register(
     "create_quest",
-    "Create a quest via Forien's Quest Log (requires the module to be enabled). Runs dry-run and write with read-back.",
+    "Create a quest via Forien's Quest Log (requires the module to be enabled). Runs dry-run and write; no content read-back (the module normalizes fields and quests aren't queryable) — success means the write returned an _id.",
     CreateQuestShape,
     runCreateQuest,
   );
   register(
     "update_quest",
-    "Update a quest by id. Partial update with read-back verification of changed fields.",
+    "Update a quest by id (partial). Runs dry-run and write; no content read-back (the module normalizes fields and quests aren't queryable).",
     UpdateQuestShape,
     runUpdateQuest,
   );

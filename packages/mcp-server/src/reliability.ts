@@ -412,8 +412,13 @@ async function runEmbeddedMutation(
   });
 }
 
-/** Embedded entries on a parent snapshot under their Foundry collection field. */
-function embeddedEntries(parent: Json, embeddedName: string): Json[] {
+/**
+ * Embedded entries on a parent snapshot under their Foundry collection field, or
+ * `null` when the embeddedName has no known field mapping — callers treat `null`
+ * as "can't locate; don't verify/roll back" rather than guessing the wrong field.
+ */
+function embeddedEntries(parent: Json, embeddedName: string): Json[] | null {
+  if (!(embeddedName in EMBEDDED_FIELDS)) return null;
   const arr = parent[embeddedField(embeddedName)];
   return Array.isArray(arr) ? (arr as Json[]) : [];
 }
@@ -438,13 +443,11 @@ export function createEmbeddedReliable(
       noun: "created",
       // Verify each new embedded doc is present in the re-read parent by _id.
       verify: (parent, written) => {
-        // Only the canonical field names map reliably to a parent collection; for
-        // an unmapped embeddedName we can't locate the docs, so trust parent-loaded
-        // rather than falsely failing (and rolling back) a successful write.
-        if (!(input.embeddedName in EMBEDDED_FIELDS)) return true;
+        const entries = embeddedEntries(parent, input.embeddedName);
+        if (!entries) return true; // unmapped: can't locate; trust parent-loaded
         const ids = written.map(idOf).filter((id): id is string => !!id);
         if (ids.length === 0) return true; // can't identify; parent loaded is best we have
-        const present = new Set(embeddedEntries(parent, input.embeddedName).map(idOf));
+        const present = new Set(entries.map(idOf));
         return ids.every((id) => present.has(id));
       },
       // The write result carries the new ids, so we can delete them on rollback.
@@ -507,11 +510,9 @@ export async function updateEmbeddedReliable(
       noun: "updated",
       // Verify each requested change is reflected in the re-read parent.
       verify: (parent) => {
-        // Unmapped embeddedName: can't locate the collection, so don't false-fail.
-        if (!(input.embeddedName in EMBEDDED_FIELDS)) return true;
-        const byId = new Map(
-          embeddedEntries(parent, input.embeddedName).map((e) => [idOf(e), e] as const),
-        );
+        const entries = embeddedEntries(parent, input.embeddedName);
+        if (!entries) return true; // unmapped: can't locate; don't false-fail
+        const byId = new Map(entries.map((e) => [idOf(e), e] as const));
         return input.data.every((d) => {
           const actual = byId.get(d._id);
           return actual != null && isSubset(actual, expandObject(d));
@@ -519,7 +520,7 @@ export async function updateEmbeddedReliable(
       },
       // Restore the pre-update versions of the touched docs.
       deriveRollback: () => {
-        const prior = embeddedEntries(snapshot, input.embeddedName).filter((e) => {
+        const prior = (embeddedEntries(snapshot, input.embeddedName) ?? []).filter((e) => {
           const id = idOf(e);
           return id != null && updatedIds.has(id);
         }) as Array<Json & { _id: string }>;
