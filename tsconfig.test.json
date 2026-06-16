@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "baseUrl": ".",
+    "types": ["node"],
+    "paths": {
+      "@foundry-mcp-bridge/shared": ["./packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["test/**/*.ts", "packages/**/*.test.ts"]
+}

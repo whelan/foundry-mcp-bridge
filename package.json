@@ -1,0 +1,30 @@
+{
+  "name": "foundry-mcp-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server + Foundry VTT V14 module letting an AI create/update/delete documents in a running Foundry world (local and The Forge).",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --build && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "bundle:module": "npm run build && npm -w @foundry-mcp-bridge/foundry-module run bundle",
+    "selftest": "npm run build && node scripts/selftest.mjs",
+    "install:foundry": "npm run bundle:module && node scripts/install-into-foundry.mjs",
+    "clean": "tsc --build --clean"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

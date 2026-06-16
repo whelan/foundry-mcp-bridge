@@ -1,0 +1,16 @@
+{
+  "name": "@foundry-mcp-bridge/foundry-module",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/types/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "bundle": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/index.js",
+    "clean": "tsc --build --clean"
+  },
+  "dependencies": {
+    "@foundry-mcp-bridge/shared": "0.1.0"
+  }
+}

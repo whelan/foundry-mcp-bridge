@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Local config — never commit real secrets/connection strings
+.env
+.env.*
+!.env.example
+dev.config.json
+!dev.config.example.json
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,453 @@
+/**
+ * In-memory "Foundry" that speaks the Command protocol with Foundry's key
+ * conventions, plus a FilePicker mock exposing both a local ("data") and a
+ * Forge ("forgevtt") source. Used to develop and test the module executor and
+ * the MCP-server reliability pipeline without a real Foundry.
+ *
+ * See docs/foundry-mcp-bridge-project-plan.md (mock-first test strategy) and
+ * docs/foundry-live-api-plan.md §10–§11.
+ */
+
+import {
+  type Command,
+  type CommandEnvelope,
+  type CommandResult,
+  type DocumentType,
+  type CommandError,
+  type Json,
+  COLLECTIONS,
+  checkEnvelopeGuards,
+  embeddedField,
+  randomID,
+  ok,
+  err,
+  expandObject,
+  getByPath,
+  applyUpdate,
+} from "@foundry-mcp-bridge/shared";
+import type { WorldInfo } from "../../packages/foundry-module/src/protocol-executor.js";
+
+// ---------------------------------------------------------------------------
+// Foundry key conventions
+// ---------------------------------------------------------------------------
+
+/** `!actors!{id}` for a top-level document. */
+export function documentKey(type: DocumentType, id: string): string {
+  return `!${COLLECTIONS[type]}!${id}`;
+}
+
+/** `!scenes.tokens!{parentId}.{embeddedId}` for an embedded document. */
+export function embeddedKey(
+  parentType: DocumentType,
+  embeddedName: string,
+  parentId: string,
+  embeddedId: string,
+): string {
+  return `!${COLLECTIONS[parentType]}.${embeddedField(embeddedName)}!${parentId}.${embeddedId}`;
+}
+
+// Re-export the shared object helpers used to mirror Foundry's update semantics
+// so existing importers of the mock keep working.
+export { expandObject, getByPath, applyUpdate } from "@foundry-mcp-bridge/shared";
+
+// ---------------------------------------------------------------------------
+// FilePicker mock (local "data" + Forge "forgevtt")
+// ---------------------------------------------------------------------------
+
+export type FilePickerSource = "data" | "forgevtt";
+
+export interface UploadRecord {
+  source: FilePickerSource;
+  path: string;
+  name: string;
+}
+
+export class MockFilePicker {
+  readonly uploads: UploadRecord[] = [];
+  /** Per-source virtual file listing. */
+  private readonly files: Record<FilePickerSource, Set<string>> = {
+    data: new Set(),
+    forgevtt: new Set(),
+  };
+
+  /** Mirrors FilePicker.upload(source, target, file, options). */
+  async upload(
+    source: FilePickerSource,
+    target: string,
+    file: { name: string },
+  ): Promise<{ path: string }> {
+    return this.put(source, target, file.name);
+  }
+
+  /** Synchronous core of upload, callable from the (sync) command dispatch. */
+  put(source: FilePickerSource, target: string, name: string): { path: string } {
+    const path = `${target.replace(/\/$/, "")}/${name}`;
+    this.files[source].add(path);
+    this.uploads.push({ source, path, name });
+    return { path };
+  }
+
+  /** Mirrors FilePicker.browse(source, target). */
+  async browse(
+    source: FilePickerSource,
+    target: string,
+  ): Promise<{ target: string; files: string[] }> {
+    const prefix = target.replace(/\/$/, "");
+    const files = [...this.files[source]].filter((p) => p.startsWith(prefix));
+    return { target, files };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Injectable failures
+// ---------------------------------------------------------------------------
+
+interface QueuedFailure {
+  /** Reject the call with a transport-style error (lost connection / crash). */
+  throws?: Error;
+  /** Delay (ms) before responding — used to exercise transport timeouts. */
+  delayMs?: number;
+  /** Return this protocol-level error result instead of executing. */
+  result?: CommandError;
+}
+
+export interface MockFoundryOptions {
+  /** Whether the executing user is a GM (the module's GM-only guard). */
+  isGM?: boolean;
+  /** Expected auth token; when set, envelopes must match it. */
+  token?: string;
+  /** Override the world snapshot returned by getWorldInfo. */
+  worldInfo?: Partial<WorldInfo>;
+}
+
+// ---------------------------------------------------------------------------
+// MockFoundry
+// ---------------------------------------------------------------------------
+
+export class MockFoundry {
+  /** Flat store keyed by Foundry db keys (`!actors!{id}`, embedded keys). */
+  readonly store = new Map<string, Json>();
+  readonly filePicker = new MockFilePicker();
+  isGM: boolean;
+  private readonly token?: string;
+  private readonly failures: QueuedFailure[] = [];
+  /** Forien's Quest Log store — quests are NOT raw JournalEntries (§7.1). */
+  readonly quests = new Map<string, Json>();
+  /** World snapshot returned by getWorldInfo (overridable for tests). */
+  readonly worldInfo: WorldInfo;
+
+  constructor(options: MockFoundryOptions = {}) {
+    this.isGM = options.isGM ?? true;
+    this.token = options.token;
+    this.worldInfo = {
+      foundryVersion: "13.0.0",
+      system: { id: "dnd5e", version: "3.0.0" },
+      world: { id: "test-world", title: "Test World" },
+      folders: [],
+      ...options.worldInfo,
+    };
+  }
+
+  /** Queue a one-shot injected failure consumed by the next execute(). */
+  injectFailure(failure: QueuedFailure): void {
+    this.failures.push(failure);
+  }
+
+  /** Convenience: next call rejects as if the transport died. */
+  failNext(message = "connection lost"): void {
+    this.injectFailure({ throws: new Error(message) });
+  }
+
+  /** Convenience: next call resolves only after `delayMs`. */
+  hangNext(delayMs: number): void {
+    this.injectFailure({ delayMs });
+  }
+
+  // --- collection helpers -------------------------------------------------
+
+  /** Public read of a whole collection (test convenience). */
+  documents(type: DocumentType): Json[] {
+    return this.list(type);
+  }
+
+  private list(type: DocumentType): Json[] {
+    const prefix = `!${COLLECTIONS[type]}!`;
+    return [...this.store.entries()]
+      .filter(([k]) => k.startsWith(prefix))
+      .map(([, v]) => v);
+  }
+
+  private get(type: DocumentType, id: string): Json | undefined {
+    return this.store.get(documentKey(type, id));
+  }
+
+  // --- main entry point ---------------------------------------------------
+
+  async execute(envelope: CommandEnvelope): Promise<CommandResult> {
+    const failure = this.failures.shift();
+    if (failure?.throws) throw failure.throws;
+    if (failure?.delayMs) {
+      await new Promise((r) => setTimeout(r, failure.delayMs));
+    }
+    if (failure?.result) {
+      return { id: envelope.id, ok: false, error: failure.result };
+    }
+
+    const guardError = checkEnvelopeGuards(envelope, {
+      isGM: this.isGM,
+      expectedToken: this.token,
+    });
+    if (guardError) return { id: envelope.id, ok: false, error: guardError };
+
+    try {
+      return this.dispatch(envelope.id, envelope.command, envelope.dryRun);
+    } catch (e) {
+      return err(envelope.id, "INTERNAL", (e as Error).message);
+    }
+  }
+
+  private dispatch(id: string, command: Command, dryRun: boolean): CommandResult {
+    switch (command.action) {
+      case "create":
+        return this.create(id, command.documentType, command.data, command.keepId ?? false, dryRun);
+      case "update":
+        return this.update(id, command.documentType, command.id, command.data, dryRun);
+      case "delete":
+        return this.delete(id, command.documentType, command.id, dryRun);
+      case "duplicate":
+        return this.duplicate(id, command.documentType, command.id, command.overrides, dryRun);
+      case "createEmbedded":
+        return this.createEmbedded(id, command, dryRun);
+      case "updateEmbedded":
+        return this.updateEmbedded(id, command, dryRun);
+      case "deleteEmbedded":
+        return this.deleteEmbedded(id, command, dryRun);
+      case "find":
+        return this.find(id, command);
+      case "getWorldInfo":
+        return ok(id, this.worldInfo as unknown as Json);
+      case "uploadAsset": {
+        const target = command.target.replace(/\/$/, "");
+        if (dryRun) return ok(id, { path: `${target}/${command.filename}` });
+        return ok(id, this.filePicker.put(command.source, target, command.filename));
+      }
+      case "createQuest":
+        return this.createQuest(id, command, dryRun);
+      case "updateQuest":
+        return this.updateQuest(id, command, dryRun);
+      case "deleteQuest":
+        return this.deleteQuest(id, command, dryRun);
+    }
+  }
+
+  private create(
+    id: string,
+    type: DocumentType,
+    data: Json,
+    keepId: boolean,
+    dryRun: boolean,
+  ): CommandResult {
+    // Mirror Foundry: an explicit data._id is honored only with keepId; otherwise
+    // a fresh id is minted (so tests can't rely on ids the live system wouldn't keep).
+    const _id = keepId && typeof data._id === "string" && data._id ? data._id : randomID();
+    const doc: Json = { ...data, _id };
+    if (dryRun) return ok(id, { ...doc, _id: null, _dryRun: true });
+    this.store.set(documentKey(type, _id), doc);
+    return ok(id, doc);
+  }
+
+  private update(
+    id: string,
+    type: DocumentType,
+    docId: string,
+    diff: Json,
+    dryRun: boolean,
+  ): CommandResult {
+    const existing = this.get(type, docId);
+    if (!existing) return err(id, "NOT_FOUND", `${type} ${docId} not found`);
+    const updated = applyUpdate(existing, diff);
+    updated._id = docId;
+    if (dryRun) return ok(id, { ...updated, _dryRun: true });
+    this.store.set(documentKey(type, docId), updated);
+    return ok(id, updated);
+  }
+
+  private delete(
+    id: string,
+    type: DocumentType,
+    docId: string,
+    dryRun: boolean,
+  ): CommandResult {
+    const key = documentKey(type, docId);
+    if (!this.store.has(key)) return err(id, "NOT_FOUND", `${type} ${docId} not found`);
+    if (!dryRun) this.store.delete(key);
+    return ok(id, { _id: docId, deleted: true });
+  }
+
+  private duplicate(
+    id: string,
+    type: DocumentType,
+    docId: string,
+    overrides: Json | undefined,
+    dryRun: boolean,
+  ): CommandResult {
+    const existing = this.get(type, docId);
+    if (!existing) return err(id, "NOT_FOUND", `${type} ${docId} not found`);
+    // applyUpdate clones the source (structuredClone), so the original is intact;
+    // a fresh _id makes the copy a distinct document.
+    const newId = randomID();
+    const copy = overrides ? applyUpdate(existing, overrides) : structuredClone(existing);
+    copy._id = newId;
+    if (dryRun) return ok(id, { ...copy, _id: null, _dryRun: true });
+    this.store.set(documentKey(type, newId), copy);
+    return ok(id, copy);
+  }
+
+  private embeddedArray(parent: Json, embeddedName: string): Json[] {
+    const field = embeddedField(embeddedName);
+    if (!Array.isArray(parent[field])) parent[field] = [];
+    return parent[field] as Json[];
+  }
+
+  /** Resolve a parent's embedded collection, or a NOT_FOUND result. */
+  private resolveEmbedded(
+    id: string,
+    cmd: { parentType: DocumentType; parentId: string; embeddedName: string },
+  ): { arr: Json[] } | { error: CommandResult } {
+    const parent = this.get(cmd.parentType, cmd.parentId);
+    if (!parent) {
+      return { error: err(id, "NOT_FOUND", `${cmd.parentType} ${cmd.parentId} not found`) };
+    }
+    return { arr: this.embeddedArray(parent, cmd.embeddedName) };
+  }
+
+  private createEmbedded(
+    id: string,
+    cmd: Extract<Command, { action: "createEmbedded" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
+    const created = cmd.data.map((entry) => ({
+      ...entry,
+      _id: typeof entry._id === "string" && entry._id ? entry._id : randomID(),
+    }));
+    if (dryRun) return ok(id, created.map((c) => ({ ...c, _dryRun: true })));
+    resolved.arr.push(...created);
+    return ok(id, created);
+  }
+
+  private updateEmbedded(
+    id: string,
+    cmd: Extract<Command, { action: "updateEmbedded" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
+    const arr = resolved.arr;
+    const updated: Json[] = [];
+    for (const diff of cmd.data) {
+      const idx = arr.findIndex((e) => e._id === diff._id);
+      if (idx === -1) {
+        return err(id, "NOT_FOUND", `embedded ${String(diff._id)} not found`);
+      }
+      const merged = applyUpdate(arr[idx]!, diff);
+      if (!dryRun) arr[idx] = merged;
+      updated.push(merged);
+    }
+    return ok(id, dryRun ? updated.map((u) => ({ ...u, _dryRun: true })) : updated);
+  }
+
+  private deleteEmbedded(
+    id: string,
+    cmd: Extract<Command, { action: "deleteEmbedded" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
+    const arr = resolved.arr;
+    const deleted: string[] = [];
+    for (const embeddedId of cmd.ids) {
+      const idx = arr.findIndex((e) => e._id === embeddedId);
+      if (idx === -1) return err(id, "NOT_FOUND", `embedded ${embeddedId} not found`);
+      if (!dryRun) arr.splice(idx, 1);
+      deleted.push(embeddedId);
+    }
+    return ok(id, { deleted });
+  }
+
+  private find(
+    id: string,
+    cmd: Extract<Command, { action: "find" }>,
+  ): CommandResult {
+    if (cmd.id) {
+      const doc = this.get(cmd.documentType, cmd.id);
+      if (!doc) return err(id, "NOT_FOUND", `${cmd.documentType} ${cmd.id} not found`);
+      return ok(id, doc);
+    }
+    const all = this.list(cmd.documentType);
+    if (!cmd.query) return ok(id, all);
+    const matches = all.filter((doc) =>
+      Object.entries(cmd.query!).every(([path, value]) => getByPath(doc, path) === value),
+    );
+    return ok(id, matches);
+  }
+
+  private createQuest(
+    id: string,
+    cmd: Extract<Command, { action: "createQuest" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const questId = randomID();
+    const questData: Json = {
+      _id: questId,
+      name: (cmd.data?.name as string) || "New Quest",
+      status: (cmd.data?.status as string) || "inactive",
+      ...cmd.data,
+    };
+
+    if (cmd.parentId) {
+      questData.parent = cmd.parentId;
+    }
+
+    if (dryRun) {
+      return ok(id, { ...questData, _dryRun: true });
+    }
+
+    this.quests.set(questId, questData);
+    return ok(id, questData);
+  }
+
+  private updateQuest(
+    id: string,
+    cmd: Extract<Command, { action: "updateQuest" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const quest = this.quests.get(cmd.id);
+    if (!quest) return err(id, "NOT_FOUND", `quest ${cmd.id} not found`);
+
+    const updated = { ...quest, ...cmd.data, _id: cmd.id };
+    if (dryRun) {
+      return ok(id, { ...updated, _dryRun: true });
+    }
+
+    this.quests.set(cmd.id, updated);
+    return ok(id, updated);
+  }
+
+  private deleteQuest(
+    id: string,
+    cmd: Extract<Command, { action: "deleteQuest" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    if (!this.quests.has(cmd.id)) {
+      return err(id, "NOT_FOUND", `quest ${cmd.id} not found`);
+    }
+
+    if (!dryRun) {
+      this.quests.delete(cmd.id);
+    }
+
+    return ok(id, { _id: cmd.id, deleted: true });
+  }
+}

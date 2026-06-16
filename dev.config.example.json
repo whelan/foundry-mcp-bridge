@@ -1,0 +1,6 @@
+{
+  "_comment": "Dev-only overrides, read ONLY when NODE_ENV=development. Copy to dev.config.json. Values in .env / the environment take precedence over these.",
+  "relayUrl": "ws://localhost:8787",
+  "relayToken": "dev-token",
+  "requestTimeoutMs": 10000
+}
