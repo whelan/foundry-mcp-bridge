@@ -229,18 +229,8 @@ export function buildScene(input: BuildSceneInput, override?: Json): Json {
  * background, initial) so the same code works against both versions.
  */
 export function buildSceneVerify(input: BuildSceneInput): Json {
-  return {
-    name: input.name,
-    width: input.width ?? 4000,
-    height: input.height ?? 3000,
-    padding: input.padding ?? 0.25,
-    grid: {
-      type: input.gridType ?? GRID_TYPES.SQUARE,
-      size: input.gridSize ?? 100,
-      distance: input.gridDistance ?? 5,
-      units: input.gridUnits ?? "ft",
-      color: "#000000",
-      alpha: 0.2,
-    },
-  };
+  // Derive from buildScene so defaults can't drift between build and verify;
+  // pick only the version-stable fields.
+  const { name, width, height, padding, grid } = buildScene(input);
+  return { name, width, height, padding, grid };
 }

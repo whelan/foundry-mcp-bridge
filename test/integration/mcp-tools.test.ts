@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
-import type { CommandEnvelope } from "@foundry-mcp-bridge/shared";
+import type { Command, CommandEnvelope, CommandError } from "@foundry-mcp-bridge/shared";
 import { MockFoundry } from "./mock-foundry.js";
 import {
   type RelayTransport,
   type RequestOptions,
   withTimeout,
 } from "../../packages/mcp-server/src/relay-transport.js";
+import type { ToolOutcome } from "../../packages/mcp-server/src/reliability.js";
 import {
   runCreateDocument,
   runCreateScene,
@@ -66,6 +67,32 @@ function setup() {
   return { mock, transport };
 }
 
+/** Assert a tool failed with a specific error code (and narrow the union). */
+function expectErr(out: ToolOutcome, code: CommandError["code"]): void {
+  expect(out.ok).toBe(false);
+  if (!out.ok) expect(out.error.code).toBe(code);
+}
+
+/** Run a command directly against the mock to seed state (bypasses the pipeline). */
+function seed(mock: MockFoundry, command: Command): Promise<unknown> {
+  return mock.execute({ id: "seed", protocolVersion: "1", dryRun: false, command });
+}
+
+function seedScene(mock: MockFoundry): Promise<unknown> {
+  return seed(mock, { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true });
+}
+
+async function seedSceneWithToken(mock: MockFoundry): Promise<void> {
+  await seedScene(mock);
+  await seed(mock, {
+    action: "createEmbedded",
+    parentType: "Scene",
+    parentId: "s1",
+    embeddedName: "Token",
+    data: [{ _id: "t1", name: "Goblin", x: 0 }],
+  });
+}
+
 describe("create_document pipeline", () => {
   it("validates, writes and reads back an Actor", async () => {
     const { mock, transport } = setup();
@@ -96,8 +123,7 @@ describe("create_document pipeline", () => {
       documentType: "Actor",
       data: { name: "Bob" },
     });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.code).toBe("READBACK_MISMATCH");
+    expectErr(out, "READBACK_MISMATCH");
     expect(out.steps).toContain("rollback");
     // The created document was deleted by the rollback.
     expect(mock.documents("Actor").length).toBe(0);
@@ -111,8 +137,7 @@ describe("create_document pipeline", () => {
       { documentType: "Actor", data: { name: "Slow" } },
       { timeoutMs: 10 },
     );
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.code).toBe("TIMEOUT");
+    expectErr(out, "TIMEOUT");
   });
 });
 
@@ -130,11 +155,11 @@ describe("create_scene pipeline", () => {
 describe("update_document pipeline", () => {
   it("updates with dot-notation and verifies the change", async () => {
     const { mock, transport } = setup();
-    await mock.execute({
-      id: "seed",
-      protocolVersion: "1",
-      dryRun: false,
-      command: { action: "create", documentType: "Actor", data: { _id: "a1", name: "Bob", system: { hp: { value: 1 } } }, keepId: true },
+    await seed(mock, {
+      action: "create",
+      documentType: "Actor",
+      data: { _id: "a1", name: "Bob", system: { hp: { value: 1 } } },
+      keepId: true,
     });
     const out = await runUpdateDocument(transport, {
       documentType: "Actor",
@@ -153,8 +178,7 @@ describe("update_document pipeline", () => {
       id: "ghost",
       data: { name: "x" },
     });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.code).toBe("NOT_FOUND");
+    expectErr(out, "NOT_FOUND");
   });
 });
 
@@ -179,12 +203,7 @@ describe("get_world_info", () => {
 describe("create_embedded pipeline", () => {
   it("rolls back the created embedded docs when parent read-back fails", async () => {
     const { mock, transport } = setup();
-    await mock.execute({
-      id: "seed",
-      protocolVersion: "1",
-      dryRun: false,
-      command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true },
-    });
+    await seedScene(mock);
     transport.failFindAtCall = 1; // createEmbedded's only find is the read-back
     const out = await runCreateEmbedded(transport, {
       parentType: "Scene",
@@ -192,8 +211,7 @@ describe("create_embedded pipeline", () => {
       embeddedName: "Token",
       data: [{ _id: "t1", name: "Goblin" }],
     });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.code).toBe("READBACK_MISMATCH");
+    expectErr(out, "READBACK_MISMATCH");
     expect(out.steps).toContain("rollback");
     // The created token was removed by the rollback.
     const scene = mock.documents("Scene")[0] as { tokens: unknown[] };
@@ -202,27 +220,6 @@ describe("create_embedded pipeline", () => {
 });
 
 describe("update_embedded pipeline", () => {
-  async function seedSceneWithToken(mock: MockFoundry) {
-    await mock.execute({
-      id: "seed",
-      protocolVersion: "1",
-      dryRun: false,
-      command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true },
-    });
-    await mock.execute({
-      id: "seed2",
-      protocolVersion: "1",
-      dryRun: false,
-      command: {
-        action: "createEmbedded",
-        parentType: "Scene",
-        parentId: "s1",
-        embeddedName: "Token",
-        data: [{ _id: "t1", name: "Goblin", x: 0 }],
-      },
-    });
-  }
-
   it("updates an embedded doc and verifies via the parent read-back", async () => {
     const { mock, transport } = setup();
     await seedSceneWithToken(mock);
@@ -248,8 +245,7 @@ describe("update_embedded pipeline", () => {
       embeddedName: "Token",
       data: [{ _id: "t1", x: 999 }],
     });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.code).toBe("READBACK_MISMATCH");
+    expectErr(out, "READBACK_MISMATCH");
     expect(out.steps).toContain("rollback");
     // Rollback restored the token's pre-update x (0), not the failed 999.
     const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
@@ -260,24 +256,7 @@ describe("update_embedded pipeline", () => {
 describe("delete_embedded pipeline", () => {
   it("deletes embedded docs as a terminal write (no read-back)", async () => {
     const { mock, transport } = setup();
-    await mock.execute({
-      id: "seed",
-      protocolVersion: "1",
-      dryRun: false,
-      command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true },
-    });
-    await mock.execute({
-      id: "seed2",
-      protocolVersion: "1",
-      dryRun: false,
-      command: {
-        action: "createEmbedded",
-        parentType: "Scene",
-        parentId: "s1",
-        embeddedName: "Token",
-        data: [{ _id: "t1", name: "Goblin" }],
-      },
-    });
+    await seedSceneWithToken(mock);
     const out = await runDeleteEmbedded(transport, {
       parentType: "Scene",
       parentId: "s1",
@@ -308,19 +287,13 @@ describe("upload_asset", () => {
 });
 
 describe("duplicate_document pipeline", () => {
-  async function seedGoblin(mock: MockFoundry) {
-    await mock.execute({
-      id: "seed",
-      protocolVersion: "1",
-      dryRun: false,
-      command: {
-        action: "create",
-        documentType: "Actor",
-        data: { _id: "g1", name: "Goblin", system: { hp: { value: 7 } } },
-        keepId: true,
-      },
+  const seedGoblin = (mock: MockFoundry) =>
+    seed(mock, {
+      action: "create",
+      documentType: "Actor",
+      data: { _id: "g1", name: "Goblin", system: { hp: { value: 7 } } },
+      keepId: true,
     });
-  }
 
   it("clones a document with overrides, leaving the original intact", async () => {
     const { mock, transport } = setup();
@@ -344,8 +317,7 @@ describe("duplicate_document pipeline", () => {
   it("returns NOT_FOUND when the source does not exist", async () => {
     const { transport } = setup();
     const out = await runDuplicateDocument(transport, { documentType: "Actor", id: "ghost" });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.code).toBe("NOT_FOUND");
+    expectErr(out, "NOT_FOUND");
   });
 
   it("rolls back the copy when read-back does not match the overrides", async () => {
@@ -357,8 +329,7 @@ describe("duplicate_document pipeline", () => {
       id: "g1",
       overrides: { name: "Goblin Boss" },
     });
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error.code).toBe("READBACK_MISMATCH");
+    expectErr(out, "READBACK_MISMATCH");
     expect(out.steps).toContain("rollback");
     // Only the original survives; the rolled-back copy is gone.
     expect(mock.documents("Actor").length).toBe(1);

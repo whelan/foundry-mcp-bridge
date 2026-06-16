@@ -315,70 +315,90 @@ export interface CreateEmbeddedInput {
   data: Json[];
 }
 
-export async function createEmbeddedReliable(
+/**
+ * Embedded create/update share a shape: dry-run → write (an array result) →
+ * read-back the **parent** (embedded content isn't deep-verified) → on failure
+ * roll back and return READBACK_MISMATCH. They differ only in the write command,
+ * how the rollback is derived, and the noun used in messages/details.
+ */
+async function runEmbeddedMutation(
+  transport: RelayTransport,
+  args: {
+    write: Command;
+    parentType: DocumentType;
+    parentId: string;
+    noun: "created" | "updated";
+    /** Build the rollback command from the write result, or null if none applies. */
+    deriveRollback: (written: unknown[]) => Command | null;
+  },
+  opts: PipelineOptions,
+  steps: string[],
+): Promise<ToolOutcome> {
+  const phase = await dryRunThenWrite(transport, args.write, opts, steps);
+  if (!phase.ok) return phase.outcome;
+  if (!Array.isArray(phase.data)) {
+    return fail(steps, { code: "INTERNAL", message: `${args.write.action} did not return array` });
+  }
+  const written = phase.data;
+
+  steps.push("read-back");
+  const readBack = await send(
+    transport,
+    { action: "find", documentType: args.parentType, id: args.parentId },
+    false,
+    opts,
+  );
+  if (readBack.ok) return { ok: true, data: written, steps };
+
+  const rollback = args.deriveRollback(written);
+  if (rollback) {
+    steps.push("rollback");
+    await send(transport, rollback, false, opts);
+  }
+  return fail(steps, {
+    code: "READBACK_MISMATCH",
+    message: rollback
+      ? `embedded documents ${args.noun} but read-back of parent failed; rolled back`
+      : `embedded documents ${args.noun} but read-back of parent failed and nothing to restore; check manually`,
+    details: { parentId: args.parentId, [args.noun]: written },
+  });
+}
+
+export function createEmbeddedReliable(
   transport: RelayTransport,
   input: CreateEmbeddedInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  const steps: string[] = [];
-  const phase = await dryRunThenWrite(
+  return runEmbeddedMutation(
     transport,
     {
-      action: "createEmbedded",
+      write: {
+        action: "createEmbedded",
+        parentType: input.parentType,
+        parentId: input.parentId,
+        embeddedName: input.embeddedName,
+        data: input.data,
+      },
       parentType: input.parentType,
       parentId: input.parentId,
-      embeddedName: input.embeddedName,
-      data: input.data,
+      noun: "created",
+      // The write result carries the new ids, so we can delete them on rollback.
+      deriveRollback: (written) => {
+        const ids = written.map(idOf).filter((id): id is string => !!id);
+        return ids.length
+          ? {
+              action: "deleteEmbedded",
+              parentType: input.parentType,
+              parentId: input.parentId,
+              embeddedName: input.embeddedName,
+              ids,
+            }
+          : null;
+      },
     },
     opts,
-    steps,
+    [],
   );
-  if (!phase.ok) return phase.outcome;
-
-  if (!Array.isArray(phase.data)) {
-    return fail(steps, { code: "INTERNAL", message: "createEmbedded did not return array" });
-  }
-  const created = phase.data;
-
-  // Read-back verify the parent exists/loads (embedded content isn't deep-verified).
-  steps.push("read-back");
-  const readBack = await send(
-    transport,
-    { action: "find", documentType: input.parentType, id: input.parentId },
-    false,
-    opts,
-  );
-  if (!readBack.ok) {
-    // The write result carries the new ids, so we can roll back the creates.
-    const createdIds = created
-      .map((d) => (d && typeof d === "object" ? (d as { _id?: unknown })._id : undefined))
-      .filter((id): id is string => typeof id === "string" && id.length > 0);
-    if (createdIds.length > 0) {
-      steps.push("rollback");
-      await send(
-        transport,
-        {
-          action: "deleteEmbedded",
-          parentType: input.parentType,
-          parentId: input.parentId,
-          embeddedName: input.embeddedName,
-          ids: createdIds,
-        },
-        false,
-        opts,
-      );
-    }
-    return fail(steps, {
-      code: "READBACK_MISMATCH",
-      message:
-        createdIds.length > 0
-          ? "embedded documents created but read-back of parent failed; rolled back"
-          : "embedded documents created but read-back of parent failed and no ids to roll back; check manually",
-      details: { parentId: input.parentId, created },
-    });
-  }
-
-  return { ok: true, data: created, steps };
 }
 
 export interface UpdateEmbeddedInput {
@@ -395,7 +415,7 @@ export async function updateEmbeddedReliable(
 ): Promise<ToolOutcome> {
   const steps: string[] = [];
 
-  // Pre-read snapshot (rollback baseline).
+  // Pre-read snapshot is the rollback baseline.
   steps.push("pre-read");
   const before = await send(
     transport,
@@ -405,65 +425,40 @@ export async function updateEmbeddedReliable(
   );
   if (!before.ok) return fail(steps, before.error);
   const snapshot = before.data as Json;
+  const updatedIds = new Set(input.data.map((d) => d._id));
 
-  const phase = await dryRunThenWrite(
+  return runEmbeddedMutation(
     transport,
     {
-      action: "updateEmbedded",
+      write: {
+        action: "updateEmbedded",
+        parentType: input.parentType,
+        parentId: input.parentId,
+        embeddedName: input.embeddedName,
+        data: input.data,
+      },
       parentType: input.parentType,
       parentId: input.parentId,
-      embeddedName: input.embeddedName,
-      data: input.data,
+      noun: "updated",
+      // The server doesn't know Foundry's field name for an embeddedName (e.g.
+      // "Token" -> "tokens"), so restore the prior docs found by _id across the
+      // parent snapshot's array fields.
+      deriveRollback: () => {
+        const prior = embeddedById(snapshot, updatedIds);
+        return prior.length
+          ? {
+              action: "updateEmbedded",
+              parentType: input.parentType,
+              parentId: input.parentId,
+              embeddedName: input.embeddedName,
+              data: prior,
+            }
+          : null;
+      },
     },
     opts,
     steps,
   );
-  if (!phase.ok) return phase.outcome;
-
-  if (!Array.isArray(phase.data)) {
-    return fail(steps, { code: "INTERNAL", message: "updateEmbedded did not return array" });
-  }
-
-  // Read-back verify
-  steps.push("read-back");
-  const readBack = await send(
-    transport,
-    { action: "find", documentType: input.parentType, id: input.parentId },
-    false,
-    opts,
-  );
-  if (!readBack.ok) {
-    // Restore the prior versions of the updated docs. The server doesn't know
-    // Foundry's field name for an embeddedName (e.g. "Token" -> "tokens"), so
-    // find the pre-update docs by _id across the parent snapshot's array fields.
-    const updatedIds = new Set(input.data.map((d) => d._id));
-    const prior = embeddedById(snapshot, updatedIds);
-    if (prior.length > 0) {
-      steps.push("rollback");
-      await send(
-        transport,
-        {
-          action: "updateEmbedded",
-          parentType: input.parentType,
-          parentId: input.parentId,
-          embeddedName: input.embeddedName,
-          data: prior as Array<Json & { _id: string }>,
-        },
-        false,
-        opts,
-      );
-    }
-    return fail(steps, {
-      code: "READBACK_MISMATCH",
-      message:
-        prior.length > 0
-          ? "embedded documents updated but read-back of parent failed; rolled back"
-          : "embedded documents updated but read-back of parent failed and no prior state to restore; check manually",
-      details: { parentId: input.parentId, updated: phase.data },
-    });
-  }
-
-  return { ok: true, data: phase.data, steps };
 }
 
 /** Collect embedded docs (by `_id`) from a parent snapshot's array-valued fields. */

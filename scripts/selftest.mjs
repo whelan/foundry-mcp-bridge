@@ -20,29 +20,12 @@ import {
   runCreateEmbedded,
   runCreateQuest,
 } from "../packages/mcp-server/dist/index.js";
+// Reuse the real dot-notation merge semantics instead of re-implementing them.
+import { applyUpdate } from "@foundry-mcp-bridge/shared";
 
 // --- tiny in-memory "Foundry" stub (stands in for the module) ---------------
 const store = new Map(); // `${type}:${id}` -> doc
 const rid = () => Math.random().toString(36).slice(2, 18).padEnd(16, "x");
-const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
-const expand = (flat) => {
-  const o = {};
-  for (const [p, v] of Object.entries(flat)) {
-    const ks = p.split(".");
-    let c = o;
-    for (let i = 0; i < ks.length - 1; i++) {
-      if (!isObj(c[ks[i]])) c[ks[i]] = {};
-      c = c[ks[i]];
-    }
-    c[ks[ks.length - 1]] = v;
-  }
-  return o;
-};
-const merge = (b, o) => {
-  const out = { ...b };
-  for (const [k, v] of Object.entries(o)) out[k] = isObj(out[k]) && isObj(v) ? merge(out[k], v) : v;
-  return out;
-};
 function handle(env) {
   const c = env.command;
   const id = env.id;
@@ -66,7 +49,7 @@ function handle(env) {
       const k = `${c.documentType}:${c.id}`;
       const d = store.get(k);
       if (!d) return err("NOT_FOUND", `${c.documentType} ${c.id}`);
-      const u = merge(structuredClone(d), expand(c.data));
+      const u = applyUpdate(d, c.data);
       u._id = c.id;
       if (!env.dryRun) store.set(k, u);
       return ok(u);
@@ -78,7 +61,7 @@ function handle(env) {
       const src = store.get(`${c.documentType}:${c.id}`);
       if (!src) return err("NOT_FOUND", `${c.documentType} ${c.id}`);
       const _id = rid();
-      const copy = merge(structuredClone(src), c.overrides ? expand(c.overrides) : {});
+      const copy = c.overrides ? applyUpdate(src, c.overrides) : structuredClone(src);
       copy._id = _id;
       if (!env.dryRun) store.set(`${c.documentType}:${_id}`, copy);
       return ok(copy);
