@@ -30,10 +30,11 @@ const ConfigSchema = z.object({
     .min(1, "relayUrl must not be empty (set RELAY_URL)"),
   relayToken: z.string().min(1).optional(),
   requestTimeoutMs: z.coerce.number().int().positive().default(10_000),
+  // raw.trace arrives as string|undefined (env / .env / dev.config via toString).
   trace: z
-    .union([z.string(), z.boolean()])
+    .string()
     .optional()
-    .transform((v) => (v === undefined ? true : v !== "0" && v !== "false" && v !== false)),
+    .transform((v) => v === undefined || (v !== "0" && v !== "false")),
 });
 
 type RawConfig = Record<string, string | undefined>;

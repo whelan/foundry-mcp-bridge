@@ -17,6 +17,8 @@ import {
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
+  runCreateQuest,
+  runUpdateQuest,
 } from "../../packages/mcp-server/src/tools.js";
 
 /** Transport that drives the mock-foundry, with hooks to exercise the pipeline. */
@@ -218,6 +220,27 @@ describe("create_embedded pipeline", () => {
     const scene = mock.documents("Scene")[0] as { tokens: unknown[] };
     expect(scene.tokens.length).toBe(0);
   });
+
+  it("does not verify/roll back for an embedded type with no known field mapping", async () => {
+    const { mock, transport } = setup();
+    await seed(mock, {
+      action: "create",
+      documentType: "Playlist",
+      data: { _id: "pl1", name: "Tunes" },
+      keepId: true,
+    });
+    // Corrupt the read-back so a *mapped* type would false-fail; an unmapped
+    // embeddedName (PlaylistSound -> no entry) must skip verification instead.
+    transport.corruptFindAtCall = 1;
+    const out = await runCreateEmbedded(transport, {
+      parentType: "Playlist",
+      parentId: "pl1",
+      embeddedName: "PlaylistSound",
+      data: [{ _id: "ps1", name: "Theme" }],
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).not.toContain("rollback");
+  });
 });
 
 describe("update_embedded pipeline", () => {
@@ -284,6 +307,25 @@ describe("delete_embedded pipeline", () => {
     expect(out.steps).toEqual(["dry-run", "write"]);
     const scene = mock.documents("Scene")[0] as { tokens: unknown[] };
     expect(scene.tokens.length).toBe(0);
+  });
+});
+
+describe("quest pipeline", () => {
+  it("create_quest confirms via write + _id without a content read-back", async () => {
+    const { transport } = setup();
+    // status casing differs from what a module would store; must NOT false-fail.
+    const out = await runCreateQuest(transport, { data: { name: "Find the Amulet", status: "Available" } });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write"]);
+  });
+
+  it("update_quest confirms the write without re-verifying normalized content", async () => {
+    const { transport } = setup();
+    const created = await runCreateQuest(transport, { data: { name: "Q" } });
+    const id = created.ok ? (created.data as { _id: string })._id : "missing";
+    const out = await runUpdateQuest(transport, { id, data: { status: "Active" } });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write"]);
   });
 });
 

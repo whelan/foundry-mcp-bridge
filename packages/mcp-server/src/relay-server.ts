@@ -9,7 +9,7 @@
  */
 
 import { WebSocketServer, type WebSocket } from "ws";
-import type { CommandEnvelope, CommandResult } from "@foundry-mcp-bridge/shared";
+import { err, type CommandEnvelope, type CommandResult } from "@foundry-mcp-bridge/shared";
 import {
   PendingRequests,
   TimeoutError,
@@ -100,11 +100,9 @@ export class RelayServer implements RelayTransport {
       if (this.client === socket) this.client = null;
       this.log("warn", "Foundry module disconnected");
       // Fail in-flight requests fast instead of waiting out their timeouts.
-      this.pending.failAll((id) => ({
-        id,
-        ok: false,
-        error: { code: "INTERNAL", message: "Foundry module disconnected before responding" },
-      }));
+      this.pending.failAll((id) =>
+        err(id, "INTERNAL", "Foundry module disconnected before responding"),
+      );
     });
   }
 

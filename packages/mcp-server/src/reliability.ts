@@ -15,7 +15,9 @@ import {
   type DocumentType,
   type Json,
   PROTOCOL_VERSION,
+  EMBEDDED_FIELDS,
   embeddedField,
+  err,
   expandObject,
   isSubset,
 } from "@foundry-mcp-bridge/shared";
@@ -49,7 +51,10 @@ async function send(
   opts: PipelineOptions,
 ): Promise<CommandResult> {
   const envelope = makeEnvelope(command, dryRun, opts.token);
-  const tag = `${command.action}${dryRun ? " (dry-run)" : ""} #${envelope.id.slice(0, 8)}`;
+  // Build the (allocating) trace tag only when a sink is attached.
+  const tag = opts.log
+    ? `${command.action}${dryRun ? " (dry-run)" : ""} #${envelope.id.slice(0, 8)}`
+    : "";
   opts.log?.(`  → ${tag} ${commandSummary(command)}`);
   try {
     const res = await transport.request(envelope, { timeoutMs: opts.timeoutMs });
@@ -60,21 +65,36 @@ async function send(
   } catch (e) {
     const code = e instanceof TimeoutError ? "TIMEOUT" : "INTERNAL";
     opts.log?.(`  ← ${tag} ${code}: ${(e as Error).message}`);
-    return { id: envelope.id, ok: false, error: { code, message: (e as Error).message } };
+    return err(envelope.id, code, (e as Error).message);
   }
 }
 
-/** A short, id/type-focused summary of a command for trace logs. */
-function commandSummary(command: Command): string {
-  const c = command as Record<string, unknown>;
-  const parts: string[] = [];
-  if (typeof c.documentType === "string") parts.push(c.documentType);
-  if (typeof c.parentType === "string") parts.push(`${c.parentType}/${c.embeddedName}`);
-  if (typeof c.id === "string") parts.push(`id=${c.id}`);
-  if (typeof c.parentId === "string") parts.push(`parent=${c.parentId}`);
-  if (Array.isArray(c.ids)) parts.push(`ids=${c.ids.length}`);
-  if (Array.isArray(c.data)) parts.push(`n=${c.data.length}`);
-  return parts.join(" ");
+/** A short, id/type-focused summary of a command for trace logs (typed, exhaustive). */
+function commandSummary(c: Command): string {
+  switch (c.action) {
+    case "create":
+      return c.documentType;
+    case "update":
+    case "delete":
+    case "duplicate":
+      return `${c.documentType} id=${c.id}`;
+    case "find":
+      return c.id ? `${c.documentType} id=${c.id}` : c.documentType;
+    case "createEmbedded":
+    case "updateEmbedded":
+      return `${c.parentType}/${c.embeddedName} parent=${c.parentId} n=${c.data.length}`;
+    case "deleteEmbedded":
+      return `${c.parentType}/${c.embeddedName} parent=${c.parentId} ids=${c.ids.length}`;
+    case "createQuest":
+      return c.parentId ? `parent=${c.parentId}` : "quest";
+    case "updateQuest":
+    case "deleteQuest":
+      return `id=${c.id}`;
+    case "uploadAsset":
+      return `${c.target}/${c.filename}`;
+    case "getWorldInfo":
+      return "";
+  }
 }
 
 /**
@@ -418,6 +438,10 @@ export function createEmbeddedReliable(
       noun: "created",
       // Verify each new embedded doc is present in the re-read parent by _id.
       verify: (parent, written) => {
+        // Only the canonical field names map reliably to a parent collection; for
+        // an unmapped embeddedName we can't locate the docs, so trust parent-loaded
+        // rather than falsely failing (and rolling back) a successful write.
+        if (!(input.embeddedName in EMBEDDED_FIELDS)) return true;
         const ids = written.map(idOf).filter((id): id is string => !!id);
         if (ids.length === 0) return true; // can't identify; parent loaded is best we have
         const present = new Set(embeddedEntries(parent, input.embeddedName).map(idOf));
@@ -483,6 +507,8 @@ export async function updateEmbeddedReliable(
       noun: "updated",
       // Verify each requested change is reflected in the re-read parent.
       verify: (parent) => {
+        // Unmapped embeddedName: can't locate the collection, so don't false-fail.
+        if (!(input.embeddedName in EMBEDDED_FIELDS)) return true;
         const byId = new Map(
           embeddedEntries(parent, input.embeddedName).map((e) => [idOf(e), e] as const),
         );
@@ -564,20 +590,9 @@ export async function createQuestReliable(
     return fail(steps, { code: "INTERNAL", message: "createQuest returned no _id" });
   }
 
-  // Quests aren't queryable via find, so verify the write echo instead of
-  // re-reading (same approach as updateQuest) rather than a no-op read-back.
-  if (input.data) {
-    steps.push("read-back");
-    const expanded = expandObject(input.data);
-    if (!isSubset(phase.data, expanded)) {
-      return fail(steps, {
-        code: "READBACK_MISMATCH",
-        message: "created quest did not match the requested data",
-        details: { expected: expanded, actual: phase.data },
-      });
-    }
-  }
-
+  // Quests aren't queryable via find, and Forien's Quest Log normalizes fields
+  // (e.g. status casing), so the write echo can't be content-verified without
+  // false failures. A successful write returning an _id is the confirmation.
   return { ok: true, data: phase.data, steps };
 }
 
@@ -600,18 +615,8 @@ export async function updateQuestReliable(
   );
   if (!phase.ok) return phase.outcome;
 
-  // Quests aren't queryable via find, so verify the write result itself rather
-  // than re-reading.
-  steps.push("read-back");
-  const expanded = expandObject(input.data);
-  if (!isSubset(phase.data, expanded)) {
-    return fail(steps, {
-      code: "READBACK_MISMATCH",
-      message: "quest update did not match the requested data",
-      details: { id: input.id, expected: expanded, actual: phase.data },
-    });
-  }
-
+  // Not queryable via find and module-normalized (see createQuest); the module's
+  // successful write is the confirmation rather than an unreliable echo compare.
   return { ok: true, data: phase.data, steps };
 }
 

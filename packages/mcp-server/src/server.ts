@@ -47,118 +47,125 @@ function toCallResult(outcome: ToolOutcome) {
   };
 }
 
-type ToolRun = (
-  transport: RelayTransport,
-  args: never,
-  opts: PipelineOptions,
-) => Promise<ToolOutcome>;
-
 export function buildServer(transport: RelayTransport, opts: PipelineOptions = {}): McpServer {
   const server = new McpServer({ name: "foundry-mcp-bridge", version: "0.1.0" });
   const log = opts.log;
 
   // Register a tool and wrap its handler with a trace of entry + outcome+steps.
-  function register(
+  // Generic over the input shape so a mismatched shape/handler pairing fails tsc.
+  function register<S extends z.ZodRawShape>(
     name: string,
     description: string,
-    inputSchema: z.ZodRawShape,
-    run: ToolRun,
+    inputSchema: S,
+    run: (
+      transport: RelayTransport,
+      args: z.infer<z.ZodObject<S>>,
+      opts: PipelineOptions,
+    ) => Promise<ToolOutcome>,
   ): void {
-    server.registerTool(name, { description, inputSchema }, async (args) => {
+    // `run` is tied to S, so a mismatched shape/handler pairing fails tsc here.
+    const handler = async (args: z.infer<z.ZodObject<S>>) => {
       log?.(`▶ ${name}`);
-      const out = await run(transport, args as never, opts);
+      const out = await run(transport, args, opts);
       log?.(
         out.ok
           ? `◀ ${name} ok [${out.steps.join(" > ")}]`
           : `◀ ${name} ERROR ${out.error.code}: ${out.error.message} [${out.steps.join(" > ")}]`,
       );
       return toCallResult(out);
-    });
+    };
+    // The SDK can't infer a concrete callback type from a generic shape, so cast
+    // only at this boundary (the pairing safety above is unaffected).
+    server.registerTool(
+      name,
+      { description, inputSchema },
+      handler as unknown as Parameters<typeof server.registerTool>[2],
+    );
   }
 
   register(
     "create_document",
     "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch).",
     CreateDocumentShape,
-    runCreateDocument as ToolRun,
+    runCreateDocument,
   );
   register(
     "create_scene",
     "Create a V14 Scene from high-level parameters (built with the shared scene builders), then run the reliability pipeline.",
     CreateSceneShape,
-    runCreateScene as ToolRun,
+    runCreateScene,
   );
   register(
     "update_document",
     "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch.",
     UpdateDocumentShape,
-    runUpdateDocument as ToolRun,
+    runUpdateDocument,
   );
   register(
     "delete_document",
     "Delete a Foundry document by id. Runs dry-run and write; no rollback possible.",
     DeleteDocumentShape,
-    runDeleteDocument as ToolRun,
+    runDeleteDocument,
   );
   register(
     "duplicate_document",
     "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure.",
     DuplicateDocumentShape,
-    runDuplicateDocument as ToolRun,
+    runDuplicateDocument,
   );
   register(
     "find_documents",
     "Query and read Foundry documents. Pass id for a single document, or query for shallow field matching. Returns document(s) for inspection.",
     FindDocumentsShape,
-    runFindDocuments as ToolRun,
+    runFindDocuments,
   );
   register(
     "get_world_info",
     "Read world metadata for safe importing: Foundry version, game system (id/version), world id/title, and the list of folders (id/name/type) for resolving folder placement. Read-only.",
     GetWorldInfoShape,
-    runGetWorldInfo as ToolRun,
+    runGetWorldInfo,
   );
   register(
     "upload_asset",
     "Upload a file (base64) to Foundry storage via FilePicker — e.g. a scene background or token image. Returns the stored path to reference on a document. source 'data' (local) or 'forgevtt' (The Forge).",
     UploadAssetShape,
-    runUploadAsset as ToolRun,
+    runUploadAsset,
   );
   register(
     "create_embedded",
     "Create embedded documents (e.g., tokens, items, effects) within a parent. Runs the full reliability pipeline with read-back of the parent.",
     CreateEmbeddedShape,
-    runCreateEmbedded as ToolRun,
+    runCreateEmbedded,
   );
   register(
     "update_embedded",
     "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch.",
     UpdateEmbeddedShape,
-    runUpdateEmbedded as ToolRun,
+    runUpdateEmbedded,
   );
   register(
     "delete_embedded",
     "Delete embedded documents by id. Runs dry-run and write.",
     DeleteEmbeddedShape,
-    runDeleteEmbedded as ToolRun,
+    runDeleteEmbedded,
   );
   register(
     "create_quest",
     "Create a quest via Forien's Quest Log (requires the module to be enabled). Runs dry-run and write with read-back.",
     CreateQuestShape,
-    runCreateQuest as ToolRun,
+    runCreateQuest,
   );
   register(
     "update_quest",
     "Update a quest by id. Partial update with read-back verification of changed fields.",
     UpdateQuestShape,
-    runUpdateQuest as ToolRun,
+    runUpdateQuest,
   );
   register(
     "delete_quest",
     "Delete a quest by id. Runs dry-run and write.",
     DeleteQuestShape,
-    runDeleteQuest as ToolRun,
+    runDeleteQuest,
   );
 
   return server;

@@ -11,6 +11,7 @@
 import {
   CommandResult,
   type CommandEnvelope,
+  err,
 } from "@foundry-mcp-bridge/shared";
 
 export class TimeoutError extends Error {
@@ -130,6 +131,9 @@ export class WebSocketRelayTransport implements RelayTransport {
   private readonly ready: Promise<void>;
   private readonly pending = new PendingRequests();
   private readonly onMessage = (ev: { data?: unknown }) => this.pending.settle(ev.data);
+  // A dropped socket (remote close / error) must fail in-flight requests fast,
+  // not leave them to time out — symmetric with RelayServer's disconnect drain.
+  private readonly onDrop = () => this.drain("relay connection lost");
 
   constructor(options: WebSocketRelayTransportOptions) {
     this.defaultTimeoutMs = options.defaultTimeoutMs;
@@ -139,6 +143,8 @@ export class WebSocketRelayTransport implements RelayTransport {
       this.socket.addEventListener("open", () => resolve());
     });
     this.socket.addEventListener("message", this.onMessage);
+    this.socket.addEventListener("close", this.onDrop);
+    this.socket.addEventListener("error", this.onDrop);
   }
 
   async request(envelope: CommandEnvelope, opts?: RequestOptions): Promise<CommandResult> {
@@ -149,13 +155,15 @@ export class WebSocketRelayTransport implements RelayTransport {
     );
   }
 
+  private drain(message: string): void {
+    this.pending.failAll((id) => err(id, "INTERNAL", message));
+  }
+
   close(): void {
     this.socket.removeEventListener?.("message", this.onMessage);
-    this.pending.failAll((id) => ({
-      id,
-      ok: false,
-      error: { code: "INTERNAL", message: "relay transport closed" },
-    }));
+    this.socket.removeEventListener?.("close", this.onDrop);
+    this.socket.removeEventListener?.("error", this.onDrop);
+    this.drain("relay transport closed");
     this.socket.close();
   }
 }

@@ -83,7 +83,7 @@ on mismatch). Categories differ in which steps apply and why:
 | delete | dry-run, write | terminal: no read-back, no rollback. |
 | embedded create/update | dry-run, write, read-back, [rollback] | read-back fetches the **parent** and verifies the embedded entries by `_id` under their Foundry field (`embeddedField()` from `shared`): create checks each new `_id` is present; update checks each change is a subset. On failure, create rolls back by deleting the new ids (from the write result); update restores the pre-read versions of the touched docs. |
 | embedded delete | dry-run, write | terminal. |
-| quest create/update/delete | dry-run, write, [read-back] | quests aren't queryable via `find`; create/update verify the **write echo** is a subset of the requested data; delete is terminal. |
+| quest create/update/delete | dry-run, write | quests aren't queryable via `find` and Forien's Quest Log normalizes fields (e.g. status casing), so content isn't re-verified; a successful write (with an `_id` for create) is the confirmation; delete is terminal. |
 | find / get_world_info | find / get-world-info | read-only; not mutations; single round-trip via the shared `runRead` helper. |
 | upload_asset | dry-run, write | terminal: FilePicker upload, no read-back. |
 
