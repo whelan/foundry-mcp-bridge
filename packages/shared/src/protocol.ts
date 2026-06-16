@@ -42,6 +42,32 @@ export const COLLECTIONS: Record<DocumentType, string> = {
   Folder: "folders",
 };
 
+/**
+ * Field name an embedded document collection lives under on its parent (Foundry's
+ * `Token` → `tokens`, `JournalEntryPage` → `pages`, …). Single source of truth so
+ * the mock's key formatting, the module, and the server's read-back verification
+ * all agree. Unknown names fall back to a lowercased guess.
+ */
+export const EMBEDDED_FIELDS: Record<string, string> = {
+  Token: "tokens",
+  AmbientLight: "lights",
+  Note: "notes",
+  ActiveEffect: "effects",
+  Item: "items",
+  Wall: "walls",
+  AmbientSound: "sounds",
+  Drawing: "drawings",
+  MeasuredTemplate: "templates",
+  Tile: "tiles",
+  Region: "regions",
+  // v10+ JournalEntry content lives in embedded JournalEntryPage documents.
+  JournalEntryPage: "pages",
+};
+
+export function embeddedField(embeddedName: string): string {
+  return EMBEDDED_FIELDS[embeddedName] ?? embeddedName.toLowerCase();
+}
+
 /** Arbitrary Foundry document data — validated structurally, not field-by-field. */
 const DocumentData = z.record(z.string(), z.unknown());
 

@@ -99,15 +99,26 @@ export class RelayServer implements RelayTransport {
     socket.on("close", () => {
       if (this.client === socket) this.client = null;
       this.log("warn", "Foundry module disconnected");
+      // Fail in-flight requests fast instead of waiting out their timeouts.
+      this.pending.failAll((id) => ({
+        id,
+        ok: false,
+        error: { code: "INTERNAL", message: "Foundry module disconnected before responding" },
+      }));
     });
   }
 
   private waitForClient(timeoutMs: number): Promise<void> {
     if (this.client) return Promise.resolve();
-    return withTimeout(
-      new Promise<void>((resolve) => this.clientWaiters.push(resolve)),
-      timeoutMs,
-    ).catch(() => {
+    let resolver!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      resolver = resolve;
+      this.clientWaiters.push(resolver);
+    });
+    return withTimeout(wait, timeoutMs).catch(() => {
+      // Drop our waiter so it doesn't leak (and fire on a later connection).
+      const i = this.clientWaiters.indexOf(resolver);
+      if (i >= 0) this.clientWaiters.splice(i, 1);
       throw new TimeoutError("no Foundry module connected to the relay");
     });
   }

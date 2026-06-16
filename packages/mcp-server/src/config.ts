@@ -20,6 +20,8 @@ export interface ServerConfig {
   relayToken?: string;
   /** Per-command transport timeout (ms). */
   requestTimeoutMs: number;
+  /** Emit a full command/result trace to stderr (default on; RELAY_TRACE=0 to mute). */
+  trace: boolean;
 }
 
 const ConfigSchema = z.object({
@@ -28,6 +30,10 @@ const ConfigSchema = z.object({
     .min(1, "relayUrl must not be empty (set RELAY_URL)"),
   relayToken: z.string().min(1).optional(),
   requestTimeoutMs: z.coerce.number().int().positive().default(10_000),
+  trace: z
+    .union([z.string(), z.boolean()])
+    .optional()
+    .transform((v) => (v === undefined ? true : v !== "0" && v !== "false" && v !== false)),
 });
 
 type RawConfig = Record<string, string | undefined>;
@@ -77,6 +83,7 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
       dotEnv.RELAY_TIMEOUT_MS,
       devConfig.requestTimeoutMs?.toString(),
     ),
+    trace: pick(env.RELAY_TRACE, dotEnv.RELAY_TRACE, devConfig.trace?.toString()),
   };
 
   const parsed = ConfigSchema.safeParse(raw);
@@ -95,6 +102,7 @@ interface DevConfig {
   relayUrl?: string;
   relayToken?: string;
   requestTimeoutMs?: number;
+  trace?: boolean;
 }
 
 function readDevConfig(path: string): DevConfig {

@@ -15,6 +15,7 @@ import {
   type DocumentType,
   type Json,
   PROTOCOL_VERSION,
+  embeddedField,
   expandObject,
   isSubset,
 } from "@foundry-mcp-bridge/shared";
@@ -23,6 +24,8 @@ import { TimeoutError, type RelayTransport } from "./relay-transport.js";
 export interface PipelineOptions {
   token?: string;
   timeoutMs?: number;
+  /** Optional trace sink; when set, every wire command + result is logged. */
+  log?: (line: string) => void;
 }
 
 export type ToolOutcome =
@@ -46,12 +49,32 @@ async function send(
   opts: PipelineOptions,
 ): Promise<CommandResult> {
   const envelope = makeEnvelope(command, dryRun, opts.token);
+  const tag = `${command.action}${dryRun ? " (dry-run)" : ""} #${envelope.id.slice(0, 8)}`;
+  opts.log?.(`  → ${tag} ${commandSummary(command)}`);
   try {
-    return await transport.request(envelope, { timeoutMs: opts.timeoutMs });
+    const res = await transport.request(envelope, { timeoutMs: opts.timeoutMs });
+    opts.log?.(
+      res.ok ? `  ← ${tag} ok` : `  ← ${tag} ERROR ${res.error.code}: ${res.error.message}`,
+    );
+    return res;
   } catch (e) {
     const code = e instanceof TimeoutError ? "TIMEOUT" : "INTERNAL";
+    opts.log?.(`  ← ${tag} ${code}: ${(e as Error).message}`);
     return { id: envelope.id, ok: false, error: { code, message: (e as Error).message } };
   }
+}
+
+/** A short, id/type-focused summary of a command for trace logs. */
+function commandSummary(command: Command): string {
+  const c = command as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof c.documentType === "string") parts.push(c.documentType);
+  if (typeof c.parentType === "string") parts.push(`${c.parentType}/${c.embeddedName}`);
+  if (typeof c.id === "string") parts.push(`id=${c.id}`);
+  if (typeof c.parentId === "string") parts.push(`parent=${c.parentId}`);
+  if (Array.isArray(c.ids)) parts.push(`ids=${c.ids.length}`);
+  if (Array.isArray(c.data)) parts.push(`n=${c.data.length}`);
+  return parts.join(" ");
 }
 
 /**
@@ -328,6 +351,8 @@ async function runEmbeddedMutation(
     parentType: DocumentType;
     parentId: string;
     noun: "created" | "updated";
+    /** Verify the write took effect in the re-read parent (by embedded `_id`). */
+    verify: (parent: Json, written: unknown[]) => boolean;
     /** Build the rollback command from the write result, or null if none applies. */
     deriveRollback: (written: unknown[]) => Command | null;
   },
@@ -341,6 +366,7 @@ async function runEmbeddedMutation(
   }
   const written = phase.data;
 
+  // Read back the parent and verify the embedded entries actually landed.
   steps.push("read-back");
   const readBack = await send(
     transport,
@@ -348,7 +374,9 @@ async function runEmbeddedMutation(
     false,
     opts,
   );
-  if (readBack.ok) return { ok: true, data: written, steps };
+  if (readBack.ok && args.verify(readBack.data as Json, written)) {
+    return { ok: true, data: written, steps };
+  }
 
   const rollback = args.deriveRollback(written);
   if (rollback) {
@@ -358,10 +386,16 @@ async function runEmbeddedMutation(
   return fail(steps, {
     code: "READBACK_MISMATCH",
     message: rollback
-      ? `embedded documents ${args.noun} but read-back of parent failed; rolled back`
-      : `embedded documents ${args.noun} but read-back of parent failed and nothing to restore; check manually`,
+      ? `embedded documents ${args.noun} but read-back verification failed; rolled back`
+      : `embedded documents ${args.noun} but read-back verification failed and nothing to restore; check manually`,
     details: { parentId: args.parentId, [args.noun]: written },
   });
+}
+
+/** Embedded entries on a parent snapshot under their Foundry collection field. */
+function embeddedEntries(parent: Json, embeddedName: string): Json[] {
+  const arr = parent[embeddedField(embeddedName)];
+  return Array.isArray(arr) ? (arr as Json[]) : [];
 }
 
 export function createEmbeddedReliable(
@@ -382,6 +416,13 @@ export function createEmbeddedReliable(
       parentType: input.parentType,
       parentId: input.parentId,
       noun: "created",
+      // Verify each new embedded doc is present in the re-read parent by _id.
+      verify: (parent, written) => {
+        const ids = written.map(idOf).filter((id): id is string => !!id);
+        if (ids.length === 0) return true; // can't identify; parent loaded is best we have
+        const present = new Set(embeddedEntries(parent, input.embeddedName).map(idOf));
+        return ids.every((id) => present.has(id));
+      },
       // The write result carries the new ids, so we can delete them on rollback.
       deriveRollback: (written) => {
         const ids = written.map(idOf).filter((id): id is string => !!id);
@@ -440,11 +481,22 @@ export async function updateEmbeddedReliable(
       parentType: input.parentType,
       parentId: input.parentId,
       noun: "updated",
-      // The server doesn't know Foundry's field name for an embeddedName (e.g.
-      // "Token" -> "tokens"), so restore the prior docs found by _id across the
-      // parent snapshot's array fields.
+      // Verify each requested change is reflected in the re-read parent.
+      verify: (parent) => {
+        const byId = new Map(
+          embeddedEntries(parent, input.embeddedName).map((e) => [idOf(e), e] as const),
+        );
+        return input.data.every((d) => {
+          const actual = byId.get(d._id);
+          return actual != null && isSubset(actual, expandObject(d));
+        });
+      },
+      // Restore the pre-update versions of the touched docs.
       deriveRollback: () => {
-        const prior = embeddedById(snapshot, updatedIds);
+        const prior = embeddedEntries(snapshot, input.embeddedName).filter((e) => {
+          const id = idOf(e);
+          return id != null && updatedIds.has(id);
+        }) as Array<Json & { _id: string }>;
         return prior.length
           ? {
               action: "updateEmbedded",
@@ -459,25 +511,6 @@ export async function updateEmbeddedReliable(
     opts,
     steps,
   );
-}
-
-/** Collect embedded docs (by `_id`) from a parent snapshot's array-valued fields. */
-function embeddedById(snapshot: Json, ids: Set<string>): Array<Json & { _id: string }> {
-  const found: Array<Json & { _id: string }> = [];
-  for (const value of Object.values(snapshot)) {
-    if (!Array.isArray(value)) continue;
-    for (const item of value) {
-      if (
-        item &&
-        typeof item === "object" &&
-        typeof (item as { _id?: unknown })._id === "string" &&
-        ids.has((item as { _id: string })._id)
-      ) {
-        found.push(item as Json & { _id: string });
-      }
-    }
-  }
-  return found;
 }
 
 export interface DeleteEmbeddedInput {
@@ -531,8 +564,19 @@ export async function createQuestReliable(
     return fail(steps, { code: "INTERNAL", message: "createQuest returned no _id" });
   }
 
-  // Quests are not queryable via standard find, so the read-back is a no-op.
-  steps.push("read-back");
+  // Quests aren't queryable via find, so verify the write echo instead of
+  // re-reading (same approach as updateQuest) rather than a no-op read-back.
+  if (input.data) {
+    steps.push("read-back");
+    const expanded = expandObject(input.data);
+    if (!isSubset(phase.data, expanded)) {
+      return fail(steps, {
+        code: "READBACK_MISMATCH",
+        message: "created quest did not match the requested data",
+        details: { expected: expanded, actual: phase.data },
+      });
+    }
+  }
 
   return { ok: true, data: phase.data, steps };
 }

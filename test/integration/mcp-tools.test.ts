@@ -25,12 +25,16 @@ class MockTransport implements RelayTransport {
   /** Fail the Nth `find` (1-indexed) with NOT_FOUND; null disables. Lets tests
    *  target the read-back find specifically (e.g. after an update's pre-read). */
   failFindAtCall: number | null = null;
+  /** Strip the Nth `find` result to just `{_id}`, so read-back verification fails
+   *  even though the find succeeded (e.g. an embedded change that didn't land). */
+  corruptFindAtCall: number | null = null;
   private findCalls = 0;
   constructor(private readonly mock: MockFoundry) {}
 
   async request(envelope: CommandEnvelope, opts?: RequestOptions) {
     const exec = (async () => {
-      if (envelope.command.action === "find") {
+      const isFind = envelope.command.action === "find";
+      if (isFind) {
         this.findCalls += 1;
         if (this.findCalls === this.failFindAtCall) {
           return {
@@ -43,12 +47,9 @@ class MockTransport implements RelayTransport {
       // Clone like the real WebSocket transport serializes results, so callers
       // never alias the mock's live store (e.g. an update's pre-read snapshot).
       const res = structuredClone(await this.mock.execute(envelope));
-      if (
-        this.corruptReadBack &&
-        envelope.command.action === "find" &&
-        res.ok &&
-        !envelope.dryRun
-      ) {
+      const corrupt =
+        res.ok && isFind && (this.corruptReadBack || this.findCalls === this.corruptFindAtCall);
+      if (corrupt) {
         this.corruptReadBack = false;
         // Strip everything but the id so read-back verification fails.
         return { id: res.id, ok: true as const, data: { _id: (res.data as { _id: string })._id } };
@@ -248,6 +249,22 @@ describe("update_embedded pipeline", () => {
     expectErr(out, "READBACK_MISMATCH");
     expect(out.steps).toContain("rollback");
     // Rollback restored the token's pre-update x (0), not the failed 999.
+    const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
+    expect(scene.tokens[0]!.x).toBe(0);
+  });
+
+  it("rolls back when the read-back parent doesn't reflect the change", async () => {
+    const { mock, transport } = setup();
+    await seedSceneWithToken(mock);
+    transport.corruptFindAtCall = 2; // read-back succeeds but lacks the updated token
+    const out = await runUpdateEmbedded(transport, {
+      parentType: "Scene",
+      parentId: "s1",
+      embeddedName: "Token",
+      data: [{ _id: "t1", x: 999 }],
+    });
+    expectErr(out, "READBACK_MISMATCH");
+    expect(out.steps).toContain("rollback");
     const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
     expect(scene.tokens[0]!.x).toBe(0);
   });

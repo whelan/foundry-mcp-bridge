@@ -20,8 +20,8 @@ import {
   runCreateEmbedded,
   runCreateQuest,
 } from "../packages/mcp-server/dist/index.js";
-// Reuse the real dot-notation merge semantics instead of re-implementing them.
-import { applyUpdate } from "@foundry-mcp-bridge/shared";
+// Reuse the real dot-notation merge + embedded-field mapping instead of re-implementing them.
+import { applyUpdate, embeddedField } from "@foundry-mcp-bridge/shared";
 
 // --- tiny in-memory "Foundry" stub (stands in for the module) ---------------
 const store = new Map(); // `${type}:${id}` -> doc
@@ -72,7 +72,8 @@ function handle(env) {
       if (!parent) return err("NOT_FOUND", `${c.parentType} ${c.parentId}`);
       const created = c.data.map((d) => ({ ...d, _id: d._id || rid() }));
       if (!env.dryRun) {
-        parent[c.embeddedName] = [...(parent[c.embeddedName] || []), ...created];
+        const field = embeddedField(c.embeddedName); // store under e.g. "tokens", not "Token"
+        parent[field] = [...(parent[field] || []), ...created];
         store.set(k, parent);
       }
       return ok(created);
@@ -94,7 +95,9 @@ function handle(env) {
 }
 
 const TOKEN = "selftest";
-const opts = { token: TOKEN, timeoutMs: 2000 };
+// Pass a trace logger so the selftest also exercises (and demonstrates) the
+// per-command trace the real server emits to stderr.
+const opts = { token: TOKEN, timeoutMs: 2000, log: (line) => console.log(line) };
 let failed = false;
 const show = (name, out) => {
   if (!out.ok) failed = true;

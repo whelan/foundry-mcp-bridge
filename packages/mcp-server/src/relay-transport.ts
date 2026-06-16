@@ -86,6 +86,16 @@ export class PendingRequests {
       this.map.delete(id);
     }
   }
+
+  /**
+   * Settle every outstanding request with a synthesized result — used on
+   * disconnect so callers fail fast instead of waiting out their timeouts.
+   */
+  failAll(makeResult: (id: string) => CommandResult): void {
+    const entries = [...this.map.entries()];
+    this.map.clear();
+    for (const [id, resolve] of entries) resolve(makeResult(id));
+  }
 }
 
 /** Minimal browser/Node WebSocket surface used by the client transport. */
@@ -93,6 +103,7 @@ export interface WsLike {
   send(data: string): void;
   close(): void;
   addEventListener(type: string, listener: (ev: { data?: unknown }) => void): void;
+  removeEventListener?(type: string, listener: (ev: { data?: unknown }) => void): void;
 }
 
 export type WsFactory = (url: string) => WsLike;
@@ -118,6 +129,7 @@ export class WebSocketRelayTransport implements RelayTransport {
   private readonly defaultTimeoutMs: number;
   private readonly ready: Promise<void>;
   private readonly pending = new PendingRequests();
+  private readonly onMessage = (ev: { data?: unknown }) => this.pending.settle(ev.data);
 
   constructor(options: WebSocketRelayTransportOptions) {
     this.defaultTimeoutMs = options.defaultTimeoutMs;
@@ -126,7 +138,7 @@ export class WebSocketRelayTransport implements RelayTransport {
     this.ready = new Promise<void>((resolve) => {
       this.socket.addEventListener("open", () => resolve());
     });
-    this.socket.addEventListener("message", (ev) => this.pending.settle(ev.data));
+    this.socket.addEventListener("message", this.onMessage);
   }
 
   async request(envelope: CommandEnvelope, opts?: RequestOptions): Promise<CommandResult> {
@@ -138,6 +150,12 @@ export class WebSocketRelayTransport implements RelayTransport {
   }
 
   close(): void {
+    this.socket.removeEventListener?.("message", this.onMessage);
+    this.pending.failAll((id) => ({
+      id,
+      ok: false,
+      error: { code: "INTERNAL", message: "relay transport closed" },
+    }));
     this.socket.close();
   }
 }

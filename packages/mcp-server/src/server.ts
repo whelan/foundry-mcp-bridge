@@ -5,6 +5,7 @@
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
 import type { RelayTransport } from "./relay-transport.js";
 import type { PipelineOptions } from "./reliability.js";
 import type { ToolOutcome } from "./reliability.js";
@@ -46,144 +47,118 @@ function toCallResult(outcome: ToolOutcome) {
   };
 }
 
+type ToolRun = (
+  transport: RelayTransport,
+  args: never,
+  opts: PipelineOptions,
+) => Promise<ToolOutcome>;
+
 export function buildServer(transport: RelayTransport, opts: PipelineOptions = {}): McpServer {
   const server = new McpServer({ name: "foundry-mcp-bridge", version: "0.1.0" });
+  const log = opts.log;
 
-  server.registerTool(
+  // Register a tool and wrap its handler with a trace of entry + outcome+steps.
+  function register(
+    name: string,
+    description: string,
+    inputSchema: z.ZodRawShape,
+    run: ToolRun,
+  ): void {
+    server.registerTool(name, { description, inputSchema }, async (args) => {
+      log?.(`▶ ${name}`);
+      const out = await run(transport, args as never, opts);
+      log?.(
+        out.ok
+          ? `◀ ${name} ok [${out.steps.join(" > ")}]`
+          : `◀ ${name} ERROR ${out.error.code}: ${out.error.message} [${out.steps.join(" > ")}]`,
+      );
+      return toCallResult(out);
+    });
+  }
+
+  register(
     "create_document",
-    {
-      description:
-        "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch).",
-      inputSchema: CreateDocumentShape,
-    },
-    async (args) => toCallResult(await runCreateDocument(transport, args, opts)),
+    "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch).",
+    CreateDocumentShape,
+    runCreateDocument as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "create_scene",
-    {
-      description:
-        "Create a V14 Scene from high-level parameters (built with the shared scene builders), then run the reliability pipeline.",
-      inputSchema: CreateSceneShape,
-    },
-    async (args) => toCallResult(await runCreateScene(transport, args, opts)),
+    "Create a V14 Scene from high-level parameters (built with the shared scene builders), then run the reliability pipeline.",
+    CreateSceneShape,
+    runCreateScene as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "update_document",
-    {
-      description:
-        "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch.",
-      inputSchema: UpdateDocumentShape,
-    },
-    async (args) => toCallResult(await runUpdateDocument(transport, args, opts)),
+    "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch.",
+    UpdateDocumentShape,
+    runUpdateDocument as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "delete_document",
-    {
-      description: "Delete a Foundry document by id. Runs dry-run and write; no rollback possible.",
-      inputSchema: DeleteDocumentShape,
-    },
-    async (args) => toCallResult(await runDeleteDocument(transport, args, opts)),
+    "Delete a Foundry document by id. Runs dry-run and write; no rollback possible.",
+    DeleteDocumentShape,
+    runDeleteDocument as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "duplicate_document",
-    {
-      description:
-        "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure.",
-      inputSchema: DuplicateDocumentShape,
-    },
-    async (args) => toCallResult(await runDuplicateDocument(transport, args, opts)),
+    "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure.",
+    DuplicateDocumentShape,
+    runDuplicateDocument as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "find_documents",
-    {
-      description:
-        "Query and read Foundry documents. Pass id for a single document, or query for shallow field matching. Returns document(s) for inspection.",
-      inputSchema: FindDocumentsShape,
-    },
-    async (args) => toCallResult(await runFindDocuments(transport, args, opts)),
+    "Query and read Foundry documents. Pass id for a single document, or query for shallow field matching. Returns document(s) for inspection.",
+    FindDocumentsShape,
+    runFindDocuments as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "get_world_info",
-    {
-      description:
-        "Read world metadata for safe importing: Foundry version, game system (id/version), world id/title, and the list of folders (id/name/type) for resolving folder placement. Read-only.",
-      inputSchema: GetWorldInfoShape,
-    },
-    async (args) => toCallResult(await runGetWorldInfo(transport, args, opts)),
+    "Read world metadata for safe importing: Foundry version, game system (id/version), world id/title, and the list of folders (id/name/type) for resolving folder placement. Read-only.",
+    GetWorldInfoShape,
+    runGetWorldInfo as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "upload_asset",
-    {
-      description:
-        "Upload a file (base64) to Foundry storage via FilePicker — e.g. a scene background or token image. Returns the stored path to reference on a document. source 'data' (local) or 'forgevtt' (The Forge).",
-      inputSchema: UploadAssetShape,
-    },
-    async (args) => toCallResult(await runUploadAsset(transport, args, opts)),
+    "Upload a file (base64) to Foundry storage via FilePicker — e.g. a scene background or token image. Returns the stored path to reference on a document. source 'data' (local) or 'forgevtt' (The Forge).",
+    UploadAssetShape,
+    runUploadAsset as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "create_embedded",
-    {
-      description:
-        "Create embedded documents (e.g., tokens, items, effects) within a parent. Runs the full reliability pipeline with read-back of the parent.",
-      inputSchema: CreateEmbeddedShape,
-    },
-    async (args) => toCallResult(await runCreateEmbedded(transport, args, opts)),
+    "Create embedded documents (e.g., tokens, items, effects) within a parent. Runs the full reliability pipeline with read-back of the parent.",
+    CreateEmbeddedShape,
+    runCreateEmbedded as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "update_embedded",
-    {
-      description:
-        "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch.",
-      inputSchema: UpdateEmbeddedShape,
-    },
-    async (args) => toCallResult(await runUpdateEmbedded(transport, args, opts)),
+    "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch.",
+    UpdateEmbeddedShape,
+    runUpdateEmbedded as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "delete_embedded",
-    {
-      description: "Delete embedded documents by id. Runs dry-run and write.",
-      inputSchema: DeleteEmbeddedShape,
-    },
-    async (args) => toCallResult(await runDeleteEmbedded(transport, args, opts)),
+    "Delete embedded documents by id. Runs dry-run and write.",
+    DeleteEmbeddedShape,
+    runDeleteEmbedded as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "create_quest",
-    {
-      description:
-        "Create a quest via Forien's Quest Log (requires the module to be enabled). Runs dry-run and write with read-back.",
-      inputSchema: CreateQuestShape,
-    },
-    async (args) => toCallResult(await runCreateQuest(transport, args, opts)),
+    "Create a quest via Forien's Quest Log (requires the module to be enabled). Runs dry-run and write with read-back.",
+    CreateQuestShape,
+    runCreateQuest as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "update_quest",
-    {
-      description:
-        "Update a quest by id. Partial update with read-back verification of changed fields.",
-      inputSchema: UpdateQuestShape,
-    },
-    async (args) => toCallResult(await runUpdateQuest(transport, args, opts)),
+    "Update a quest by id. Partial update with read-back verification of changed fields.",
+    UpdateQuestShape,
+    runUpdateQuest as ToolRun,
   );
-
-  server.registerTool(
+  register(
     "delete_quest",
-    {
-      description: "Delete a quest by id. Runs dry-run and write.",
-      inputSchema: DeleteQuestShape,
-    },
-    async (args) => toCallResult(await runDeleteQuest(transport, args, opts)),
+    "Delete a quest by id. Runs dry-run and write.",
+    DeleteQuestShape,
+    runDeleteQuest as ToolRun,
   );
 
   return server;

@@ -17,6 +17,7 @@ import {
   type Json,
   COLLECTIONS,
   checkEnvelopeGuards,
+  embeddedField,
   randomID,
   ok,
   err,
@@ -30,23 +31,6 @@ import type { WorldInfo } from "../../packages/foundry-module/src/protocol-execu
 // Foundry key conventions
 // ---------------------------------------------------------------------------
 
-/** Field name an embedded document lives under on its parent. */
-const EMBEDDED_FIELD: Record<string, string> = {
-  Token: "tokens",
-  AmbientLight: "lights",
-  Note: "notes",
-  ActiveEffect: "effects",
-  Item: "items",
-  Wall: "walls",
-  AmbientSound: "sounds",
-  Drawing: "drawings",
-  MeasuredTemplate: "templates",
-  Tile: "tiles",
-  Region: "regions",
-  // v10+ JournalEntry content lives in embedded JournalEntryPage documents.
-  JournalEntryPage: "pages",
-};
-
 /** `!actors!{id}` for a top-level document. */
 export function documentKey(type: DocumentType, id: string): string {
   return `!${COLLECTIONS[type]}!${id}`;
@@ -59,8 +43,7 @@ export function embeddedKey(
   parentId: string,
   embeddedId: string,
 ): string {
-  const field = EMBEDDED_FIELD[embeddedName] ?? embeddedName.toLowerCase();
-  return `!${COLLECTIONS[parentType]}.${field}!${parentId}.${embeddedId}`;
+  return `!${COLLECTIONS[parentType]}.${embeddedField(embeddedName)}!${parentId}.${embeddedId}`;
 }
 
 // Re-export the shared object helpers used to mirror Foundry's update semantics
@@ -321,7 +304,7 @@ export class MockFoundry {
   }
 
   private embeddedArray(parent: Json, embeddedName: string): Json[] {
-    const field = EMBEDDED_FIELD[embeddedName] ?? embeddedName.toLowerCase();
+    const field = embeddedField(embeddedName);
     if (!Array.isArray(parent[field])) parent[field] = [];
     return parent[field] as Json[];
   }
