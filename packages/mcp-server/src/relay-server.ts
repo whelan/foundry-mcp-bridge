@@ -97,7 +97,10 @@ export class RelayServer implements RelayTransport {
 
     socket.on("message", (data) => this.pending.settle(data.toString()));
     socket.on("close", () => {
-      if (this.client === socket) this.client = null;
+      // Ignore a superseded/old socket closing — only the active client dropping
+      // should fail in-flight requests (which were sent to that client).
+      if (this.client !== socket) return;
+      this.client = null;
       this.log("warn", "Foundry module disconnected");
       // Fail in-flight requests fast instead of waiting out their timeouts.
       this.pending.failAll((id) =>

@@ -5,7 +5,7 @@
 
 import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -23,5 +23,7 @@ if (!existsSync(entry)) {
   }
 }
 
-const { start } = await import(entry);
+// Import via a file:// URL so the dynamic import is portable (Windows paths
+// with backslashes / drive letters aren't valid import specifiers otherwise).
+const { start } = await import(pathToFileURL(entry).href);
 await start();

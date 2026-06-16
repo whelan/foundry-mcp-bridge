@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { PROTOCOL_VERSION } from "@foundry-mcp-bridge/shared";
 import type { Command, CommandEnvelope, CommandError } from "@foundry-mcp-bridge/shared";
 import { MockFoundry } from "./mock-foundry.js";
 import {
@@ -86,7 +87,7 @@ function expectErr(out: ToolOutcome, code: CommandError["code"]): void {
 
 /** Run a command directly against the mock to seed state (bypasses the pipeline). */
 function seed(mock: MockFoundry, command: Command): Promise<unknown> {
-  return mock.execute({ id: "seed", protocolVersion: "1", dryRun: false, command });
+  return mock.execute({ id: "seed", protocolVersion: PROTOCOL_VERSION, dryRun: false, command });
 }
 
 function seedScene(mock: MockFoundry): Promise<unknown> {

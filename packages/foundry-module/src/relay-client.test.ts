@@ -186,6 +186,25 @@ describe("RelayClient", () => {
     expect(timers.length).toBe(0);
   });
 
+  it("does not stack reconnect timers when close fires repeatedly", () => {
+    const socket = new FakeWebSocket();
+    const timers: { fn: () => void; ms: number }[] = [];
+    const c = new RelayClient({
+      url: "ws://test",
+      api: stubApi(),
+      context: { isGM: true },
+      createSocket: () => socket,
+      setTimer: (fn, ms) => timers.push({ fn, ms }) - 1,
+      clearTimer: () => {},
+    });
+    c.connect();
+    // Several close/error events before the scheduled reconnect fires.
+    socket.onclose?.({});
+    socket.onclose?.({});
+    socket.onclose?.({});
+    expect(timers.length).toBe(1); // only one timer scheduled, not three
+  });
+
   it("honors reconnect: false", () => {
     const socket = new FakeWebSocket();
     const timers: { fn: () => void; ms: number }[] = [];

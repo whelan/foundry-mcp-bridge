@@ -96,6 +96,8 @@ export class RelayClient {
   /** Schedule a reconnect with exponential backoff, unless closed on purpose. */
   private scheduleReconnect(): void {
     if (this.intentionalClose || !this.reconnectEnabled) return;
+    // Don't stack timers if multiple close/error events fire before one fires.
+    if (this.reconnectHandle != null) return;
     const delay = Math.min(this.baseDelay * 2 ** this.reconnectAttempts, this.maxDelay);
     this.reconnectAttempts += 1;
     this.log("info", `relay reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
