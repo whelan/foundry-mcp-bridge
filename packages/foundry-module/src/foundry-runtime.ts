@@ -203,16 +203,21 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       if (opts.dryRun) {
         return params.files.map((f) => ({ filename: f.filename, path: `${target}/${f.filename}` }));
       }
-      // Optional skip: pre-browse the directory to find existing files.
+      // Optional skip: pre-browse the directory to find existing files. Match by
+      // basename, not full path: on The Forge `FilePicker.browse("forgevtt", …)`
+      // returns absolute CDN URLs (with the user-id prefix / query strings) rather
+      // than the relative `target/filename` we construct, so a full-path compare
+      // would silently never match and re-upload everything.
+      const baseName = (p: string) => (p.split("?")[0] ?? p).split("/").pop() ?? p;
       const existing = new Set<string>();
       if (params.skipExisting) {
         const browse = await (FilePicker as any).browse(params.source, target, {});
-        for (const f of browse?.files ?? []) existing.add(f);
+        for (const f of browse?.files ?? []) existing.add(baseName(String(f)));
       }
       const results: Array<{ filename: string; path: string; skipped?: boolean }> = [];
       for (const entry of params.files) {
         const path = `${target}/${entry.filename}`;
-        if (existing.has(path)) {
+        if (existing.has(baseName(entry.filename))) {
           results.push({ filename: entry.filename, path, skipped: true });
           continue;
         }

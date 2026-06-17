@@ -211,6 +211,18 @@ describe("get_world_info", () => {
     const info = out.ok ? (out.data as any) : null;
     expect(info.system.id).toBe("dnd5e");
     expect(info.folders).toEqual([{ _id: "f1", name: "NPCs", type: "Actor" }]);
+    // forge detection defaults to off locally; clients read this to pick the asset source.
+    expect(info.forge).toEqual({ active: false, userId: null });
+  });
+
+  it("reports forge hosting when the world is on The Forge", async () => {
+    const mock = new MockFoundry({
+      worldInfo: { forge: { active: true, userId: "forge-user-1" } },
+    });
+    const transport = new MockTransport(mock);
+    const out = await runGetWorldInfo(transport);
+    const info = out.ok ? (out.data as any) : null;
+    expect(info.forge).toEqual({ active: true, userId: "forge-user-1" });
   });
 });
 
