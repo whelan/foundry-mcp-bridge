@@ -15,6 +15,7 @@ import {
   runDuplicateDocument,
   runGetWorldInfo,
   runUploadAsset,
+  runBrowseAssets,
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
@@ -382,6 +383,66 @@ describe("upload_asset", () => {
     expect(out.steps).toEqual(["dry-run", "write"]);
     expect(out.ok && (out.data as any).path).toBe("worlds/cos/scenes/tavern.webp");
     expect(mock.filePicker.uploads.length).toBe(1);
+  });
+});
+
+describe("browse_assets", () => {
+  it("returns empty listing for unknown path", async () => {
+    const { transport } = setup();
+    const out = await runBrowseAssets(transport, { source: "data", target: "worlds/none" });
+    if (!out.ok) throw new Error(`browse failed: ${out.error.message}`);
+    expect(out.data).toMatchObject({ dirs: [], files: [], target: "worlds/none" });
+  });
+
+  it("lists files after upload", async () => {
+    const { transport } = setup();
+    const up = await runUploadAsset(transport, {
+      source: "data",
+      target: "worlds/strahd/scenes",
+      filename: "village.webp",
+      contentBase64: btoa("fake"),
+    });
+    if (!up.ok) throw new Error("upload failed");
+    const out = await runBrowseAssets(transport, { source: "data", target: "worlds/strahd/scenes" });
+    if (!out.ok) throw new Error(`browse failed: ${out.error.message}`);
+    const data = out.data as { files: string[]; dirs: string[]; target: string };
+    expect(data.files).toContain("worlds/strahd/scenes/village.webp");
+  });
+
+  it("filters by extension", async () => {
+    const { transport } = setup();
+    await runUploadAsset(transport, {
+      source: "data", target: "worlds/strahd/maps",
+      filename: "map.png", contentBase64: btoa("png"),
+    });
+    await runUploadAsset(transport, {
+      source: "data", target: "worlds/strahd/maps",
+      filename: "notes.pdf", contentBase64: btoa("pdf"),
+    });
+    const out = await runBrowseAssets(transport, {
+      source: "data", target: "worlds/strahd/maps", extensions: [".png"],
+    });
+    if (!out.ok) throw new Error(`browse failed: ${out.error.message}`);
+    const data = out.data as { files: string[] };
+    expect(data.files.some((f) => f.endsWith(".png"))).toBe(true);
+    expect(data.files.some((f) => f.endsWith(".pdf"))).toBe(false);
+  });
+
+  it("lists subdirectories as dirs", async () => {
+    const { transport } = setup();
+    // Upload a file one level deeper than the browse target.
+    const up = await runUploadAsset(transport, {
+      source: "data",
+      target: "worlds/strahd/regions/barovia",
+      filename: "map.webp",
+      contentBase64: btoa("deep"),
+    });
+    if (!up.ok) throw new Error("upload failed");
+    const out = await runBrowseAssets(transport, { source: "data", target: "worlds/strahd/regions" });
+    if (!out.ok) throw new Error(`browse failed: ${out.error.message}`);
+    const data = out.data as { dirs: string[]; files: string[] };
+    expect(data.dirs).toContain("worlds/strahd/regions/barovia");
+    expect(data.files).toEqual([]); // the file is in a subdir, not a direct child
   });
 });
 

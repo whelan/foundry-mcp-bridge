@@ -23,6 +23,7 @@ import {
   updateQuestReliable,
   deleteQuestReliable,
   uploadAssetReliable,
+  browseAssetsReliable,
   runRead,
   type PipelineOptions,
   type ToolOutcome,
@@ -183,6 +184,24 @@ export function runUploadAsset(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return uploadAssetReliable(transport, args, opts);
+}
+
+// --- browse_assets ----------------------------------------------------------
+
+export const BrowseAssetsShape = {
+  source: z.enum(["data", "forgevtt"]).default("data"),
+  target: z.string().min(1),
+  extensions: z.array(z.string()).optional(),
+};
+const BrowseAssets = z.object(BrowseAssetsShape);
+export type BrowseAssetsArgs = z.infer<typeof BrowseAssets>;
+
+export function runBrowseAssets(
+  transport: RelayTransport,
+  args: BrowseAssetsArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return browseAssetsReliable(transport, args, opts);
 }
 
 // --- create_embedded --------------------------------------------------------

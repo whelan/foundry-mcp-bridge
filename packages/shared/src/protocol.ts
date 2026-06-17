@@ -194,6 +194,17 @@ export const UploadAssetCommand = z.object({
 });
 export type UploadAssetCommand = z.infer<typeof UploadAssetCommand>;
 
+export const BrowseAssetsCommand = z.object({
+  action: z.literal("browseAssets"),
+  /** Storage source: local "data" or Forge "forgevtt". */
+  source: z.enum(["data", "forgevtt"]).default("data"),
+  /** Directory path to list. Trailing slash optional. */
+  target: z.string().min(1),
+  /** Optional file extension filter (e.g. [".webp", ".png"]). */
+  extensions: z.array(z.string()).optional(),
+});
+export type BrowseAssetsCommand = z.infer<typeof BrowseAssetsCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -208,6 +219,7 @@ export const Command = z.discriminatedUnion("action", [
   DeleteQuestCommand,
   GetWorldInfoCommand,
   UploadAssetCommand,
+  BrowseAssetsCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

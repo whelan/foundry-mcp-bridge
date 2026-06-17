@@ -95,6 +95,12 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
     async uploadAsset(params, opts) {
       return (await run({ action: "uploadAsset", ...params }, opts)) as { path: string };
     },
+    async browseAssets(params, opts) {
+      return (await run(
+        { action: "browseAssets", source: params.source, target: params.target, extensions: params.extensions },
+        opts,
+      )) as { dirs: string[]; files: string[]; target: string };
+    },
     async createQuest(data, parentId, opts) {
       return (await run({ action: "createQuest", data, parentId }, opts)) as DocData;
     },

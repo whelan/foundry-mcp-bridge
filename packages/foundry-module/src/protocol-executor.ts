@@ -60,6 +60,13 @@ export interface UploadAssetParams {
   mimeType?: string;
 }
 
+/** Parameters for browsing assets via Foundry's FilePicker. */
+export interface BrowseAssetsParams {
+  source: "data" | "forgevtt";
+  target: string;
+  extensions?: string[];
+}
+
 /**
  * The narrow surface the executor needs from Foundry. The real implementation
  * (foundry-runtime.ts) calls `Actor.create`, `document.update`, embedded CRUD,
@@ -104,6 +111,7 @@ export interface FoundryDocumentApi {
   find(type: DocumentType, selector: FindSelector): Promise<DocData | DocData[]>;
   getWorldInfo(): Promise<WorldInfo>;
   uploadAsset(params: UploadAssetParams, opts: ExecuteOptions): Promise<{ path: string }>;
+  browseAssets(params: BrowseAssetsParams, opts: ExecuteOptions): Promise<{ dirs: string[]; files: string[]; target: string }>;
   createQuest(data: DocData | undefined, parentId: string | undefined, opts: ExecuteOptions): Promise<DocData>;
   updateQuest(id: string, data: DocData, opts: ExecuteOptions): Promise<DocData>;
   deleteQuest(id: string, opts: ExecuteOptions): Promise<void>;
@@ -201,6 +209,11 @@ async function dispatch(
           contentBase64: command.contentBase64,
           mimeType: command.mimeType,
         },
+        opts,
+      );
+    case "browseAssets":
+      return api.browseAssets(
+        { source: command.source, target: command.target, extensions: command.extensions },
         opts,
       );
     case "createQuest":

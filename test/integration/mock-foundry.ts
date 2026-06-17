@@ -96,6 +96,35 @@ export class MockFilePicker {
     const files = [...this.files[source]].filter((p) => p.startsWith(prefix));
     return { target, files };
   }
+
+  /** Extended browse that also returns direct subdirectories, with optional extension filter. */
+  browseWithDirs(
+    source: FilePickerSource,
+    target: string,
+    extensions?: string[],
+  ): { dirs: string[]; files: string[]; target: string } {
+    const prefix = target.replace(/\/$/, "");
+    const allPaths = [...this.files[source]];
+    const files = allPaths.filter((p) => {
+      if (!p.startsWith(prefix + "/")) return false;
+      const rel = p.slice(prefix.length + 1);
+      if (rel.includes("/")) return false; // not a direct child
+      if (extensions?.length) {
+        return extensions.some((ext) => p.endsWith(ext));
+      }
+      return true;
+    });
+    const dirs = [...new Set(
+      allPaths
+        .filter((p) => p.startsWith(prefix + "/"))
+        .map((p) => {
+          const rel = p.slice(prefix.length + 1);
+          return rel.includes("/") ? `${prefix}/${rel.split("/")[0]}` : null;
+        })
+        .filter((d): d is string => d !== null),
+    )];
+    return { dirs, files, target: prefix };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -230,6 +259,10 @@ export class MockFoundry {
         const target = command.target.replace(/\/$/, "");
         if (dryRun) return ok(id, { path: `${target}/${command.filename}` });
         return ok(id, this.filePicker.put(command.source, target, command.filename));
+      }
+      case "browseAssets": {
+        if (dryRun) return ok(id, { dirs: [], files: [], target: command.target });
+        return ok(id, this.filePicker.browseWithDirs(command.source, command.target, command.extensions));
       }
       case "createQuest":
         return this.createQuest(id, command, dryRun);

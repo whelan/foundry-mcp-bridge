@@ -92,6 +92,8 @@ function commandSummary(c: Command): string {
       return `id=${c.id}`;
     case "uploadAsset":
       return `${c.target}/${c.filename}`;
+    case "browseAssets":
+      return `${c.source}:${c.target}`;
     case "getWorldInfo":
       return "";
   }
@@ -634,6 +636,25 @@ export function deleteQuestReliable(
 ): Promise<ToolOutcome> {
   // Terminal: dry-run → write, no read-back/rollback.
   return runTerminal(transport, { action: "deleteQuest", id: input.id }, opts);
+}
+
+export interface BrowseAssetsInput {
+  source: "data" | "forgevtt";
+  target: string;
+  extensions?: string[];
+}
+
+export function browseAssetsReliable(
+  transport: RelayTransport,
+  input: BrowseAssetsInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runRead(
+    transport,
+    { action: "browseAssets", source: input.source, target: input.target, extensions: input.extensions },
+    "browse-assets",
+    opts,
+  );
 }
 
 export interface UploadAssetInput {

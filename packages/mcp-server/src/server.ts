@@ -18,6 +18,7 @@ import {
   FindDocumentsShape,
   GetWorldInfoShape,
   UploadAssetShape,
+  BrowseAssetsShape,
   CreateEmbeddedShape,
   UpdateEmbeddedShape,
   DeleteEmbeddedShape,
@@ -32,6 +33,7 @@ import {
   runFindDocuments,
   runGetWorldInfo,
   runUploadAsset,
+  runBrowseAssets,
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
@@ -130,6 +132,12 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
     "Upload a file (base64) to Foundry storage via FilePicker — e.g. a scene background or token image. Returns the stored path to reference on a document. source 'data' (local) or 'forgevtt' (The Forge).",
     UploadAssetShape,
     runUploadAsset,
+  );
+  register(
+    "browse_assets",
+    "List files and sub-directories in a Foundry asset directory. Use source=\"forgevtt\" when the world is hosted on The Forge. Returns { dirs, files, target }.",
+    BrowseAssetsShape,
+    runBrowseAssets,
   );
   register(
     "create_embedded",

@@ -179,6 +179,19 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       return { path };
     },
 
+    async browseAssets(params, opts) {
+      // Dry-run: return empty listing (nothing to validate against).
+      if (opts.dryRun) return { dirs: [], files: [], target: params.target };
+      const options: Record<string, unknown> = {};
+      if (params.extensions?.length) options.extensions = params.extensions;
+      const result = await (FilePicker as any).browse(params.source, params.target, options);
+      return {
+        dirs: (result?.dirs ?? []) as string[],
+        files: (result?.files ?? []) as string[],
+        target: String(result?.target ?? params.target),
+      };
+    },
+
     async createQuest(data, parentId, opts) {
       const fqlModule = game.modules.get("forien-quest-log");
       if (!fqlModule?.active) {
