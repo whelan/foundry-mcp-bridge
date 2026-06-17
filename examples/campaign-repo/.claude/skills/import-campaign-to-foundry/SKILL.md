@@ -1,103 +1,154 @@
 ---
 name: import-campaign-to-foundry
-description: Import this Curse of Strahd repo's notes (generated/ and journals/) into the running Foundry world via the foundry MCP tools, following the empty-id=create / filled-id=update upsert contract. Use when the user wants to "import", "push", "sync", or "create in Foundry" journals, NPCs/actors, or scenes — e.g. "import generated/journals into Foundry", "push the Lejren scene note", "sync the new NPCs".
+description: Import Curse of Strahd campaign content into a running Foundry world via the foundry MCP tools — journals, NPCs/actors, scenes (with map upload), and quests, both locally and on The Forge. Use when the user says "import", "push", "sync", or "create in Foundry" for journals, NPCs, scenes, maps, or quests.
 ---
 
-# Import Curse of Strahd notes into Foundry (live MCP path)
+# Import Curse of Strahd into Foundry (live MCP path)
 
-This repo has **two** ways into Foundry:
-- `scripts/import-*.js` — an **offline LevelDB** bridge (writes the world DB directly).
-- the **foundry MCP tools** (`mcp__foundry__*`) — the **live** path, into a running
-  world with a GM logged in. **This skill uses the live MCP path only.** Don't shell
-  out to the LevelDB scripts unless the user explicitly asks.
+This repo has two ways into Foundry: `scripts/import-*.js` (offline LevelDB, writes
+the world DB directly) and the **foundry MCP tools** (`mcp__foundry__*`, the live
+path into a running world with a GM logged in). **This skill uses the live MCP
+path only.** Don't shell out to the LevelDB scripts unless the user explicitly asks.
 
-## The upsert contract (authoritative)
+## 0. Orient first — always
 
-Each note's front-matter `id` decides the operation:
+Call `get_world_info` once at the start of every session. It returns:
+- `foundryVersion`, `system.id` (must be `dnd5e`), `world.id`/`world.title`
+- `folders` — `{ _id, name, type }[]` for resolving a note's target folder by name
+- `forge.active` — `true` when hosted on The Forge
 
-- **`id: ""` (empty)** → `create_document`. On success, **write the returned `_id`
-  back into the note's front-matter** so the next run updates instead of duplicating.
-- **`id: "<16-char id>"` (filled)** → `update_document` with that `documentType`+`id`.
-  If that id returns `NOT_FOUND` (the doc isn't in the world — e.g. re-importing
-  extracted `journals/` into a fresh world) and you want to keep the original id so
-  cross-references resolve, `create_document` with `data._id` set and
-  `keepId: true`.
-
-This is the plan §7.2 upsert pattern. The id round-trip is what keeps imports
-idempotent — never skip writing the new id back.
-
-## Classify by folder, not by title
-
-| Path | documentType | Tool | Notes |
-| --- | --- | --- | --- |
-| `generated/journals/*.md` | `JournalEntry` | create/update_document | New hand-written GM notes (Danish). Titled "Scene: …" are still **journals** (roleplay/GM notes), not maps. |
-| `journals/*.md` | `JournalEntry` | update_document | Extracted from Foundry; ids/folders are real. Usually already in the world → update. |
-| `generated/npcs/*.md` | `Actor` | create/update_document | |
-| `generated/scenes/*.md` | `Scene` | create_scene (new) / update_document (existing) | Actual maps/battle scenes. |
-| `actors/npcs/*.json` | `Actor` | create_document data source | Full extracted actor JSON — usable as `data`. Read-only source; strip/ignore its `_id` when creating fresh, or treat as upsert. |
-| `actors/`, `journals/` (extracted), `rules/` | — | — | Source/reference. **Read-only — never write back here.** |
-
-## Front-matter
-
-```yaml
-id: ""                 # "" = create; 16-char id = update
-name: "…"              # required; becomes the document name
-folder: null           # null, or a real Foundry folder id (pass through on the document)
-tags: [..]             # repo-side metadata; do NOT send as Foundry data
+**Derive the asset source from `forge.active` — never hardcode it:**
 ```
+const source = worldInfo.forge.active ? "forgevtt" : "data";
+```
+Use this `source` for every `upload_asset`, `batch_upload_assets`, and
+`browse_assets` call in the session.
 
-Map to tool input: `name` → `data.name`; `folder` (when a real id) → `data.folder`.
-`tags` stay in the repo, not in Foundry.
+## 1. Asset upload strategy (maps + tokens)
 
-### Journal content lives in pages (v10+)
+Upload images BEFORE creating the scenes/actors that reference them.
 
-A `JournalEntry` is a container; its prose is **not** a top-level field. Create the
-entry first, then add its content as embedded `JournalEntryPage` documents:
+### Pre-flight dedup
+Call `browse_assets` to see what's already uploaded, then pass `skipExisting: true`
+so re-runs are idempotent:
+```
+browse_assets({ source, target: "worlds/curse-of-strahd/scenes", extensions: [".webp",".jpg",".png"] })
+// → { files: ["worlds/curse-of-strahd/scenes/village-of-barovia.webp", ...], dirs: [...] }
 
-1. `create_document` (`"JournalEntry"`) with just `name` (+ `folder`) → get the entry `_id`.
-2. `create_embedded` with `parentType: "JournalEntry"`, `parentId: <entry id>`,
-   `embeddedName: "JournalEntryPage"`, `data: [{ name, type: "text",
-   text: { content: "<p>…</p>" } }]`. Convert the markdown **body** to HTML for
-   `text.content`; don't dump raw markdown.
+batch_upload_assets({
+  source,
+  target: "worlds/curse-of-strahd/scenes",
+  files: [
+    { filename: "village-of-barovia.webp", contentBase64: "...", mimeType: "image/webp" },
+    { filename: "death-house.webp",        contentBase64: "...", mimeType: "image/webp" },
+  ],
+  skipExisting: true,
+})
+// → [{ filename, path }, { filename, path, skipped: true }, ...]
+```
+Max 50 files per `batch_upload_assets` call — split larger sets into batches.
+Upload token art to `worlds/curse-of-strahd/tokens/` the same way.
 
-For other documents (Actor, Item, …) the markdown body still goes into that
-document's own description field as HTML.
+## 2. Document classification (by folder, not title)
 
-## Workflow
+| Source path | documentType | Tool | Notes |
+| --- | --- | --- | --- |
+| `generated/journals/*.md` | JournalEntry | create/update_document | GM notes (Danish). "Scene: …" titles are still journals, not maps. |
+| `journals/*.md` | JournalEntry | update_document | Extracted from Foundry; ids/folders real → usually update. |
+| `generated/npcs/*.md` | Actor | create/update_document | Strahd NPCs + monsters. |
+| `generated/scenes/*.md` | Scene | create_scene / update_document | Actual maps; upload background first. |
+| `actors/npcs/*.json` | Actor | create_document source | Full extracted JSON; strip `_id` for a fresh create or treat as upsert. |
+| `actors/`, `journals/` (extracted), `rules/` | — | — | Reference. **Read-only — never write back.** |
 
-0. **Orient.** Call `get_world_info` once: it returns the game system (e.g.
-   `dnd5e`), Foundry version, and the folder list (`_id`/`name`/`type`). Use it to
-   resolve a note's target `folder` by name, and to know which `system.*` fields
-   are safe. If a needed folder doesn't exist, create it with `create_document`
-   (`documentType: "Folder"`, `data: { name, type: "<held doc type>" }`) — confirm
-   with the user before creating new folder structure.
-1. **Scope** the files the user named (Glob, e.g. `generated/journals/*.md`).
-2. For each note, parse front-matter + body and pick the tool from the table.
-3. **Upsert:**
-   - empty `id` → `create_document` (or `create_scene` for `generated/scenes/`);
-     then edit the note's front-matter `id` to the returned `_id`.
-   - filled `id` → `update_document` `{ documentType, id, data }`.
-4. The tools run dry-run → write → read-back → rollback themselves; read each
-   result's `ok`/`steps`. On a non-`ok` result, surface `error.code`
-   (`NOT_FOUND` for a stale id, `VALIDATION`, `READBACK_MISMATCH`, `AUTH`,
-   `TIMEOUT`) — don't blindly retry. A `NOT_FOUND` on a filled id means the doc
-   was deleted in Foundry; ask whether to re-create (which mints a new id).
-5. **Report** a table: note → created/updated/failed, new `_id`, error if any.
+## 3. Upsert contract (authoritative)
 
-## Scene images
+- **`id: ""`** → `create_document` (or `create_scene`). On success, **write the
+  returned `_id` back into the note's front-matter** so the next run updates.
+- **`id: "<16-char>"`** → `update_document` `{ documentType, id, data }`. If it
+  returns `NOT_FOUND` (doc not in this world) and you want stable cross-refs,
+  `create_document` with `data._id` set and `keepId: true`.
+The id round-trip is what keeps imports idempotent — never skip writing it back.
 
-For `generated/scenes/`, upload the local image first with `upload_asset`
-(base64 content → returns the stored path), then pass that path as the scene
-`background` via `create_scene`. Don't reference image paths that aren't in the
-world.
+## 4. Scenes — full workflow
 
-## Guardrails
+For each `generated/scenes/*.md`:
+1. Parse front-matter: `name`, `id`, `width`, `height`, `gridSize`, `background`
+   (a repo-relative image path).
+2. Upload the background if not already present (see §1), capturing the stored path:
+   ```
+   const { path: bgPath } = upload_asset({ source, target: "worlds/curse-of-strahd/scenes",
+     filename: "village-of-barovia.webp", contentBase64: readFileBase64(localPath) });
+   ```
+3. Create or update:
+   - create: `create_scene({ name, width, height, gridSize, background: bgPath })` → write `_id` back.
+   - update: `update_document({ documentType: "Scene", id, data: { background: bgPath } })`
 
-- Writes hit the **live** world. For more than ~3 documents, show the plan
-  (files, op, names) and get a go-ahead before bulk-writing.
-- Confirm before any delete (deletes are terminal and not auto-allowed).
-- Content in `generated/` is Danish; extracted `journals/` are often English —
-  preserve each note's language; don't translate unless asked.
-- If `mcp__foundry__*` tools aren't present, the world isn't reachable: tell the
-  user to start Foundry (GM logged in, module enabled, matching relay URL/token).
-  Don't fall back to the LevelDB scripts on your own.
+### Strahd scene defaults (dnd5e)
+```json
+{ "gridSize": 100, "gridType": 1, "gridDistance": 5, "gridUnits": "ft", "padding": 0.25 }
+```
+Override per scene when front-matter says otherwise.
+
+## 5. Actors / NPCs — full workflow
+
+1. Parse the stat block: `name`, `type: "npc"`, CR, HP, ability scores.
+2. Ensure the token image is uploaded (batch-upload all token art up front, §1).
+3. Create with dot-notation for nested fields and the token texture:
+   ```
+   create_document({
+     documentType: "Actor",
+     data: {
+       name: "Strahd von Zarovich",
+       type: "npc",
+       img: "worlds/curse-of-strahd/tokens/strahd-von-zarovich.webp",
+       "prototypeToken.texture.src": "worlds/curse-of-strahd/tokens/strahd-von-zarovich.webp",
+       "system.details.cr": 15,
+       "system.attributes.hp.value": 144,
+       "system.attributes.hp.max": 144,
+     }
+   })
+   ```
+4. Write `_id` back to front-matter.
+
+## 6. Journal entries — full workflow
+
+A `JournalEntry` is a container; its prose lives in embedded `JournalEntryPage`
+documents (v10+). Two steps:
+1. `create_document({ documentType: "JournalEntry", data: { name, folder: folderId } })` → `_id`.
+2. `create_embedded({ parentType: "JournalEntry", parentId: _id,
+   embeddedName: "JournalEntryPage", data: [{ name: "Description", type: "text",
+   text: { content: "<p>…</p>" } }] })`
+Convert the markdown body to HTML for `text.content` — never dump raw markdown.
+
+## 7. Quest structure for Curse of Strahd
+
+Map the story arc to a quest hierarchy. Create the main quest, capture its `_id`,
+then create sub-quests with `parentId`:
+```
+const main = create_quest({ data: { name: "Curse of Strahd", status: "active",
+  description: "Break the ancient curse that binds Barovia." } });
+create_quest({ data: { name: "Escape Barovia", status: "hidden" }, parentId: main._id });
+create_quest({ data: { name: "Defeat Strahd",  status: "hidden" }, parentId: main._id });
+```
+Suggested arc: main "Curse of Strahd" → sub-quests "Escape Barovia", "Defeat
+Strahd", "Free the Souls". Use `update_quest({ id, data })` to flip status
+(hidden → active → completed) as the party progresses.
+
+NOTE on rewards: Forien's Quest Log manages rewards/tasks through its own internal
+format, not arbitrary `data` fields — setting `data.rewards` may not populate the
+FQL reward UI. Create the quest hierarchy via the tools; add item/gold/xp rewards
+through FQL's own UI if the `data` route doesn't reflect them.
+
+## 8. Guardrails
+
+- **source from `worldInfo.forge.active`** — never hardcode `"data"`/`"forgevtt"`.
+- **Show a plan before bulk writes.** For > 3 documents, print a table (file → op
+  → name) and wait for go-ahead.
+- **Deletes are terminal** — confirm every delete explicitly; they aren't auto-allowed.
+- **Preserve language** — `generated/` notes are Danish; extracted `journals/` are
+  English. Don't translate unless asked.
+- Read each tool result's `ok`/`steps`; on a non-`ok` result surface `error.code`
+  (`NOT_FOUND`, `VALIDATION`, `READBACK_MISMATCH`, `AUTH`, `TIMEOUT`) — don't blindly retry.
+- If `mcp__foundry__*` tools are absent the world isn't reachable: tell the user to
+  start Foundry (GM logged in, `foundry-mcp-bridge` module enabled, matching relay
+  URL/token). Don't fall back to the LevelDB scripts on your own.
