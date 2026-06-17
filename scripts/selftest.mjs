@@ -17,6 +17,8 @@ import {
   runFindDocuments,
   runGetWorldInfo,
   runUploadAsset,
+  runBrowseAssets,
+  runBatchUploadAssets,
   runCreateEmbedded,
   runCreateQuest,
 } from "../packages/mcp-server/dist/index.js";
@@ -84,9 +86,33 @@ function handle(env) {
         system: { id: "dnd5e", version: "0" },
         world: { id: "w", title: "Self Test" },
         folders: [],
+        forge: { active: false, userId: null },
       });
-    case "uploadAsset":
-      return ok({ path: `${c.target.replace(/\/$/, "")}/${c.filename}` });
+    case "uploadAsset": {
+      const path = `${c.target.replace(/\/$/, "")}/${c.filename}`;
+      if (!env.dryRun) store.set(`asset:${path}`, true);
+      return ok({ path });
+    }
+    case "browseAssets": {
+      const prefix = c.target.replace(/\/$/, "");
+      const files = [...store.keys()]
+        .filter((k) => k.startsWith("asset:"))
+        .map((k) => k.slice("asset:".length))
+        .filter((p) => p.startsWith(prefix + "/") && !p.slice(prefix.length + 1).includes("/"));
+      return ok({ dirs: [], files, target: prefix });
+    }
+    case "batchUploadAssets": {
+      const prefix = c.target.replace(/\/$/, "");
+      const results = c.files.map((f) => {
+        const path = `${prefix}/${f.filename}`;
+        if (c.skipExisting && store.has(`asset:${path}`)) {
+          return { filename: f.filename, path, skipped: true };
+        }
+        if (!env.dryRun) store.set(`asset:${path}`, true);
+        return { filename: f.filename, path };
+      });
+      return ok(results);
+    }
     case "createQuest":
       return ok({ ...(c.data || {}), _id: rid() });
     default:
@@ -128,6 +154,9 @@ show("duplicate_document (clone)", await runDuplicateDocument(server, { document
 show("find_documents (by id)", await runFindDocuments(server, { documentType: "Actor", id: newId }, opts));
 show("get_world_info", await runGetWorldInfo(server, {}, opts));
 show("upload_asset", await runUploadAsset(server, { source: "data", target: "worlds/selftest", filename: "probe.webp", contentBase64: "AAAA" }, opts));
+show("batch_upload_assets", await runBatchUploadAssets(server, { source: "data", target: "worlds/selftest/scenes", files: [{ filename: "map1.webp", contentBase64: "AAAA" }, { filename: "map2.webp", contentBase64: "BBBB" }] }, opts));
+show("browse_assets (after upload)", await runBrowseAssets(server, { source: "data", target: "worlds/selftest/scenes" }, opts));
+show("batch_upload_assets (skipExisting)", await runBatchUploadAssets(server, { source: "data", target: "worlds/selftest/scenes", files: [{ filename: "map1.webp", contentBase64: "AAAA" }, { filename: "map3.webp", contentBase64: "CCCC" }], skipExisting: true }, opts));
 show("create_document (Scene parent)", await runCreateDocument(server, { documentType: "Scene", data: { _id: "scene-self", name: "Embedded Parent" }, keepId: true }, opts));
 show("create_embedded (Token)", await runCreateEmbedded(server, { parentType: "Scene", parentId: "scene-self", embeddedName: "Token", data: [{ name: "Goblin" }] }, opts));
 show("create_quest", await runCreateQuest(server, { data: { name: "Find the Amulet" } }, opts));
