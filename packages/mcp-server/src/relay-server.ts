@@ -9,7 +9,7 @@
  */
 
 import { WebSocketServer, type WebSocket } from "ws";
-import type { CommandEnvelope, CommandResult } from "@foundry-mcp-bridge/shared";
+import { err, type CommandEnvelope, type CommandResult } from "@foundry-mcp-bridge/shared";
 import {
   PendingRequests,
   TimeoutError,
@@ -49,6 +49,7 @@ export class RelayServer implements RelayTransport {
   private client: WebSocket | null = null;
   private clientWaiters: Array<() => void> = [];
   private readonly pending = new PendingRequests();
+  private closed = false;
 
   constructor(options: RelayServerOptions) {
     this.endpoint = parseEndpoint(options.url);
@@ -97,17 +98,29 @@ export class RelayServer implements RelayTransport {
 
     socket.on("message", (data) => this.pending.settle(data.toString()));
     socket.on("close", () => {
-      if (this.client === socket) this.client = null;
+      // Ignore a superseded/old socket closing — only the active client dropping
+      // should fail in-flight requests (which were sent to that client).
+      if (this.client !== socket) return;
+      this.client = null;
       this.log("warn", "Foundry module disconnected");
+      // Fail in-flight requests fast instead of waiting out their timeouts.
+      this.pending.failAll((id) =>
+        err(id, "INTERNAL", "Foundry module disconnected before responding"),
+      );
     });
   }
 
   private waitForClient(timeoutMs: number): Promise<void> {
     if (this.client) return Promise.resolve();
-    return withTimeout(
-      new Promise<void>((resolve) => this.clientWaiters.push(resolve)),
-      timeoutMs,
-    ).catch(() => {
+    let resolver!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      resolver = resolve;
+      this.clientWaiters.push(resolver);
+    });
+    return withTimeout(wait, timeoutMs).catch(() => {
+      // Drop our waiter so it doesn't leak (and fire on a later connection).
+      const i = this.clientWaiters.indexOf(resolver);
+      if (i >= 0) this.clientWaiters.splice(i, 1);
       throw new TimeoutError("no Foundry module connected to the relay");
     });
   }
@@ -124,8 +137,15 @@ export class RelayServer implements RelayTransport {
   }
 
   close(): void {
+    if (this.closed) return; // idempotent
+    this.closed = true;
     this.client?.close();
     this.client = null;
+    // The socket's own close handler won't drain now (client is null), so do it
+    // here: fail in-flight requests and wake any waiters so callers don't hang
+    // until their timeouts on an intentional shutdown.
+    this.pending.failAll((id) => err(id, "INTERNAL", "relay server closed"));
+    for (const wake of this.clientWaiters.splice(0)) wake();
     this.wss.close();
   }
 }

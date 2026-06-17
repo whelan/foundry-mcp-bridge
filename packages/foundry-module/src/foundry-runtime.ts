@@ -11,6 +11,8 @@ import type {
   ExecuteOptions,
   FindSelector,
   FoundryDocumentApi,
+  UploadAssetParams,
+  WorldInfo,
 } from "./protocol-executor.js";
 import { CommandExecutionError } from "./protocol-executor.js";
 
@@ -83,7 +85,7 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         // Construct to trigger validation without persisting.
         return new cls(data).toObject();
       }
-      const doc = await cls.create(data);
+      const doc = await cls.create(data, opts.keepId ? { keepId: true } : {});
       return doc.toObject();
     },
 
@@ -140,6 +142,41 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       return docs.filter((doc) =>
         entries.every(([path, value]) => getByPath(doc, path) === value),
       );
+    },
+
+    async getWorldInfo(): Promise<WorldInfo> {
+      const folders: any[] = (game as any).folders?.contents ?? [];
+      return {
+        foundryVersion: String((game as any).version ?? ""),
+        system: {
+          id: String(game.system?.id ?? ""),
+          version: String((game.system as any)?.version ?? ""),
+          title: (game.system as any)?.title,
+        },
+        world: {
+          id: String((game.world as any)?.id ?? ""),
+          title: String((game.world as any)?.title ?? ""),
+        },
+        folders: folders.map((f) => ({
+          _id: String(f.id),
+          name: String(f.name),
+          type: String(f.type),
+        })),
+      };
+    },
+
+    async uploadAsset(params: UploadAssetParams, opts) {
+      const target = params.target.replace(/\/$/, "");
+      // Dry-run: don't write the file; return the path it would land at.
+      if (opts.dryRun) return { path: `${target}/${params.filename}` };
+      const bytes = Uint8Array.from(atob(params.contentBase64), (c) => c.charCodeAt(0));
+      const file = new File([bytes], params.filename, params.mimeType ? { type: params.mimeType } : undefined);
+      const result = await (FilePicker as any).upload(params.source, target, file, {});
+      const path = result?.path;
+      if (typeof path !== "string" || !path) {
+        throw new CommandExecutionError("INTERNAL", "FilePicker.upload returned no path");
+      }
+      return { path };
     },
 
     async createQuest(data, parentId, opts) {

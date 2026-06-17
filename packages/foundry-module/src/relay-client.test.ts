@@ -48,6 +48,17 @@ function stubApi(): FoundryDocumentApi {
     async find() {
       return [];
     },
+    async getWorldInfo() {
+      return {
+        foundryVersion: "13.0.0",
+        system: { id: "dnd5e", version: "3.0.0" },
+        world: { id: "w", title: "World" },
+        folders: [],
+      };
+    },
+    async uploadAsset(params) {
+      return { path: `${params.target}/${params.filename}` };
+    },
     async createQuest(data) {
       return { ...data, _id: "quest" };
     },
@@ -173,6 +184,25 @@ describe("RelayClient", () => {
     c.disconnect();
     socket.onclose?.({}); // the close event still fires
     expect(timers.length).toBe(0);
+  });
+
+  it("does not stack reconnect timers when close fires repeatedly", () => {
+    const socket = new FakeWebSocket();
+    const timers: { fn: () => void; ms: number }[] = [];
+    const c = new RelayClient({
+      url: "ws://test",
+      api: stubApi(),
+      context: { isGM: true },
+      createSocket: () => socket,
+      setTimer: (fn, ms) => timers.push({ fn, ms }) - 1,
+      clearTimer: () => {},
+    });
+    c.connect();
+    // Several close/error events before the scheduled reconnect fires.
+    socket.onclose?.({});
+    socket.onclose?.({});
+    socket.onclose?.({});
+    expect(timers.length).toBe(1); // only one timer scheduled, not three
   });
 
   it("honors reconnect: false", () => {

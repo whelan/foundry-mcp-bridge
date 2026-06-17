@@ -18,6 +18,10 @@ Each note's front-matter `id` decides the operation:
 - **`id: ""` (empty)** → `create_document`. On success, **write the returned `_id`
   back into the note's front-matter** so the next run updates instead of duplicating.
 - **`id: "<16-char id>"` (filled)** → `update_document` with that `documentType`+`id`.
+  If that id returns `NOT_FOUND` (the doc isn't in the world — e.g. re-importing
+  extracted `journals/` into a fresh world) and you want to keep the original id so
+  cross-references resolve, `create_document` with `data._id` set and
+  `keepId: true`.
 
 This is the plan §7.2 upsert pattern. The id round-trip is what keeps imports
 idempotent — never skip writing the new id back.
@@ -61,6 +65,12 @@ document's own description field as HTML.
 
 ## Workflow
 
+0. **Orient.** Call `get_world_info` once: it returns the game system (e.g.
+   `dnd5e`), Foundry version, and the folder list (`_id`/`name`/`type`). Use it to
+   resolve a note's target `folder` by name, and to know which `system.*` fields
+   are safe. If a needed folder doesn't exist, create it with `create_document`
+   (`documentType: "Folder"`, `data: { name, type: "<held doc type>" }`) — confirm
+   with the user before creating new folder structure.
 1. **Scope** the files the user named (Glob, e.g. `generated/journals/*.md`).
 2. For each note, parse front-matter + body and pick the tool from the table.
 3. **Upsert:**
@@ -73,6 +83,13 @@ document's own description field as HTML.
    `TIMEOUT`) — don't blindly retry. A `NOT_FOUND` on a filled id means the doc
    was deleted in Foundry; ask whether to re-create (which mints a new id).
 5. **Report** a table: note → created/updated/failed, new `_id`, error if any.
+
+## Scene images
+
+For `generated/scenes/`, upload the local image first with `upload_asset`
+(base64 content → returns the stored path), then pass that path as the scene
+`background` via `create_scene`. Don't reference image paths that aren't in the
+world.
 
 ## Guardrails
 

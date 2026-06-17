@@ -24,10 +24,40 @@ export interface ExecuteOptions {
   dryRun: boolean;
 }
 
+/** Create-only options: preserve an explicit `data._id` (Foundry keepId). */
+export interface CreateOptions extends ExecuteOptions {
+  keepId?: boolean;
+}
+
 /** Selector for a find operation. */
 export interface FindSelector {
   id?: string;
   query?: Record<string, unknown>;
+}
+
+/** A folder in the world, used to resolve `folder` ids when importing. */
+export interface WorldFolder {
+  _id: string;
+  name: string;
+  /** The document type the folder organizes, e.g. "Actor", "JournalEntry". */
+  type: string;
+}
+
+/** Read-only snapshot of the world: versions, game system and folders. */
+export interface WorldInfo {
+  foundryVersion: string;
+  system: { id: string; version: string; title?: string };
+  world: { id: string; title: string };
+  folders: WorldFolder[];
+}
+
+/** Parameters for an asset upload via Foundry's FilePicker. */
+export interface UploadAssetParams {
+  source: "data" | "forgevtt";
+  target: string;
+  filename: string;
+  contentBase64: string;
+  mimeType?: string;
 }
 
 /**
@@ -36,7 +66,7 @@ export interface FindSelector {
  * etc.; tests back it with the mock-foundry.
  */
 export interface FoundryDocumentApi {
-  create(type: DocumentType, data: DocData, opts: ExecuteOptions): Promise<DocData>;
+  create(type: DocumentType, data: DocData, opts: CreateOptions): Promise<DocData>;
   update(
     type: DocumentType,
     id: string,
@@ -72,6 +102,8 @@ export interface FoundryDocumentApi {
     opts: ExecuteOptions,
   ): Promise<void>;
   find(type: DocumentType, selector: FindSelector): Promise<DocData | DocData[]>;
+  getWorldInfo(): Promise<WorldInfo>;
+  uploadAsset(params: UploadAssetParams, opts: ExecuteOptions): Promise<{ path: string }>;
   createQuest(data: DocData | undefined, parentId: string | undefined, opts: ExecuteOptions): Promise<DocData>;
   updateQuest(id: string, data: DocData, opts: ExecuteOptions): Promise<DocData>;
   deleteQuest(id: string, opts: ExecuteOptions): Promise<void>;
@@ -123,7 +155,7 @@ async function dispatch(
 ): Promise<unknown> {
   switch (command.action) {
     case "create":
-      return api.create(command.documentType, command.data, opts);
+      return api.create(command.documentType, command.data, { ...opts, keepId: command.keepId });
     case "update":
       return api.update(command.documentType, command.id, command.data, opts);
     case "delete":
@@ -158,6 +190,19 @@ async function dispatch(
       return { deleted: command.ids };
     case "find":
       return api.find(command.documentType, { id: command.id, query: command.query });
+    case "getWorldInfo":
+      return api.getWorldInfo();
+    case "uploadAsset":
+      return api.uploadAsset(
+        {
+          source: command.source,
+          target: command.target,
+          filename: command.filename,
+          contentBase64: command.contentBase64,
+          mimeType: command.mimeType,
+        },
+        opts,
+      );
     case "createQuest":
       return api.createQuest(command.data, command.parentId, opts);
     case "updateQuest":

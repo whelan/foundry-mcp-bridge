@@ -21,6 +21,7 @@ export const DocumentType = z.enum([
   "Item",
   "Macro",
   "Playlist",
+  "Folder",
 ]);
 export type DocumentType = z.infer<typeof DocumentType>;
 
@@ -37,7 +38,35 @@ export const COLLECTIONS: Record<DocumentType, string> = {
   Item: "items",
   Macro: "macros",
   Playlist: "playlists",
+  // Folders organize other documents; `data.type` names which type they hold.
+  Folder: "folders",
 };
+
+/**
+ * Field name an embedded document collection lives under on its parent (Foundry's
+ * `Token` → `tokens`, `JournalEntryPage` → `pages`, …). Single source of truth so
+ * the mock's key formatting, the module, and the server's read-back verification
+ * all agree. Unknown names fall back to a lowercased guess.
+ */
+export const EMBEDDED_FIELDS: Record<string, string> = {
+  Token: "tokens",
+  AmbientLight: "lights",
+  Note: "notes",
+  ActiveEffect: "effects",
+  Item: "items",
+  Wall: "walls",
+  AmbientSound: "sounds",
+  Drawing: "drawings",
+  MeasuredTemplate: "templates",
+  Tile: "tiles",
+  Region: "regions",
+  // v10+ JournalEntry content lives in embedded JournalEntryPage documents.
+  JournalEntryPage: "pages",
+};
+
+export function embeddedField(embeddedName: string): string {
+  return EMBEDDED_FIELDS[embeddedName] ?? embeddedName.toLowerCase();
+}
 
 /** Arbitrary Foundry document data — validated structurally, not field-by-field. */
 const DocumentData = z.record(z.string(), z.unknown());
@@ -46,6 +75,12 @@ export const CreateCommand = z.object({
   action: z.literal("create"),
   documentType: DocumentType,
   data: DocumentData,
+  /**
+   * Preserve an explicit `data._id` instead of letting Foundry mint a new one
+   * (Foundry's `{ keepId: true }`). Used to re-import extracted documents under
+   * their original ids so cross-references stay intact.
+   */
+  keepId: z.boolean().optional(),
 });
 export type CreateCommand = z.infer<typeof CreateCommand>;
 
@@ -139,6 +174,26 @@ export const DeleteQuestCommand = z.object({
 });
 export type DeleteQuestCommand = z.infer<typeof DeleteQuestCommand>;
 
+export const GetWorldInfoCommand = z.object({
+  action: z.literal("getWorldInfo"),
+});
+export type GetWorldInfoCommand = z.infer<typeof GetWorldInfoCommand>;
+
+export const UploadAssetCommand = z.object({
+  action: z.literal("uploadAsset"),
+  /** Storage source: local "data" or Forge "forgevtt". */
+  source: z.enum(["data", "forgevtt"]).default("data"),
+  /** Target directory (trailing slash optional). */
+  target: z.string().min(1),
+  /** File name including extension. */
+  filename: z.string().min(1),
+  /** File bytes, base64-encoded. */
+  contentBase64: z.string().min(1),
+  /** Optional MIME type hint (e.g. "image/webp"). */
+  mimeType: z.string().optional(),
+});
+export type UploadAssetCommand = z.infer<typeof UploadAssetCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -151,6 +206,8 @@ export const Command = z.discriminatedUnion("action", [
   CreateQuestCommand,
   UpdateQuestCommand,
   DeleteQuestCommand,
+  GetWorldInfoCommand,
+  UploadAssetCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

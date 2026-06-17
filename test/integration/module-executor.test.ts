@@ -97,7 +97,7 @@ describe("module executeCommand against mock-foundry", () => {
 
   it("round-trips embedded token CRUD", async () => {
     const { mock, api, context } = setup();
-    await mock.execute(env({ command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" } } }));
+    await mock.execute(env({ command: { action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true } }));
     const created = await executeCommand(
       env({
         command: {
@@ -114,5 +114,16 @@ describe("module executeCommand against mock-foundry", () => {
     expect(created.ok).toBe(true);
     const scene = mock.documents("Scene")[0] as { tokens: unknown[] };
     expect(scene.tokens.length).toBe(1);
+  });
+
+  it("returns world info via getWorldInfo", async () => {
+    const { api, context } = setup();
+    const res = await executeCommand(
+      env({ command: { action: "getWorldInfo" } }),
+      api,
+      context,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect((res.data as any).system.id).toBe("dnd5e");
   });
 });

@@ -81,13 +81,25 @@ on mismatch). Categories differ in which steps apply and why:
 | create | dry-run, write, read-back, [rollback] | `find` by new `_id`; verify `isSubset(found, verifyData ?? data)`; rollback = `delete`. |
 | update | pre-read, dry-run, write, read-back, [rollback] | pre-read is the rollback baseline; verify `expandObject(data)` subset; rollback = `update` restoring touched top-level keys (`buildRestoreDiff`). |
 | delete | dry-run, write | terminal: no read-back, no rollback. |
-| embedded create/update | dry-run, write, read-back, [rollback] | read-back fetches the **parent**; content isn't deep-verified today (improvement opportunity). |
+| embedded create/update | dry-run, write, read-back, [rollback] | read-back fetches the **parent** and verifies the embedded entries by `_id` under their Foundry field (`embeddedField()` from `shared`): create checks each new `_id` is present; update checks each change is a subset. On failure, create rolls back by deleting the new ids (from the write result); update restores the pre-read versions of the touched docs. |
 | embedded delete | dry-run, write | terminal. |
-| quest create/update/delete | dry-run, write, read-back* | quests aren't queryable via `find`; create/delete skip real read-back; update verifies the **write result** is a subset of the requested data. |
-| find | find | read-only; not a mutation, hand-rolled in `tools.ts`. |
+| quest create/update/delete | dry-run, write | quests aren't queryable via `find` and Forien's Quest Log normalizes fields (e.g. status casing), so content isn't re-verified; a successful write (with an `_id` for create) is the confirmation; delete is terminal. |
+| find / get_world_info | find / get-world-info | read-only; not mutations; single round-trip via the shared `runRead` helper. |
+| upload_asset | dry-run, write | terminal: FilePicker upload, no read-back. |
 
 Step names accumulate in the `steps: string[]` returned in the `ToolOutcome`
 (`{ ok, data|error, steps }`) so a caller can see exactly how far a command got.
+
+## Tracing
+
+For debugging against a real Foundry, the server emits a full trace to **stderr**
+(never stdout — that carries the MCP JSON-RPC stream). It's on by default; set
+`RELAY_TRACE=0` to mute. Each tool logs entry + outcome+steps (`▶ create_document`
+… `◀ create_document ok [dry-run > write > read-back]`), and every wire command is
+logged as it's sent/received (`→ create #1a2b3c4d Actor` / `← … ok|ERROR code`).
+The Foundry module logs the mirror image to the browser console (`▶`/`◀` per
+inbound command). The trace sink is `PipelineOptions.log`; tests pass none and
+stay silent.
 
 `dryRun` semantics: the module validates construction (`new cls(data)`,
 `clone().updateSource(diff)`) and returns the would-be object **without

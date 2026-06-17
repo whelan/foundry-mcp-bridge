@@ -18,6 +18,7 @@ import {
   type ExecuteOptions,
   type FindSelector,
   type FoundryDocumentApi,
+  type WorldInfo,
 } from "../../packages/foundry-module/src/protocol-executor.js";
 
 let seq = 0;
@@ -38,7 +39,10 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
 
   return {
     async create(type, data, opts) {
-      return (await run({ action: "create", documentType: type, data }, opts)) as DocData;
+      return (await run(
+        { action: "create", documentType: type, data, keepId: opts.keepId },
+        opts,
+      )) as DocData;
     },
     async update(type, id, diff, opts) {
       return (await run(
@@ -84,6 +88,12 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
         { action: "find", documentType: type, id: selector.id, query: selector.query },
         { dryRun: false },
       )) as DocData | DocData[];
+    },
+    async getWorldInfo() {
+      return (await run({ action: "getWorldInfo" }, { dryRun: false })) as WorldInfo;
+    },
+    async uploadAsset(params, opts) {
+      return (await run({ action: "uploadAsset", ...params }, opts)) as { path: string };
     },
     async createQuest(data, parentId, opts) {
       return (await run({ action: "createQuest", data, parentId }, opts)) as DocData;

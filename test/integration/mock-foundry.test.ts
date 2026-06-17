@@ -61,13 +61,46 @@ describe("create / find / update / delete", () => {
     }
   });
 
+  it("mints a fresh _id unless keepId is set (mirrors Foundry)", async () => {
+    const f = new MockFoundry();
+    const minted = await f.execute(
+      envelope({ action: "create", documentType: "Actor", data: { _id: "wanted", name: "X" } }),
+    );
+    expect(minted.ok && (minted.data as { _id: string })._id).not.toBe("wanted");
+
+    const kept = await f.execute(
+      envelope({
+        action: "create",
+        documentType: "Actor",
+        data: { _id: "wanted2", name: "Y" },
+        keepId: true,
+      }),
+    );
+    expect(kept.ok && (kept.data as { _id: string })._id).toBe("wanted2");
+  });
+
+  it("creates a Folder (for organizing imports) under the folders key", async () => {
+    const f = new MockFoundry();
+    const res = await f.execute(
+      envelope({
+        action: "create",
+        documentType: "Folder",
+        data: { _id: "fld1", name: "NPCs", type: "Actor" },
+        keepId: true,
+      }),
+    );
+    expect(res.ok).toBe(true);
+    expect(documentKey("Folder", "fld1")).toBe("!folders!fld1");
+    expect(f.store.has(documentKey("Folder", "fld1"))).toBe(true);
+  });
+
   it("finds by id and by query", async () => {
     const f = new MockFoundry();
     await f.execute(
-      envelope({ action: "create", documentType: "Actor", data: { _id: "a1", name: "Bob", type: "npc" } }),
+      envelope({ action: "create", documentType: "Actor", data: { _id: "a1", name: "Bob", type: "npc" }, keepId: true }),
     );
     await f.execute(
-      envelope({ action: "create", documentType: "Actor", data: { _id: "a2", name: "Sue", type: "pc" } }),
+      envelope({ action: "create", documentType: "Actor", data: { _id: "a2", name: "Sue", type: "pc" }, keepId: true }),
     );
 
     const byId = await f.execute(envelope({ action: "find", documentType: "Actor", id: "a1" }));
@@ -82,7 +115,7 @@ describe("create / find / update / delete", () => {
   it("updates with dot-notation and reports NOT_FOUND otherwise", async () => {
     const f = new MockFoundry();
     await f.execute(
-      envelope({ action: "create", documentType: "Actor", data: { _id: "a1", name: "Bob", system: { hp: { value: 1 } } } }),
+      envelope({ action: "create", documentType: "Actor", data: { _id: "a1", name: "Bob", system: { hp: { value: 1 } } }, keepId: true }),
     );
     const res = await f.execute(
       envelope({ action: "update", documentType: "Actor", id: "a1", data: { "system.hp.value": 9 } }),
@@ -98,7 +131,7 @@ describe("create / find / update / delete", () => {
 
   it("deletes a document", async () => {
     const f = new MockFoundry();
-    await f.execute(envelope({ action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" } }));
+    await f.execute(envelope({ action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true }));
     const res = await f.execute(envelope({ action: "delete", documentType: "Scene", id: "s1" }));
     expect(res.ok).toBe(true);
     expect(f.store.has(documentKey("Scene", "s1"))).toBe(false);
@@ -108,7 +141,7 @@ describe("create / find / update / delete", () => {
 describe("embedded documents", () => {
   it("creates, updates and deletes embedded tokens on a scene", async () => {
     const f = new MockFoundry();
-    await f.execute(envelope({ action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" } }));
+    await f.execute(envelope({ action: "create", documentType: "Scene", data: { _id: "s1", name: "Map" }, keepId: true }));
 
     const created = await f.execute(
       envelope({
@@ -150,7 +183,7 @@ describe("embedded documents", () => {
   it("creates and updates JournalEntryPage documents on a journal (v10+ pages)", async () => {
     const f = new MockFoundry();
     await f.execute(
-      envelope({ action: "create", documentType: "JournalEntry", data: { _id: "j1", name: "Lore" } }),
+      envelope({ action: "create", documentType: "JournalEntry", data: { _id: "j1", name: "Lore" }, keepId: true }),
     );
 
     // Pages map to the `pages` collection, not `journalentrypage`.
@@ -183,6 +216,43 @@ describe("embedded documents", () => {
     expect((journal.pages[0] as { text: { content: string } }).text.content).toBe(
       "<p>Updated</p>",
     );
+  });
+});
+
+describe("uploadAsset", () => {
+  it("uploads via FilePicker and returns the stored path", async () => {
+    const f = new MockFoundry();
+    const res = await f.execute(
+      envelope({
+        action: "uploadAsset",
+        source: "data",
+        target: "worlds/cos/scenes/",
+        filename: "tavern.webp",
+        contentBase64: "AAAA",
+      }),
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect((res.data as { path: string }).path).toBe("worlds/cos/scenes/tavern.webp");
+    expect(f.filePicker.uploads.length).toBe(1);
+  });
+
+  it("does not write on dry-run but predicts the path", async () => {
+    const f = new MockFoundry();
+    const res = await f.execute(
+      envelope(
+        {
+          action: "uploadAsset",
+          source: "data",
+          target: "worlds/cos",
+          filename: "x.webp",
+          contentBase64: "AAAA",
+        },
+        { dryRun: true },
+      ),
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect((res.data as { path: string }).path).toBe("worlds/cos/x.webp");
+    expect(f.filePicker.uploads.length).toBe(0);
   });
 });
 

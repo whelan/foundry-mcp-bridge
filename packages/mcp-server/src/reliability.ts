@@ -15,6 +15,9 @@ import {
   type DocumentType,
   type Json,
   PROTOCOL_VERSION,
+  EMBEDDED_FIELDS,
+  embeddedField,
+  err,
   expandObject,
   isSubset,
 } from "@foundry-mcp-bridge/shared";
@@ -23,6 +26,8 @@ import { TimeoutError, type RelayTransport } from "./relay-transport.js";
 export interface PipelineOptions {
   token?: string;
   timeoutMs?: number;
+  /** Optional trace sink; when set, every wire command + result is logged. */
+  log?: (line: string) => void;
 }
 
 export type ToolOutcome =
@@ -46,12 +51,67 @@ async function send(
   opts: PipelineOptions,
 ): Promise<CommandResult> {
   const envelope = makeEnvelope(command, dryRun, opts.token);
+  // Build the (allocating) trace tag only when a sink is attached.
+  const tag = opts.log
+    ? `${command.action}${dryRun ? " (dry-run)" : ""} #${envelope.id.slice(0, 8)}`
+    : "";
+  opts.log?.(`  → ${tag} ${commandSummary(command)}`);
   try {
-    return await transport.request(envelope, { timeoutMs: opts.timeoutMs });
+    const res = await transport.request(envelope, { timeoutMs: opts.timeoutMs });
+    opts.log?.(
+      res.ok ? `  ← ${tag} ok` : `  ← ${tag} ERROR ${res.error.code}: ${res.error.message}`,
+    );
+    return res;
   } catch (e) {
     const code = e instanceof TimeoutError ? "TIMEOUT" : "INTERNAL";
-    return { id: envelope.id, ok: false, error: { code, message: (e as Error).message } };
+    opts.log?.(`  ← ${tag} ${code}: ${(e as Error).message}`);
+    return err(envelope.id, code, (e as Error).message);
   }
+}
+
+/** A short, id/type-focused summary of a command for trace logs (typed, exhaustive). */
+function commandSummary(c: Command): string {
+  switch (c.action) {
+    case "create":
+      return c.documentType;
+    case "update":
+    case "delete":
+    case "duplicate":
+      return `${c.documentType} id=${c.id}`;
+    case "find":
+      return c.id ? `${c.documentType} id=${c.id}` : c.documentType;
+    case "createEmbedded":
+    case "updateEmbedded":
+      return `${c.parentType}/${c.embeddedName} parent=${c.parentId} n=${c.data.length}`;
+    case "deleteEmbedded":
+      return `${c.parentType}/${c.embeddedName} parent=${c.parentId} ids=${c.ids.length}`;
+    case "createQuest":
+      return c.parentId ? `parent=${c.parentId}` : "quest";
+    case "updateQuest":
+    case "deleteQuest":
+      return `id=${c.id}`;
+    case "uploadAsset":
+      return `${c.target}/${c.filename}`;
+    case "getWorldInfo":
+      return "";
+  }
+}
+
+/**
+ * Read-only command: a single round-trip (no dry-run, no read-back). Shares the
+ * envelope/timeout/error handling of {@link send} so read tools don't hand-roll it.
+ */
+export async function runRead(
+  transport: RelayTransport,
+  command: Command,
+  stepName: string,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps = [stepName];
+  const res = await send(transport, command, false, opts);
+  return res.ok
+    ? { ok: true, data: res.data, steps }
+    : { ok: false, error: res.error, steps };
 }
 
 function fail(steps: string[], error: CommandError): ToolOutcome {
@@ -159,6 +219,8 @@ export interface CreateDocumentInput {
   data: Json;
   /** Optional: subset of data to verify on read-back (e.g. for scenes with stable fields). */
   verifyData?: Json;
+  /** Preserve an explicit data._id (Foundry keepId) instead of minting a new one. */
+  keepId?: boolean;
 }
 
 export function createDocumentReliable(
@@ -170,7 +232,12 @@ export function createDocumentReliable(
     transport,
     {
       documentType: input.documentType,
-      mutate: { action: "create", documentType: input.documentType, data: input.data },
+      mutate: {
+        action: "create",
+        documentType: input.documentType,
+        data: input.data,
+        keepId: input.keepId,
+      },
       expected: input.verifyData ?? input.data,
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "created document did not match the requested data; rolled back",
@@ -291,49 +358,115 @@ export interface CreateEmbeddedInput {
   data: Json[];
 }
 
-export async function createEmbeddedReliable(
+/**
+ * Embedded create/update share a shape: dry-run → write (an array result) →
+ * read-back the **parent** (embedded content isn't deep-verified) → on failure
+ * roll back and return READBACK_MISMATCH. They differ only in the write command,
+ * how the rollback is derived, and the noun used in messages/details.
+ */
+async function runEmbeddedMutation(
+  transport: RelayTransport,
+  args: {
+    write: Command;
+    parentType: DocumentType;
+    parentId: string;
+    noun: "created" | "updated";
+    /** Verify the write took effect in the re-read parent (by embedded `_id`). */
+    verify: (parent: Json, written: unknown[]) => boolean;
+    /** Build the rollback command from the write result, or null if none applies. */
+    deriveRollback: (written: unknown[]) => Command | null;
+  },
+  opts: PipelineOptions,
+  steps: string[],
+): Promise<ToolOutcome> {
+  const phase = await dryRunThenWrite(transport, args.write, opts, steps);
+  if (!phase.ok) return phase.outcome;
+  if (!Array.isArray(phase.data)) {
+    return fail(steps, { code: "INTERNAL", message: `${args.write.action} did not return array` });
+  }
+  const written = phase.data;
+
+  // Read back the parent and verify the embedded entries actually landed.
+  steps.push("read-back");
+  const readBack = await send(
+    transport,
+    { action: "find", documentType: args.parentType, id: args.parentId },
+    false,
+    opts,
+  );
+  if (readBack.ok && args.verify(readBack.data as Json, written)) {
+    return { ok: true, data: written, steps };
+  }
+
+  const rollback = args.deriveRollback(written);
+  if (rollback) {
+    steps.push("rollback");
+    await send(transport, rollback, false, opts);
+  }
+  return fail(steps, {
+    code: "READBACK_MISMATCH",
+    message: rollback
+      ? `embedded documents ${args.noun} but read-back verification failed; rolled back`
+      : `embedded documents ${args.noun} but read-back verification failed and nothing to restore; check manually`,
+    details: { parentId: args.parentId, [args.noun]: written },
+  });
+}
+
+/**
+ * Embedded entries on a parent snapshot under their Foundry collection field, or
+ * `null` when the embeddedName has no known field mapping — callers treat `null`
+ * as "can't locate; don't verify/roll back" rather than guessing the wrong field.
+ */
+function embeddedEntries(parent: Json, embeddedName: string): Json[] | null {
+  if (!(embeddedName in EMBEDDED_FIELDS)) return null;
+  const arr = parent[embeddedField(embeddedName)];
+  return Array.isArray(arr) ? (arr as Json[]) : [];
+}
+
+export function createEmbeddedReliable(
   transport: RelayTransport,
   input: CreateEmbeddedInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  const steps: string[] = [];
-  const phase = await dryRunThenWrite(
+  return runEmbeddedMutation(
     transport,
     {
-      action: "createEmbedded",
+      write: {
+        action: "createEmbedded",
+        parentType: input.parentType,
+        parentId: input.parentId,
+        embeddedName: input.embeddedName,
+        data: input.data,
+      },
       parentType: input.parentType,
       parentId: input.parentId,
-      embeddedName: input.embeddedName,
-      data: input.data,
+      noun: "created",
+      // Verify each new embedded doc is present in the re-read parent by _id.
+      verify: (parent, written) => {
+        const entries = embeddedEntries(parent, input.embeddedName);
+        if (!entries) return true; // unmapped: can't locate; trust parent-loaded
+        const ids = written.map(idOf).filter((id): id is string => !!id);
+        if (ids.length === 0) return true; // can't identify; parent loaded is best we have
+        const present = new Set(entries.map(idOf));
+        return ids.every((id) => present.has(id));
+      },
+      // The write result carries the new ids, so we can delete them on rollback.
+      deriveRollback: (written) => {
+        const ids = written.map(idOf).filter((id): id is string => !!id);
+        return ids.length
+          ? {
+              action: "deleteEmbedded",
+              parentType: input.parentType,
+              parentId: input.parentId,
+              embeddedName: input.embeddedName,
+              ids,
+            }
+          : null;
+      },
     },
     opts,
-    steps,
+    [],
   );
-  if (!phase.ok) return phase.outcome;
-
-  if (!Array.isArray(phase.data)) {
-    return fail(steps, { code: "INTERNAL", message: "createEmbedded did not return array" });
-  }
-
-  // Read-back verify the parent exists/loads (embedded content isn't deep-verified).
-  steps.push("read-back");
-  const readBack = await send(
-    transport,
-    { action: "find", documentType: input.parentType, id: input.parentId },
-    false,
-    opts,
-  );
-  if (!readBack.ok) {
-    steps.push("rollback");
-    // Cannot easily rollback multiple creates; at least mark it in the error.
-    return fail(steps, {
-      code: "READBACK_MISMATCH",
-      message: "embedded documents created but read-back of parent failed; check manually",
-      details: { parentId: input.parentId, created: phase.data },
-    });
-  }
-
-  return { ok: true, data: phase.data, steps };
 }
 
 export interface UpdateEmbeddedInput {
@@ -350,7 +483,7 @@ export async function updateEmbeddedReliable(
 ): Promise<ToolOutcome> {
   const steps: string[] = [];
 
-  // Pre-read snapshot (rollback baseline).
+  // Pre-read snapshot is the rollback baseline.
   steps.push("pre-read");
   const before = await send(
     transport,
@@ -360,56 +493,53 @@ export async function updateEmbeddedReliable(
   );
   if (!before.ok) return fail(steps, before.error);
   const snapshot = before.data as Json;
+  const updatedIds = new Set(input.data.map((d) => d._id));
 
-  const phase = await dryRunThenWrite(
+  return runEmbeddedMutation(
     transport,
     {
-      action: "updateEmbedded",
-      parentType: input.parentType,
-      parentId: input.parentId,
-      embeddedName: input.embeddedName,
-      data: input.data,
-    },
-    opts,
-    steps,
-  );
-  if (!phase.ok) return phase.outcome;
-
-  if (!Array.isArray(phase.data)) {
-    return fail(steps, { code: "INTERNAL", message: "updateEmbedded did not return array" });
-  }
-
-  // Read-back verify
-  steps.push("read-back");
-  const readBack = await send(
-    transport,
-    { action: "find", documentType: input.parentType, id: input.parentId },
-    false,
-    opts,
-  );
-  if (!readBack.ok) {
-    steps.push("rollback");
-    // Restore to previous state
-    await send(
-      transport,
-      {
+      write: {
         action: "updateEmbedded",
         parentType: input.parentType,
         parentId: input.parentId,
         embeddedName: input.embeddedName,
-        data: (snapshot as any)[input.embeddedName] || [],
+        data: input.data,
       },
-      false,
-      opts,
-    );
-    return fail(steps, {
-      code: "READBACK_MISMATCH",
-      message: "embedded documents updated but read-back of parent failed; rolled back",
-      details: { parentId: input.parentId, updated: phase.data },
-    });
-  }
-
-  return { ok: true, data: phase.data, steps };
+      parentType: input.parentType,
+      parentId: input.parentId,
+      noun: "updated",
+      // Verify each requested change is reflected in the re-read parent.
+      verify: (parent) => {
+        const entries = embeddedEntries(parent, input.embeddedName);
+        if (!entries) return true; // unmapped: can't locate; don't false-fail
+        const byId = new Map(entries.map((e) => [idOf(e), e] as const));
+        return input.data.every((d) => {
+          const actual = byId.get(d._id);
+          return actual != null && isSubset(actual, expandObject(d));
+        });
+      },
+      // Restore the pre-update versions of the touched docs. (`?? []` only
+      // satisfies the type: an unmapped type returns true from verify and never
+      // reaches rollback, so embeddedEntries is non-null here in practice.)
+      deriveRollback: () => {
+        const prior = (embeddedEntries(snapshot, input.embeddedName) ?? []).filter((e) => {
+          const id = idOf(e);
+          return id != null && updatedIds.has(id);
+        }) as Array<Json & { _id: string }>;
+        return prior.length
+          ? {
+              action: "updateEmbedded",
+              parentType: input.parentType,
+              parentId: input.parentId,
+              embeddedName: input.embeddedName,
+              data: prior,
+            }
+          : null;
+      },
+    },
+    opts,
+    steps,
+  );
 }
 
 export interface DeleteEmbeddedInput {
@@ -463,9 +593,9 @@ export async function createQuestReliable(
     return fail(steps, { code: "INTERNAL", message: "createQuest returned no _id" });
   }
 
-  // Quests are not queryable via standard find, so the read-back is a no-op.
-  steps.push("read-back");
-
+  // Quests aren't queryable via find, and Forien's Quest Log normalizes fields
+  // (e.g. status casing), so the write echo can't be content-verified without
+  // false failures. A successful write returning an _id is the confirmation.
   return { ok: true, data: phase.data, steps };
 }
 
@@ -488,18 +618,8 @@ export async function updateQuestReliable(
   );
   if (!phase.ok) return phase.outcome;
 
-  // Quests aren't queryable via find, so verify the write result itself rather
-  // than re-reading.
-  steps.push("read-back");
-  const expanded = expandObject(input.data);
-  if (!isSubset(phase.data, expanded)) {
-    return fail(steps, {
-      code: "READBACK_MISMATCH",
-      message: "quest update did not match the requested data",
-      details: { id: input.id, expected: expanded, actual: phase.data },
-    });
-  }
-
+  // Not queryable via find and module-normalized (see createQuest); the module's
+  // successful write is the confirmation rather than an unreliable echo compare.
   return { ok: true, data: phase.data, steps };
 }
 
@@ -514,4 +634,33 @@ export function deleteQuestReliable(
 ): Promise<ToolOutcome> {
   // Terminal: dry-run → write, no read-back/rollback.
   return runTerminal(transport, { action: "deleteQuest", id: input.id }, opts);
+}
+
+export interface UploadAssetInput {
+  source: "data" | "forgevtt";
+  target: string;
+  filename: string;
+  contentBase64: string;
+  mimeType?: string;
+}
+
+export function uploadAssetReliable(
+  transport: RelayTransport,
+  input: UploadAssetInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  // Terminal write: dry-run validates the target, write uploads. No read-back
+  // (uploads aren't document reads); the write result carries the stored path.
+  return runTerminal(
+    transport,
+    {
+      action: "uploadAsset",
+      source: input.source,
+      target: input.target,
+      filename: input.filename,
+      contentBase64: input.contentBase64,
+      mimeType: input.mimeType,
+    },
+    opts,
+  );
 }

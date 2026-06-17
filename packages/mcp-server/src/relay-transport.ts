@@ -11,6 +11,7 @@
 import {
   CommandResult,
   type CommandEnvelope,
+  err,
 } from "@foundry-mcp-bridge/shared";
 
 export class TimeoutError extends Error {
@@ -86,6 +87,16 @@ export class PendingRequests {
       this.map.delete(id);
     }
   }
+
+  /**
+   * Settle every outstanding request with a synthesized result — used on
+   * disconnect so callers fail fast instead of waiting out their timeouts.
+   */
+  failAll(makeResult: (id: string) => CommandResult): void {
+    const entries = [...this.map.entries()];
+    this.map.clear();
+    for (const [id, resolve] of entries) resolve(makeResult(id));
+  }
 }
 
 /** Minimal browser/Node WebSocket surface used by the client transport. */
@@ -93,6 +104,7 @@ export interface WsLike {
   send(data: string): void;
   close(): void;
   addEventListener(type: string, listener: (ev: { data?: unknown }) => void): void;
+  removeEventListener?(type: string, listener: (ev: { data?: unknown }) => void): void;
 }
 
 export type WsFactory = (url: string) => WsLike;
@@ -117,27 +129,53 @@ export class WebSocketRelayTransport implements RelayTransport {
   private readonly socket: WsLike;
   private readonly defaultTimeoutMs: number;
   private readonly ready: Promise<void>;
+  private resolveReady!: () => void;
+  private dropped = false;
   private readonly pending = new PendingRequests();
+  private readonly onMessage = (ev: { data?: unknown }) => this.pending.settle(ev.data);
+  // A dropped socket (remote close / error) must fail in-flight requests fast,
+  // not leave them to time out — symmetric with RelayServer's disconnect drain.
+  private readonly onDrop = () => {
+    this.dropped = true;
+    this.resolveReady(); // unblock anything awaiting open
+    this.drain("relay connection lost");
+  };
 
   constructor(options: WebSocketRelayTransportOptions) {
     this.defaultTimeoutMs = options.defaultTimeoutMs;
     const factory = options.createSocket ?? defaultWsFactory;
     this.socket = factory(options.url);
     this.ready = new Promise<void>((resolve) => {
-      this.socket.addEventListener("open", () => resolve());
+      this.resolveReady = resolve;
     });
-    this.socket.addEventListener("message", (ev) => this.pending.settle(ev.data));
+    this.socket.addEventListener("open", () => this.resolveReady());
+    this.socket.addEventListener("message", this.onMessage);
+    this.socket.addEventListener("close", this.onDrop);
+    this.socket.addEventListener("error", this.onDrop);
   }
 
   async request(envelope: CommandEnvelope, opts?: RequestOptions): Promise<CommandResult> {
+    if (this.dropped) return err(envelope.id, "INTERNAL", "relay connection lost");
     await this.ready;
+    // The socket may have dropped while we awaited open; fail fast rather than
+    // sending on a dead socket and waiting out the timeout.
+    if (this.dropped) return err(envelope.id, "INTERNAL", "relay connection lost");
     const timeoutMs = opts?.timeoutMs ?? this.defaultTimeoutMs;
     return this.pending.awaitResult(envelope.id, timeoutMs, () =>
       this.socket.send(JSON.stringify(envelope)),
     );
   }
 
+  private drain(message: string): void {
+    this.pending.failAll((id) => err(id, "INTERNAL", message));
+  }
+
   close(): void {
+    this.dropped = true;
+    this.socket.removeEventListener?.("message", this.onMessage);
+    this.socket.removeEventListener?.("close", this.onDrop);
+    this.socket.removeEventListener?.("error", this.onDrop);
+    this.drain("relay transport closed");
     this.socket.close();
   }
 }

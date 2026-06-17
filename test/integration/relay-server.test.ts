@@ -67,6 +67,22 @@ describe("RelayServer end-to-end (real WebSocket)", () => {
     if (!out.ok) expect(out.error.code).toBe("TIMEOUT");
   });
 
+  it("close() fails a waiting request fast instead of hanging until timeout", async () => {
+    const server = new RelayServer({ url: "ws://localhost:0", token: TOKEN, defaultTimeoutMs: 60_000 });
+    cleanups.push(() => server.close());
+    await server.listening();
+    // No module connected: the request parks in waitForClient with a long timeout.
+    const pending = runCreateDocument(
+      server,
+      { documentType: "Actor", data: { name: "Pending" } },
+      { token: TOKEN, timeoutMs: 60_000 },
+    );
+    await new Promise((r) => setTimeout(r, 10)); // let it enter waitForClient
+    server.close(); // must wake the waiter; without the fix this hangs ~60s
+    const out = await pending;
+    expect(out.ok).toBe(false);
+  });
+
   it("rejects a module presenting the wrong token", async () => {
     const { server, port } = await harness(TOKEN, false);
     const bad = new WebSocket(`ws://localhost:${port}?token=wrong`);

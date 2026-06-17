@@ -17,6 +17,7 @@ import {
   type Json,
   COLLECTIONS,
   checkEnvelopeGuards,
+  embeddedField,
   randomID,
   ok,
   err,
@@ -24,27 +25,11 @@ import {
   getByPath,
   applyUpdate,
 } from "@foundry-mcp-bridge/shared";
+import type { WorldInfo } from "../../packages/foundry-module/src/protocol-executor.js";
 
 // ---------------------------------------------------------------------------
 // Foundry key conventions
 // ---------------------------------------------------------------------------
-
-/** Field name an embedded document lives under on its parent. */
-const EMBEDDED_FIELD: Record<string, string> = {
-  Token: "tokens",
-  AmbientLight: "lights",
-  Note: "notes",
-  ActiveEffect: "effects",
-  Item: "items",
-  Wall: "walls",
-  AmbientSound: "sounds",
-  Drawing: "drawings",
-  MeasuredTemplate: "templates",
-  Tile: "tiles",
-  Region: "regions",
-  // v10+ JournalEntry content lives in embedded JournalEntryPage documents.
-  JournalEntryPage: "pages",
-};
 
 /** `!actors!{id}` for a top-level document. */
 export function documentKey(type: DocumentType, id: string): string {
@@ -58,8 +43,7 @@ export function embeddedKey(
   parentId: string,
   embeddedId: string,
 ): string {
-  const field = EMBEDDED_FIELD[embeddedName] ?? embeddedName.toLowerCase();
-  return `!${COLLECTIONS[parentType]}.${field}!${parentId}.${embeddedId}`;
+  return `!${COLLECTIONS[parentType]}.${embeddedField(embeddedName)}!${parentId}.${embeddedId}`;
 }
 
 // Re-export the shared object helpers used to mirror Foundry's update semantics
@@ -92,9 +76,14 @@ export class MockFilePicker {
     target: string,
     file: { name: string },
   ): Promise<{ path: string }> {
-    const path = `${target.replace(/\/$/, "")}/${file.name}`;
+    return this.put(source, target, file.name);
+  }
+
+  /** Synchronous core of upload, callable from the (sync) command dispatch. */
+  put(source: FilePickerSource, target: string, name: string): { path: string } {
+    const path = `${target.replace(/\/$/, "")}/${name}`;
     this.files[source].add(path);
-    this.uploads.push({ source, path, name: file.name });
+    this.uploads.push({ source, path, name });
     return { path };
   }
 
@@ -127,6 +116,8 @@ export interface MockFoundryOptions {
   isGM?: boolean;
   /** Expected auth token; when set, envelopes must match it. */
   token?: string;
+  /** Override the world snapshot returned by getWorldInfo. */
+  worldInfo?: Partial<WorldInfo>;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,10 +133,19 @@ export class MockFoundry {
   private readonly failures: QueuedFailure[] = [];
   /** Forien's Quest Log store — quests are NOT raw JournalEntries (§7.1). */
   readonly quests = new Map<string, Json>();
+  /** World snapshot returned by getWorldInfo (overridable for tests). */
+  readonly worldInfo: WorldInfo;
 
   constructor(options: MockFoundryOptions = {}) {
     this.isGM = options.isGM ?? true;
     this.token = options.token;
+    this.worldInfo = {
+      foundryVersion: "13.0.0",
+      system: { id: "dnd5e", version: "3.0.0" },
+      world: { id: "test-world", title: "Test World" },
+      folders: [],
+      ...options.worldInfo,
+    };
   }
 
   /** Queue a one-shot injected failure consumed by the next execute(). */
@@ -209,7 +209,7 @@ export class MockFoundry {
   private dispatch(id: string, command: Command, dryRun: boolean): CommandResult {
     switch (command.action) {
       case "create":
-        return this.create(id, command.documentType, command.data, dryRun);
+        return this.create(id, command.documentType, command.data, command.keepId ?? false, dryRun);
       case "update":
         return this.update(id, command.documentType, command.id, command.data, dryRun);
       case "delete":
@@ -224,6 +224,13 @@ export class MockFoundry {
         return this.deleteEmbedded(id, command, dryRun);
       case "find":
         return this.find(id, command);
+      case "getWorldInfo":
+        return ok(id, this.worldInfo as unknown as Json);
+      case "uploadAsset": {
+        const target = command.target.replace(/\/$/, "");
+        if (dryRun) return ok(id, { path: `${target}/${command.filename}` });
+        return ok(id, this.filePicker.put(command.source, target, command.filename));
+      }
       case "createQuest":
         return this.createQuest(id, command, dryRun);
       case "updateQuest":
@@ -237,9 +244,12 @@ export class MockFoundry {
     id: string,
     type: DocumentType,
     data: Json,
+    keepId: boolean,
     dryRun: boolean,
   ): CommandResult {
-    const _id = typeof data._id === "string" && data._id ? data._id : randomID();
+    // Mirror Foundry: an explicit data._id is honored only with keepId; otherwise
+    // a fresh id is minted (so tests can't rely on ids the live system wouldn't keep).
+    const _id = keepId && typeof data._id === "string" && data._id ? data._id : randomID();
     const doc: Json = { ...data, _id };
     if (dryRun) return ok(id, { ...doc, _id: null, _dryRun: true });
     this.store.set(documentKey(type, _id), doc);
@@ -294,7 +304,7 @@ export class MockFoundry {
   }
 
   private embeddedArray(parent: Json, embeddedName: string): Json[] {
-    const field = EMBEDDED_FIELD[embeddedName] ?? embeddedName.toLowerCase();
+    const field = embeddedField(embeddedName);
     if (!Array.isArray(parent[field])) parent[field] = [];
     return parent[field] as Json[];
   }

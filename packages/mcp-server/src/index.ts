@@ -18,6 +18,10 @@ export { buildServer } from "./server.js";
 
 async function start(): Promise<void> {
   const config = loadConfig();
+  // All diagnostics go to stderr — stdout carries the MCP JSON-RPC stream.
+  const trace = config.trace
+    ? (line: string) => console.error(`[foundry-mcp-bridge] ${line}`)
+    : undefined;
   // The MCP server hosts the relay; the Foundry module connects out to it.
   const transport = new RelayServer({
     url: config.relayUrl,
@@ -29,7 +33,13 @@ async function start(): Promise<void> {
   const server = buildServer(transport, {
     token: config.relayToken,
     timeoutMs: config.requestTimeoutMs,
+    log: trace,
   });
+  if (config.trace) {
+    console.error(
+      `[foundry-mcp-bridge] ready: relay ${config.relayUrl}, timeout ${config.requestTimeoutMs}ms, trace on`,
+    );
+  }
   await server.connect(new StdioServerTransport());
 }
 

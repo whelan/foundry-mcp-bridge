@@ -96,6 +96,8 @@ export class RelayClient {
   /** Schedule a reconnect with exponential backoff, unless closed on purpose. */
   private scheduleReconnect(): void {
     if (this.intentionalClose || !this.reconnectEnabled) return;
+    // Don't stack timers if multiple close/error events fire before one fires.
+    if (this.reconnectHandle != null) return;
     const delay = Math.min(this.baseDelay * 2 ** this.reconnectAttempts, this.maxDelay);
     this.reconnectAttempts += 1;
     this.log("info", `relay reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
@@ -127,11 +129,20 @@ export class RelayClient {
       const parsed = CommandEnvelope.safeParse(json);
       if (!parsed.success) {
         const id = idFromUnknown(json) ?? "unknown";
+        this.log("warn", `▶ invalid envelope #${id}`);
         result = err(id, "VALIDATION", "invalid command envelope", parsed.error.format());
       } else {
+        const { command, id, dryRun } = parsed.data;
+        const tag = `${command.action}${dryRun ? " (dry-run)" : ""} #${id.slice(0, 8)}`;
+        this.log("info", `▶ ${tag}`);
         result = await executeCommand(parsed.data, this.options.api, this.options.context);
+        this.log(
+          result.ok ? "info" : "warn",
+          result.ok ? `◀ ${tag} ok` : `◀ ${tag} ERROR ${result.error.code}: ${result.error.message}`,
+        );
       }
     } catch (e) {
+      this.log("error", `◀ exception: ${(e as Error).message}`);
       result = err("unknown", "INTERNAL", (e as Error).message);
     }
     this.send(result);
