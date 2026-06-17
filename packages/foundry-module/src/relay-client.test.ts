@@ -62,6 +62,9 @@ function stubApi(): FoundryDocumentApi {
     async browseAssets(_params) {
       return { dirs: [], files: [], target: "/" };
     },
+    async batchUploadAssets(params) {
+      return params.files.map((f) => ({ filename: f.filename, path: `${params.target}/${f.filename}` }));
+    },
     async createQuest(data) {
       return { ...data, _id: "quest" };
     },

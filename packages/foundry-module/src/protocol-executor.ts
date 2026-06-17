@@ -67,6 +67,14 @@ export interface BrowseAssetsParams {
   extensions?: string[];
 }
 
+/** Parameters for a batch upload via Foundry's FilePicker. */
+export interface BatchUploadAssetsParams {
+  source: "data" | "forgevtt";
+  target: string;
+  files: Array<{ filename: string; contentBase64: string; mimeType?: string }>;
+  skipExisting?: boolean;
+}
+
 /**
  * The narrow surface the executor needs from Foundry. The real implementation
  * (foundry-runtime.ts) calls `Actor.create`, `document.update`, embedded CRUD,
@@ -112,6 +120,10 @@ export interface FoundryDocumentApi {
   getWorldInfo(): Promise<WorldInfo>;
   uploadAsset(params: UploadAssetParams, opts: ExecuteOptions): Promise<{ path: string }>;
   browseAssets(params: BrowseAssetsParams, opts: ExecuteOptions): Promise<{ dirs: string[]; files: string[]; target: string }>;
+  batchUploadAssets(
+    params: BatchUploadAssetsParams,
+    opts: ExecuteOptions,
+  ): Promise<Array<{ filename: string; path: string; skipped?: boolean }>>;
   createQuest(data: DocData | undefined, parentId: string | undefined, opts: ExecuteOptions): Promise<DocData>;
   updateQuest(id: string, data: DocData, opts: ExecuteOptions): Promise<DocData>;
   deleteQuest(id: string, opts: ExecuteOptions): Promise<void>;
@@ -214,6 +226,11 @@ async function dispatch(
     case "browseAssets":
       return api.browseAssets(
         { source: command.source, target: command.target, extensions: command.extensions },
+        opts,
+      );
+    case "batchUploadAssets":
+      return api.batchUploadAssets(
+        { source: command.source, target: command.target, files: command.files, skipExisting: command.skipExisting },
         opts,
       );
     case "createQuest":

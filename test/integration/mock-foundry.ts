@@ -97,6 +97,24 @@ export class MockFilePicker {
     return { target, files };
   }
 
+  /** Batch variant of put; honours skipExisting against the per-source file set. */
+  putBatch(
+    source: FilePickerSource,
+    target: string,
+    files: Array<{ filename: string }>,
+    skipExisting?: boolean,
+  ): Array<{ filename: string; path: string; skipped?: boolean }> {
+    const prefix = target.replace(/\/$/, "");
+    return files.map((f) => {
+      const path = `${prefix}/${f.filename}`;
+      if (skipExisting && this.files[source].has(path)) {
+        return { filename: f.filename, path, skipped: true };
+      }
+      this.put(source, target, f.filename);
+      return { filename: f.filename, path };
+    });
+  }
+
   /** Extended browse that also returns direct subdirectories, with optional extension filter. */
   browseWithDirs(
     source: FilePickerSource,
@@ -263,6 +281,13 @@ export class MockFoundry {
       case "browseAssets": {
         if (dryRun) return ok(id, { dirs: [], files: [], target: command.target });
         return ok(id, this.filePicker.browseWithDirs(command.source, command.target, command.extensions));
+      }
+      case "batchUploadAssets": {
+        if (dryRun) {
+          const prefix = command.target.replace(/\/$/, "");
+          return ok(id, command.files.map((f) => ({ filename: f.filename, path: `${prefix}/${f.filename}` })));
+        }
+        return ok(id, this.filePicker.putBatch(command.source, command.target, command.files, command.skipExisting));
       }
       case "createQuest":
         return this.createQuest(id, command, dryRun);

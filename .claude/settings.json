@@ -5,6 +5,7 @@
     "allow": [
       "mcp__foundry",
       "mcp__foundry__browse_assets",
+      "mcp__foundry__batch_upload_assets",
       "mcp__foundry__create_document",
       "mcp__foundry__create_scene",
       "mcp__foundry__update_document",

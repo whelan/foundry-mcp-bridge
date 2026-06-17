@@ -19,6 +19,7 @@ import {
   GetWorldInfoShape,
   UploadAssetShape,
   BrowseAssetsShape,
+  BatchUploadAssetsShape,
   CreateEmbeddedShape,
   UpdateEmbeddedShape,
   DeleteEmbeddedShape,
@@ -34,6 +35,7 @@ import {
   runGetWorldInfo,
   runUploadAsset,
   runBrowseAssets,
+  runBatchUploadAssets,
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
@@ -138,6 +140,12 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
     "List files and sub-directories in a Foundry asset directory. Use source=\"forgevtt\" when the world is hosted on The Forge. Returns { dirs, files, target }.",
     BrowseAssetsShape,
     runBrowseAssets,
+  );
+  register(
+    "batch_upload_assets",
+    "Upload multiple asset files to Foundry storage in one call. Use source=\"forgevtt\" on The Forge. Set skipExisting=true to skip files already present. Returns array of { filename, path, skipped? }. Max 50 files per call.",
+    BatchUploadAssetsShape,
+    runBatchUploadAssets,
   );
   register(
     "create_embedded",

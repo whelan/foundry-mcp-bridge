@@ -94,6 +94,8 @@ function commandSummary(c: Command): string {
       return `${c.target}/${c.filename}`;
     case "browseAssets":
       return `${c.source}:${c.target}`;
+    case "batchUploadAssets":
+      return `batch-upload ${c.files.length} → ${c.target}`;
     case "getWorldInfo":
       return "";
   }
@@ -681,6 +683,32 @@ export function uploadAssetReliable(
       filename: input.filename,
       contentBase64: input.contentBase64,
       mimeType: input.mimeType,
+    },
+    opts,
+  );
+}
+
+export interface BatchUploadAssetsInput {
+  source: "data" | "forgevtt";
+  target: string;
+  files: Array<{ filename: string; contentBase64: string; mimeType?: string }>;
+  skipExisting?: boolean;
+}
+
+export function batchUploadAssetsReliable(
+  transport: RelayTransport,
+  input: BatchUploadAssetsInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  // Terminal write: dry-run validates, write uploads each file. No read-back.
+  return runTerminal(
+    transport,
+    {
+      action: "batchUploadAssets",
+      source: input.source,
+      target: input.target,
+      files: input.files,
+      skipExisting: input.skipExisting ?? false,
     },
     opts,
   );

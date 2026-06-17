@@ -12,6 +12,7 @@ import type {
   FindSelector,
   FoundryDocumentApi,
   UploadAssetParams,
+  BatchUploadAssetsParams,
   WorldInfo,
 } from "./protocol-executor.js";
 import { CommandExecutionError } from "./protocol-executor.js";
@@ -190,6 +191,37 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         files: (result?.files ?? []) as string[],
         target: String(result?.target ?? params.target),
       };
+    },
+
+    async batchUploadAssets(params: BatchUploadAssetsParams, opts) {
+      const target = params.target.replace(/\/$/, "");
+      // Dry-run: return what would be uploaded without writing.
+      if (opts.dryRun) {
+        return params.files.map((f) => ({ filename: f.filename, path: `${target}/${f.filename}` }));
+      }
+      // Optional skip: pre-browse the directory to find existing files.
+      const existing = new Set<string>();
+      if (params.skipExisting) {
+        const browse = await (FilePicker as any).browse(params.source, target, {});
+        for (const f of browse?.files ?? []) existing.add(f);
+      }
+      const results: Array<{ filename: string; path: string; skipped?: boolean }> = [];
+      for (const entry of params.files) {
+        const path = `${target}/${entry.filename}`;
+        if (existing.has(path)) {
+          results.push({ filename: entry.filename, path, skipped: true });
+          continue;
+        }
+        const bytes = Uint8Array.from(atob(entry.contentBase64), (c) => c.charCodeAt(0));
+        const file = new File([bytes], entry.filename, entry.mimeType ? { type: entry.mimeType } : undefined);
+        const result = await (FilePicker as any).upload(params.source, target, file, {});
+        const storedPath = result?.path;
+        if (typeof storedPath !== "string" || !storedPath) {
+          throw new CommandExecutionError("INTERNAL", `FilePicker.upload failed for ${entry.filename}`);
+        }
+        results.push({ filename: entry.filename, path: storedPath });
+      }
+      return results;
     },
 
     async createQuest(data, parentId, opts) {

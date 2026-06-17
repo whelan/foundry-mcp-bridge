@@ -16,6 +16,7 @@ import {
   runGetWorldInfo,
   runUploadAsset,
   runBrowseAssets,
+  runBatchUploadAssets,
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
@@ -443,6 +444,47 @@ describe("browse_assets", () => {
     const data = out.data as { dirs: string[]; files: string[] };
     expect(data.dirs).toContain("worlds/strahd/regions/barovia");
     expect(data.files).toEqual([]); // the file is in a subdir, not a direct child
+  });
+});
+
+describe("batch_upload_assets", () => {
+  it("uploads multiple files and returns paths", async () => {
+    const { transport } = setup();
+    const out = await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/scenes",
+      files: [
+        { filename: "barovia.webp", contentBase64: btoa("map1") },
+        { filename: "castle.webp", contentBase64: btoa("map2") },
+      ],
+    });
+    if (!out.ok) throw new Error(`batch upload failed: ${out.error.message}`);
+    const data = out.data as Array<{ filename: string; path: string }>;
+    expect(data).toHaveLength(2);
+    expect(data[0]!.path).toBe("worlds/strahd/scenes/barovia.webp");
+    expect(data[1]!.path).toBe("worlds/strahd/scenes/castle.webp");
+  });
+
+  it("skips already-existing files when skipExisting=true", async () => {
+    const { transport } = setup();
+    await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/tokens",
+      files: [{ filename: "strahd.webp", contentBase64: btoa("token") }],
+    });
+    const out = await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/tokens",
+      files: [
+        { filename: "strahd.webp", contentBase64: btoa("token") },
+        { filename: "ireena.webp", contentBase64: btoa("token2") },
+      ],
+      skipExisting: true,
+    });
+    if (!out.ok) throw new Error(`batch upload failed: ${out.error.message}`);
+    const data = out.data as Array<{ filename: string; path: string; skipped?: boolean }>;
+    expect(data.find((f) => f.filename === "strahd.webp")?.skipped).toBe(true);
+    expect(data.find((f) => f.filename === "ireena.webp")?.skipped).toBeFalsy();
   });
 });
 
