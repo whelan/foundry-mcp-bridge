@@ -54,6 +54,7 @@ function stubApi(): FoundryDocumentApi {
         system: { id: "dnd5e", version: "3.0.0" },
         world: { id: "w", title: "World" },
         folders: [],
+        forge: { active: false, userId: null },
       };
     },
     async uploadAsset(params) {

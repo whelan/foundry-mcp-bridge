@@ -163,6 +163,10 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
           name: String(f.name),
           type: String(f.type),
         })),
+        forge: {
+          active: Boolean((globalThis as any).ForgeVTT?.usingTheForge),
+          userId: ((globalThis as any).ForgeVTT?.userId ?? null) as string | null,
+        },
       };
     },
 

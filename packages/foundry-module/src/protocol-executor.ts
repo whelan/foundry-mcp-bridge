@@ -49,6 +49,8 @@ export interface WorldInfo {
   system: { id: string; version: string; title?: string };
   world: { id: string; title: string };
   folders: WorldFolder[];
+  /** The Forge hosting detection. active=true when running on forge-vtt.com. */
+  forge: { active: boolean; userId: string | null };
 }
 
 /** Parameters for an asset upload via Foundry's FilePicker. */

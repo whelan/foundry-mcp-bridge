@@ -191,6 +191,7 @@ export class MockFoundry {
       system: { id: "dnd5e", version: "3.0.0" },
       world: { id: "test-world", title: "Test World" },
       folders: [],
+      forge: { active: false, userId: null },
       ...options.worldInfo,
     };
   }
