@@ -50,15 +50,15 @@ const result = await FilePicker.browse(source, targetPath, options);
 Options: `{ extensions: [".webp", ".png"] }` filters the returned `files` by
 extension. On The Forge, `source: "forgevtt"` lists assets from the Forge bucket.
 
-## Direct REST API (Phase 2 — requires Node.js + API key)
+## Direct REST API (Phase 2 — implemented)
 
-The Forge also exposes a REST API callable from Node.js directly (no browser
-required). This is **NOT** used today — every asset operation currently goes
-through the browser relay (`FilePicker`). Documented here so a future tool can
-call it without re-discovering it.
+The Forge also exposes a REST API callable from Node.js directly (no browser, no
+running world, no relay round-trip). This is now wired into the MCP server as an
+**optional** path alongside the relay tools — handy for *pre-flight* asset checks
+(e.g. "does this map already exist?") before driving the live world.
 
 ```
-Base URL: https://forge-vtt.com/api
+Base URL: https://forge-vtt.com/api   (override with FORGE_API_BASE_URL)
 
 # Browse assets
 GET /api/user/{userId}/assets?path={path}
@@ -79,6 +79,28 @@ Body: { path: "worlds/strahd/tokens" }
 → { success: true }
 ```
 
-Calling these from the MCP server would require `FORGE_USER_ID` + `FORGE_API_KEY`
-in `.env`. Useful for pre-flight asset checks without a browser round-trip.
-**Out of scope for the current plan** — flagged as Phase 2.
+### Server wiring
+
+- **Config** (`config.ts`): set `FORGE_USER_ID` + `FORGE_API_KEY` (optionally
+  `FORGE_API_BASE_URL`) in `.env`. All optional; when both id and key are present
+  the server constructs a `ForgeRestClient` and enables the tools below.
+- **Client** (`forge-rest.ts`): `ForgeRestClient` performs the calls above with
+  an injectable `fetch` (so tests never hit the network), a per-request timeout
+  via `AbortController`, and structured `ForgeRestError`s on non-2xx / non-JSON.
+- **Tools** (`forge-tools.ts`, registered in `server.ts`): bypass the relay and
+  return the same `ToolOutcome` shape as the relay tools.
+
+  | Tool | Maps to | Result |
+  |------|---------|--------|
+  | `forge_browse_assets` | `GET .../assets?path=` | `{ files, dirs }` |
+  | `forge_upload_asset` | `POST .../assets/upload` | `{ path }` |
+  | `forge_create_folder` | `PUT .../assets` | `{ success }` |
+
+  When the credentials aren't configured the tools return a structured
+  `UNSUPPORTED` error naming the env keys, rather than silently doing nothing.
+  HTTP `404 → NOT_FOUND`, `401/403 → AUTH`, everything else `→ INTERNAL`.
+
+These tools do **not** go through the relay reliability pipeline (no dry-run /
+read-back), because they don't touch live Foundry documents — the Forge API's
+returned path/flag is the confirmation. Live verification against a real Forge
+account is the only remaining step (a `FORGE_API_KEY` is required to exercise it).

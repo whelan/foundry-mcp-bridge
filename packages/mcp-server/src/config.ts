@@ -22,6 +22,12 @@ export interface ServerConfig {
   requestTimeoutMs: number;
   /** Emit a full command/result trace to stderr (default on; RELAY_TRACE=0 to mute). */
   trace: boolean;
+  /** Optional: The Forge user id, enabling the Phase 2 direct REST tools. */
+  forgeUserId?: string;
+  /** Optional: The Forge API key (paired with forgeUserId). */
+  forgeApiKey?: string;
+  /** Optional: override the Forge API base URL (default https://forge-vtt.com/api). */
+  forgeApiBaseUrl?: string;
 }
 
 const ConfigSchema = z.object({
@@ -29,6 +35,9 @@ const ConfigSchema = z.object({
     .string({ required_error: "relayUrl is required (set RELAY_URL)" })
     .min(1, "relayUrl must not be empty (set RELAY_URL)"),
   relayToken: z.string().min(1).optional(),
+  forgeUserId: z.string().min(1).optional(),
+  forgeApiKey: z.string().min(1).optional(),
+  forgeApiBaseUrl: z.string().url().optional(),
   requestTimeoutMs: z.coerce.number().int().positive().default(10_000),
   // raw.trace arrives as string|undefined (env / .env / dev.config via toString).
   trace: z
@@ -79,6 +88,13 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
   const raw = {
     relayUrl: pick(env.RELAY_URL, dotEnv.RELAY_URL, devConfig.relayUrl),
     relayToken: pick(env.RELAY_TOKEN, dotEnv.RELAY_TOKEN, devConfig.relayToken),
+    forgeUserId: pick(env.FORGE_USER_ID, dotEnv.FORGE_USER_ID, devConfig.forgeUserId),
+    forgeApiKey: pick(env.FORGE_API_KEY, dotEnv.FORGE_API_KEY, devConfig.forgeApiKey),
+    forgeApiBaseUrl: pick(
+      env.FORGE_API_BASE_URL,
+      dotEnv.FORGE_API_BASE_URL,
+      devConfig.forgeApiBaseUrl,
+    ),
     requestTimeoutMs: pick(
       env.RELAY_TIMEOUT_MS,
       dotEnv.RELAY_TIMEOUT_MS,
@@ -102,6 +118,9 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
 interface DevConfig {
   relayUrl?: string;
   relayToken?: string;
+  forgeUserId?: string;
+  forgeApiKey?: string;
+  forgeApiBaseUrl?: string;
   requestTimeoutMs?: number;
   trace?: boolean;
 }
