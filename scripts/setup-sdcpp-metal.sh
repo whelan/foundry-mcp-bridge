@@ -36,7 +36,8 @@ done
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SDCPP_DIR="$REPO/.sdcpp"
 BUILD_DIR="$SDCPP_DIR/build"
-SD_BIN="$BUILD_DIR/bin/sd"
+BIN_DIR="$BUILD_DIR/bin"
+SD_BIN=""   # resolved after the build (binary is sd-cli on newer sd.cpp, sd on older)
 MODEL_DIR="$REPO/models"
 ENV_FILE="$REPO/local-image-gen.env"
 
@@ -90,7 +91,12 @@ say "Configuring build${SD_NO_METAL:+ (CPU)}"
 cmake -S "$SDCPP_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release ${METAL_FLAGS[@]+"${METAL_FLAGS[@]}"}
 say "Compiling (this can take a few minutes)"
 cmake --build "$BUILD_DIR" --config Release -j"$(sysctl -n hw.ncpu)"
-[[ -x "$SD_BIN" ]] || { echo "setup: build did not produce $SD_BIN" >&2; exit 1; }
+# Newer stable-diffusion.cpp names the CLI `sd-cli`; older builds produced `sd`.
+for cand in "$BIN_DIR/sd-cli" "$BIN_DIR/sd"; do
+  [[ -x "$cand" ]] && { SD_BIN="$cand"; break; }
+done
+[[ -n "$SD_BIN" ]] || { echo "setup: build produced no sd/sd-cli binary in $BIN_DIR" >&2; exit 1; }
+say "Built CLI: $SD_BIN"
 
 # 4. Model checkpoint.
 mkdir -p "$MODEL_DIR"
