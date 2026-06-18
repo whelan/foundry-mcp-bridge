@@ -85,7 +85,9 @@ if [[ "${SD_NO_METAL:-0}" == "1" ]]; then
   METAL_FLAGS=()
 fi
 say "Configuring build${SD_NO_METAL:+ (CPU)}"
-cmake -S "$SDCPP_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release "${METAL_FLAGS[@]}"
+# Note the ${arr[@]+...} guard: macOS ships bash 3.2, where expanding an empty
+# array under `set -u` errors with "unbound variable".
+cmake -S "$SDCPP_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release ${METAL_FLAGS[@]+"${METAL_FLAGS[@]}"}
 say "Compiling (this can take a few minutes)"
 cmake --build "$BUILD_DIR" --config Release -j"$(sysctl -n hw.ncpu)"
 [[ -x "$SD_BIN" ]] || { echo "setup: build did not produce $SD_BIN" >&2; exit 1; }
