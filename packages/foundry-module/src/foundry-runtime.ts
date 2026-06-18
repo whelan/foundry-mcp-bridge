@@ -185,15 +185,16 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
     },
 
     async browseAssets(params, opts) {
+      const target = params.target.replace(/\/$/, "");
       // Dry-run: return empty listing (nothing to validate against).
-      if (opts.dryRun) return { dirs: [], files: [], target: params.target };
+      if (opts.dryRun) return { dirs: [], files: [], target };
       const options: Record<string, unknown> = {};
       if (params.extensions?.length) options.extensions = params.extensions;
-      const result = await (FilePicker as any).browse(params.source, params.target, options);
+      const result = await (FilePicker as any).browse(params.source, target, options);
       return {
         dirs: (result?.dirs ?? []) as string[],
         files: (result?.files ?? []) as string[],
-        target: String(result?.target ?? params.target),
+        target: String(result?.target ?? target),
       };
     },
 
@@ -228,6 +229,8 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         if (typeof storedPath !== "string" || !storedPath) {
           throw new CommandExecutionError("INTERNAL", `FilePicker.upload failed for ${entry.filename}`);
         }
+        // Track the upload so duplicates within this batch are skipped.
+        existing.add(baseName(entry.filename));
         results.push({ filename: entry.filename, path: storedPath });
       }
       return results;

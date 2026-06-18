@@ -280,15 +280,16 @@ export class MockFoundry {
         return ok(id, this.filePicker.put(command.source, target, command.filename));
       }
       case "browseAssets": {
-        if (dryRun) return ok(id, { dirs: [], files: [], target: command.target });
-        return ok(id, this.filePicker.browseWithDirs(command.source, command.target, command.extensions));
+        const target = command.target.replace(/\/$/, "");
+        if (dryRun) return ok(id, { dirs: [], files: [], target });
+        return ok(id, this.filePicker.browseWithDirs(command.source, target, command.extensions));
       }
       case "batchUploadAssets": {
+        const target = command.target.replace(/\/$/, "");
         if (dryRun) {
-          const prefix = command.target.replace(/\/$/, "");
-          return ok(id, command.files.map((f) => ({ filename: f.filename, path: `${prefix}/${f.filename}` })));
+          return ok(id, command.files.map((f) => ({ filename: f.filename, path: `${target}/${f.filename}` })));
         }
-        return ok(id, this.filePicker.putBatch(command.source, command.target, command.files, command.skipExisting));
+        return ok(id, this.filePicker.putBatch(command.source, target, command.files, command.skipExisting));
       }
       case "createQuest":
         return this.createQuest(id, command, dryRun);
