@@ -41,6 +41,25 @@ To produce the browser-loadable Foundry module bundle:
 npm run bundle:module   # -> packages/foundry-module/dist/index.js (self-contained)
 ```
 
+## Local image generation (optional)
+
+Generate art with a **local** diffusion model and push it into your world. The
+upload path (`upload_asset` MCP tool) already exists; this adds the generator.
+
+Turnkey on macOS (built for an Intel MacBook Pro 2019 — CPU-only, uses the
+1-step `sd-turbo` model):
+
+```bash
+./scripts/setup-local-image-gen.sh                       # run once
+./scripts/make-image.sh "a red dragon" /tmp/dragon.png   # generate any time
+```
+
+`make-image.sh` writes the image plus a base64 sidecar; the
+`generate-and-upload-image` skill then uploads it and sets it as an actor
+portrait, token, scene background, or journal image. For other backends (an
+Automatic1111/SD-Forge WebUI, or any image CLI) point `IMAGE_GEN_CMD` /
+`SD_WEBUI_URL` at `scripts/gen-image.mjs` directly — see the skill.
+
 ## Configuration
 
 The MCP server reads config in exactly one place (`packages/mcp-server/src/config.ts`):

@@ -1,0 +1,11 @@
+# Pinned for an Intel (x86_64) macOS machine — e.g. MacBook Pro 2019.
+# torch dropped macOS x86_64 wheels after 2.2.2, so that is the last version
+# that pip-installs on an Intel Mac; numpy must stay <2 for torch 2.2.x. The
+# diffusers/transformers/accelerate set below is a coherent combo for torch 2.2.
+numpy<2
+torch==2.2.2
+diffusers==0.27.2
+transformers==4.40.2
+accelerate==0.30.1
+safetensors>=0.4.2
+pillow>=10.2.0

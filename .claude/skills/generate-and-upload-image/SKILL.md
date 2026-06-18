@@ -35,6 +35,24 @@ halves, and they stay separate on purpose:
 - If neither is configured, ask the user which local backend they run and what
   the invocation is — do **not** invent a command.
 
+### Turnkey macOS setup (Intel, e.g. MacBook Pro 2019)
+
+There's a ready-made local stack (sd-turbo via diffusers, CPU-only). One-time:
+
+```bash
+./scripts/setup-local-image-gen.sh      # installs deps, downloads sd-turbo, smoke-renders
+```
+
+Then generation is a single command, and you can skip step 2's raw `gen-image.mjs`
+call below — use this instead (it sources `local-image-gen.env` for you):
+
+```bash
+./scripts/make-image.sh "a red dragon perched on a castle tower" /tmp/dragon.png
+```
+
+It writes the image + `<out>.b64` and prints the JSON summary, exactly like
+`gen-image.mjs`, so continue from step 3 (upload).
+
 ## Workflow
 
 1. **Pick the target document and field.** Map the user's intent to where the
