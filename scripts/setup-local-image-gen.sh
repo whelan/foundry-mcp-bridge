@@ -72,7 +72,7 @@ cat > "$ENV_FILE" <<EOF
 # Consumed by scripts/make-image.sh (which sources it before gen-image.mjs).
 IMAGE_GEN_BACKEND=cli
 SD_MODEL=stabilityai/sd-turbo
-IMAGE_GEN_CMD=$PY_BIN $REPO/scripts/sd_generate.py --prompt "{prompt}" --out "{out}" --width {width} --height {height} --steps {steps} --negative "{negative}"
+IMAGE_GEN_CMD='$PY_BIN $REPO/scripts/sd_generate.py --prompt "{prompt}" --out "{out}" --width {width} --height {height} --steps {steps} --negative "{negative}"'
 EOF
 
 # 5. Smoke test: downloads the model (~2.5 GB on first run) and renders once.
