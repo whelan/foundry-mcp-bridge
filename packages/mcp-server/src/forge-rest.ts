@@ -131,12 +131,16 @@ export class ForgeRestClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     let res: Response;
+    let text: string;
     try {
       res = await this.fetchImpl(url, {
         ...init,
         signal: controller.signal,
         headers: { ...init.headers, Authorization: this.apiKey },
       });
+      // Read the body inside the timed region: clearing the timer before the read
+      // would leave a stalled-body response (headers in, body hanging) unbounded.
+      text = await res.text();
     } catch (e) {
       const reason = controller.signal.aborted
         ? `Forge request timed out after ${this.timeoutMs}ms`
@@ -146,7 +150,6 @@ export class ForgeRestClient {
       clearTimeout(timer);
     }
 
-    const text = await res.text();
     if (!res.ok) {
       throw new ForgeRestError(
         `Forge API ${res.status} ${res.statusText}`.trim(),

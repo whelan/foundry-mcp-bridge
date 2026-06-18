@@ -133,6 +133,31 @@ describe("ForgeRestClient", () => {
     });
     await expect(c.browseAssets({ path: "x" })).rejects.toThrow(/timed out/);
   });
+
+  it("times out when headers arrive but the body stalls", async () => {
+    // Headers resolve immediately; the body read hangs until the abort fires.
+    const stallingBodyFetch = (async (_url: string, init?: RequestInit) => {
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        text: () =>
+          new Promise<string>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")),
+            );
+          }),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const c = new ForgeRestClient({
+      userId: "u",
+      apiKey: "k",
+      baseUrl: BASE,
+      fetchImpl: stallingBodyFetch,
+      timeoutMs: 10,
+    });
+    await expect(c.browseAssets({ path: "x" })).rejects.toThrow(/timed out/);
+  });
 });
 
 describe("forge tools → ToolOutcome", () => {
