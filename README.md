@@ -60,9 +60,12 @@ Turnkey on macOS. Two backends, same everyday command (`make-image.sh`):
 ```
 
 Both write `local-image-gen.env`; run whichever setup matches your hardware
-(re-run the other to switch). On an Intel Mac the GPU path (Metal) is much faster
-than CPU; PyTorch's MPS backend is unreliable on Intel+AMD, which is why the GPU
-path uses stable-diffusion.cpp.
+(re-run the other to switch). On an Intel Mac the GPU path *can* be faster, but
+**ggml's Metal kernels are tuned for Apple Silicon**: on a discrete AMD Radeon
+Pro (e.g. Vega 20) sampling is often far slower than CPU and the VAE decode can
+hit the macOS GPU watchdog, producing a blank/white image. If that happens, use
+the CPU build (`SD_NO_METAL=1 ./scripts/setup-sdcpp-metal.sh`) or the sd-turbo
+CPU path. PyTorch's MPS backend is likewise unreliable on Intel+AMD.
 
 `make-image.sh` writes the image plus a base64 sidecar; the
 `generate-and-upload-image` skill then uploads it and sets it as an actor

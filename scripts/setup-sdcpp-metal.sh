@@ -83,12 +83,12 @@ fi
 METAL_FLAGS=(-DSD_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON)
 if [[ "${SD_NO_METAL:-0}" == "1" ]]; then
   say "SD_NO_METAL=1 set — building CPU-only"
-  METAL_FLAGS=()
+  # Pass -DSD_METAL=OFF explicitly: cmake caches SD_METAL=ON from a previous
+  # Metal build, so merely omitting the flag would keep Metal enabled.
+  METAL_FLAGS=(-DSD_METAL=OFF -DGGML_METAL=OFF)
 fi
 say "Configuring build${SD_NO_METAL:+ (CPU)}"
-# Note the ${arr[@]+...} guard: macOS ships bash 3.2, where expanding an empty
-# array under `set -u` errors with "unbound variable".
-cmake -S "$SDCPP_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release ${METAL_FLAGS[@]+"${METAL_FLAGS[@]}"}
+cmake -S "$SDCPP_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release "${METAL_FLAGS[@]}"
 say "Compiling (this can take a few minutes)"
 cmake --build "$BUILD_DIR" --config Release -j"$(sysctl -n hw.ncpu)"
 # Newer stable-diffusion.cpp names the CLI `sd-cli`; older builds produced `sd`.
