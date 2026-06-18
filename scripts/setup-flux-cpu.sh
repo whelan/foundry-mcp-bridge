@@ -38,10 +38,9 @@ BIN_DIR="$BUILD_DIR/bin"
 FLUX_DIR="$REPO/models/flux"
 ENV_FILE="$REPO/local-image-gen.env"
 
-# CPU threads for sd.cpp. Defaults to PHYSICAL cores (the perf sweet spot for
-# matmul — hyperthreads rarely help and often hurt). Override to try all logical
-# cores:  SD_THREADS=$(sysctl -n hw.ncpu) ./scripts/setup-flux-cpu.sh
-THREADS="${SD_THREADS:-$(sysctl -n hw.physicalcpu)}"
+# CPU threads for sd.cpp. Defaults to ALL logical cores (hw.ncpu, e.g. 16).
+# Override with SD_THREADS to pin a specific count.
+THREADS="${SD_THREADS:-$(sysctl -n hw.ncpu)}"
 
 # Quantized weights — defaults sized to fit ~16 GB RAM. Override via env.
 FLUX_MODEL_URL="${FLUX_MODEL_URL:-https://huggingface.co/city96/FLUX.1-schnell-gguf/resolve/main/flux1-schnell-Q4_K_S.gguf}"

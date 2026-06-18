@@ -41,9 +41,9 @@ SD_BIN=""   # resolved after the build (binary is sd-cli on newer sd.cpp, sd on 
 MODEL_DIR="$REPO/models"
 ENV_FILE="$REPO/local-image-gen.env"
 
-# CPU threads for sd.cpp (used by the CPU build). Defaults to PHYSICAL cores;
-# override with SD_THREADS=$(sysctl -n hw.ncpu) to try all logical cores.
-THREADS="${SD_THREADS:-$(sysctl -n hw.physicalcpu)}"
+# CPU threads for sd.cpp (used by the CPU build). Defaults to ALL logical cores
+# (hw.ncpu, e.g. 16). Override with SD_THREADS to pin a specific count.
+THREADS="${SD_THREADS:-$(sysctl -n hw.ncpu)}"
 
 # Default to DreamShaper 8 — an SD 1.5 finetune: same speed/RAM as base SD 1.5,
 # but much nicer character portraits. Swap to vanilla SD 1.5 or another single-
