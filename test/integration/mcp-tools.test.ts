@@ -498,6 +498,43 @@ describe("batch_upload_assets", () => {
     expect(data.find((f) => f.filename === "strahd.webp")?.skipped).toBe(true);
     expect(data.find((f) => f.filename === "ireena.webp")?.skipped).toBeFalsy();
   });
+
+  // skipExisting owns the dedup contract: with it on, a filename repeated within
+  // one batch is uploaded once and the later copy is skipped.
+  it("skips in-batch duplicate filenames when skipExisting=true", async () => {
+    const { transport } = setup();
+    const out = await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/maps",
+      files: [
+        { filename: "dup.webp", contentBase64: btoa("a") },
+        { filename: "dup.webp", contentBase64: btoa("b") },
+      ],
+      skipExisting: true,
+    });
+    if (!out.ok) throw new Error(`batch upload failed: ${out.error.message}`);
+    const data = out.data as Array<{ filename: string; skipped?: boolean }>;
+    expect(data[0]!.skipped).toBeFalsy();
+    expect(data[1]!.skipped).toBe(true);
+  });
+
+  // With skipExisting off the caller asked to upload everything as given —
+  // duplicates are NOT silently dropped.
+  it("uploads in-batch duplicate filenames when skipExisting is off", async () => {
+    const { transport } = setup();
+    const out = await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/maps",
+      files: [
+        { filename: "dup.webp", contentBase64: btoa("a") },
+        { filename: "dup.webp", contentBase64: btoa("b") },
+      ],
+    });
+    if (!out.ok) throw new Error(`batch upload failed: ${out.error.message}`);
+    const data = out.data as Array<{ filename: string; skipped?: boolean }>;
+    expect(data[0]!.skipped).toBeFalsy();
+    expect(data[1]!.skipped).toBeFalsy();
+  });
 });
 
 describe("duplicate_document pipeline", () => {

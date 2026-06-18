@@ -229,8 +229,10 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         if (typeof storedPath !== "string" || !storedPath) {
           throw new CommandExecutionError("INTERNAL", `FilePicker.upload failed for ${entry.filename}`);
         }
-        // Track the upload so duplicates within this batch are skipped.
-        existing.add(baseName(entry.filename));
+        // Track the upload so later duplicates within this batch are skipped too
+        // — but only under skipExisting, which owns the dedup contract. With
+        // skipExisting=false the caller asked to upload everything as given.
+        if (params.skipExisting) existing.add(baseName(entry.filename));
         results.push({ filename: entry.filename, path: storedPath });
       }
       return results;
