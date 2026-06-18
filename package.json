@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "bundle:module": "npm run build && npm -w @foundry-mcp-bridge/foundry-module run bundle",
     "selftest": "npm run build && node scripts/selftest.mjs",
+    "gen:image": "node scripts/gen-image.mjs",
     "install:foundry": "npm run bundle:module && node scripts/install-into-foundry.mjs",
     "clean": "tsc --build --clean"
   },
