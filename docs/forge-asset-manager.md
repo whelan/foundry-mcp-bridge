@@ -59,21 +59,22 @@ running world, no relay round-trip). This is now wired into the MCP server as an
 
 ```
 Base URL: https://forge-vtt.com/api   (override with FORGE_API_BASE_URL)
+(endpoint paths below are relative to Base URL — they are NOT re-prefixed with /api)
 
 # Browse assets
-GET /api/user/{userId}/assets?path={path}
+GET {baseUrl}/user/{userId}/assets?path={path}
 Authorization: {FORGE_API_KEY}
 → { files: [...], dirs: [...] }
 
 # Upload asset
-POST /api/assets/upload
+POST {baseUrl}/assets/upload
 Authorization: {FORGE_API_KEY}
 Content-Type: multipart/form-data
 Body: { target: "worlds/strahd/scenes", file: <binary> }
 → { path: "worlds/strahd/scenes/village.webp" }
 
 # Create folder
-PUT /api/user/{userId}/assets
+PUT {baseUrl}/user/{userId}/assets
 Authorization: {FORGE_API_KEY}
 Body: { path: "worlds/strahd/tokens" }
 → { success: true }
