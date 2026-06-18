@@ -211,6 +211,10 @@ describe("forge tools → ToolOutcome", () => {
 });
 
 function headerOf(init: RequestInit | undefined, name: string): string | undefined {
-  const h = init?.headers as Record<string, string> | undefined;
-  return h?.[name];
+  const h = init?.headers;
+  if (h instanceof Headers) return h.get(name) ?? undefined;
+  if (Array.isArray(h)) {
+    return h.find(([k]) => k?.toLowerCase() === name.toLowerCase())?.[1];
+  }
+  return (h as Record<string, string> | undefined)?.[name];
 }

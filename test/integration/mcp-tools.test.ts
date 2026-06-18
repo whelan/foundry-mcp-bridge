@@ -479,11 +479,13 @@ describe("batch_upload_assets", () => {
 
   it("skips already-existing files when skipExisting=true", async () => {
     const { transport } = setup();
-    await runBatchUploadAssets(transport, {
+    const first = await runBatchUploadAssets(transport, {
       source: "data",
       target: "worlds/strahd/tokens",
       files: [{ filename: "strahd.webp", contentBase64: btoa("token") }],
     });
+    if (!first.ok) throw new Error(`first upload failed: ${first.error.message}`);
+    const existingPath = (first.data as Array<{ path: string }>)[0]!.path;
     const out = await runBatchUploadAssets(transport, {
       source: "data",
       target: "worlds/strahd/tokens",
@@ -495,7 +497,10 @@ describe("batch_upload_assets", () => {
     });
     if (!out.ok) throw new Error(`batch upload failed: ${out.error.message}`);
     const data = out.data as Array<{ filename: string; path: string; skipped?: boolean }>;
-    expect(data.find((f) => f.filename === "strahd.webp")?.skipped).toBe(true);
+    const skipped = data.find((f) => f.filename === "strahd.webp");
+    expect(skipped?.skipped).toBe(true);
+    // The skipped entry reports the asset's actual existing path, not a guess.
+    expect(skipped?.path).toBe(existingPath);
     expect(data.find((f) => f.filename === "ireena.webp")?.skipped).toBeFalsy();
   });
 

@@ -210,16 +210,19 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       // than the relative `target/filename` we construct, so a full-path compare
       // would silently never match and re-upload everything.
       const baseName = (p: string) => (p.split("?")[0] ?? p).split("/").pop() ?? p;
-      const existing = new Set<string>();
+      // Map basename → the asset's *actual* stored path, so a skipped entry
+      // reports the real existing path (an absolute CDN URL on The Forge), not a
+      // reconstructed `target/filename` that wouldn't resolve there.
+      const existing = new Map<string, string>();
       if (params.skipExisting) {
         const browse = await (FilePicker as any).browse(params.source, target, {});
-        for (const f of browse?.files ?? []) existing.add(baseName(String(f)));
+        for (const f of browse?.files ?? []) existing.set(baseName(String(f)), String(f));
       }
       const results: Array<{ filename: string; path: string; skipped?: boolean }> = [];
       for (const entry of params.files) {
-        const path = `${target}/${entry.filename}`;
-        if (existing.has(baseName(entry.filename))) {
-          results.push({ filename: entry.filename, path, skipped: true });
+        const known = existing.get(baseName(entry.filename));
+        if (known !== undefined) {
+          results.push({ filename: entry.filename, path: known, skipped: true });
           continue;
         }
         const bytes = Uint8Array.from(atob(entry.contentBase64), (c) => c.charCodeAt(0));
@@ -229,10 +232,10 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         if (typeof storedPath !== "string" || !storedPath) {
           throw new CommandExecutionError("INTERNAL", `FilePicker.upload failed for ${entry.filename}`);
         }
-        // Track the upload so later duplicates within this batch are skipped too
-        // — but only under skipExisting, which owns the dedup contract. With
-        // skipExisting=false the caller asked to upload everything as given.
-        if (params.skipExisting) existing.add(baseName(entry.filename));
+        // Record the stored path so later in-batch duplicates report it and are
+        // skipped — but only under skipExisting, which owns the dedup contract.
+        // With skipExisting=false the caller asked to upload everything as given.
+        if (params.skipExisting) existing.set(baseName(entry.filename), storedPath);
         results.push({ filename: entry.filename, path: storedPath });
       }
       return results;

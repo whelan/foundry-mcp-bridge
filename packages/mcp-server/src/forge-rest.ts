@@ -130,13 +130,18 @@ export class ForgeRestClient {
   private async requestJson(url: string, init: RequestInit): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    // Build headers via Headers so any init.headers form (object / Headers /
+    // [k,v][]) is preserved, then add auth — a plain object spread would silently
+    // drop a Headers instance or tuple array.
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", this.apiKey);
     let res: Response;
     let text: string;
     try {
       res = await this.fetchImpl(url, {
         ...init,
         signal: controller.signal,
-        headers: { ...init.headers, Authorization: this.apiKey },
+        headers,
       });
       // Read the body inside the timed region: clearing the timer before the read
       // would leave a stalled-body response (headers in, body hanging) unbounded.
