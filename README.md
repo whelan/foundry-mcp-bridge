@@ -52,8 +52,11 @@ Turnkey on macOS. Two backends, same everyday command (`make-image.sh`):
 # CPU path (any Mac) — diffusers + 1-step sd-turbo:
 ./scripts/setup-local-image-gen.sh
 
-# GPU path (Intel Mac w/ discrete AMD Radeon Pro) — stable-diffusion.cpp + Metal:
-./scripts/setup-sdcpp-metal.sh
+# stable-diffusion.cpp path (DreamShaper 8 / SD 1.5) — Metal if usable, else CPU:
+./scripts/setup-sdcpp-metal.sh        # add SD_NO_METAL=1 on discrete AMD GPUs
+
+# FLUX.1-schnell on CPU (12B model — high quality, slow, ~10 GB, ~16 GB RAM):
+./scripts/setup-flux-cpu.sh
 
 # then, with either:
 ./scripts/make-image.sh "a red dragon" /tmp/dragon.png   # generate any time

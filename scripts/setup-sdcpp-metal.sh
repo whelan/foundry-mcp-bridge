@@ -45,8 +45,11 @@ ENV_FILE="$REPO/local-image-gen.env"
 # override with SD_THREADS=$(sysctl -n hw.ncpu) to try all logical cores.
 THREADS="${SD_THREADS:-$(sysctl -n hw.physicalcpu)}"
 
-SD_MODEL_URL="${SD_MODEL_URL:-https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/main/v1-5-pruned-emaonly-fp16.safetensors}"
-SD_MODEL_FILE="${SD_MODEL_FILE:-v1-5-pruned-emaonly-fp16.safetensors}"
+# Default to DreamShaper 8 — an SD 1.5 finetune: same speed/RAM as base SD 1.5,
+# but much nicer character portraits. Swap to vanilla SD 1.5 or another single-
+# file checkpoint via SD_MODEL_URL / SD_MODEL_FILE.
+SD_MODEL_URL="${SD_MODEL_URL:-https://huggingface.co/Lykon/DreamShaper/resolve/main/DreamShaper_8_pruned.safetensors}"
+SD_MODEL_FILE="${SD_MODEL_FILE:-DreamShaper_8_pruned.safetensors}"
 MODEL_PATH="$MODEL_DIR/$SD_MODEL_FILE"
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -134,11 +137,12 @@ fi
 
 cat <<EOF
 
-GPU setup complete. Generate any time (Metal-accelerated):
+Setup complete. Generate any time:
 
-  ./scripts/make-image.sh "a red dragon perched on a castle tower" dragon.png --steps 20
+  ./scripts/make-image.sh "a red dragon perched on a castle tower" dragon.png \\
+    --steps 25 --negative "ugly, deformed, blurry, low quality, bad anatomy, extra limbs, watermark, text"
 
-SD 1.5 likes ~20-30 steps. Watch the sd.cpp log: a line mentioning Metal/GPU
-means the AMD GPU is in use. If you see Metal errors, re-run with SD_NO_METAL=1
-to fall back to the (still fast) CPU build.
+DreamShaper 8 (SD 1.5) likes ~20-30 steps and benefits a lot from a negative
+prompt. On this Mac use the CPU build (SD_NO_METAL=1) — Metal on the discrete AMD
+GPU is slower than CPU and can white-image via the GPU watchdog.
 EOF
