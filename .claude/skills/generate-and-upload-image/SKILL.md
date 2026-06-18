@@ -37,11 +37,16 @@ halves, and they stay separate on purpose:
 
 ### Turnkey macOS setup (Intel, e.g. MacBook Pro 2019)
 
-There's a ready-made local stack (sd-turbo via diffusers, CPU-only). One-time:
+There's a ready-made local stack. Pick the backend for the hardware, one-time:
 
 ```bash
-./scripts/setup-local-image-gen.sh      # installs deps, downloads sd-turbo, smoke-renders
+./scripts/setup-local-image-gen.sh   # CPU: diffusers + 1-step sd-turbo (any Mac)
+./scripts/setup-sdcpp-metal.sh       # GPU: stable-diffusion.cpp + Metal (Intel Mac + AMD Radeon Pro)
 ```
+
+Both write `local-image-gen.env`; the GPU path is much faster on an Intel Mac
+with a discrete AMD GPU. (PyTorch MPS is unreliable on Intel+AMD, so the GPU path
+uses stable-diffusion.cpp — SD 1.5 likes ~20-30 steps, pass `--steps 20`.)
 
 Then generation is a single command, and you can skip step 2's raw `gen-image.mjs`
 call below — use this instead (it sources `local-image-gen.env` for you):

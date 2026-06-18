@@ -46,13 +46,23 @@ npm run bundle:module   # -> packages/foundry-module/dist/index.js (self-contain
 Generate art with a **local** diffusion model and push it into your world. The
 upload path (`upload_asset` MCP tool) already exists; this adds the generator.
 
-Turnkey on macOS (built for an Intel MacBook Pro 2019 — CPU-only, uses the
-1-step `sd-turbo` model):
+Turnkey on macOS. Two backends, same everyday command (`make-image.sh`):
 
 ```bash
-./scripts/setup-local-image-gen.sh                       # run once
+# CPU path (any Mac) — diffusers + 1-step sd-turbo:
+./scripts/setup-local-image-gen.sh
+
+# GPU path (Intel Mac w/ discrete AMD Radeon Pro) — stable-diffusion.cpp + Metal:
+./scripts/setup-sdcpp-metal.sh
+
+# then, with either:
 ./scripts/make-image.sh "a red dragon" /tmp/dragon.png   # generate any time
 ```
+
+Both write `local-image-gen.env`; run whichever setup matches your hardware
+(re-run the other to switch). On an Intel Mac the GPU path (Metal) is much faster
+than CPU; PyTorch's MPS backend is unreliable on Intel+AMD, which is why the GPU
+path uses stable-diffusion.cpp.
 
 `make-image.sh` writes the image plus a base64 sidecar; the
 `generate-and-upload-image` skill then uploads it and sets it as an actor
