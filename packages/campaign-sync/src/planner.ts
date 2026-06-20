@@ -77,3 +77,14 @@ function order(items: PlanItem[]): PlanItem[] {
     (a, b) => (RANK[a.action] ?? 9) - (RANK[b.action] ?? 9) || a.source.localeCompare(b.source),
   );
 }
+
+export function planToTable(plan: Plan): string {
+  if (plan.blocked) {
+    return `BLOCKED: world mismatch — manifest is for "${plan.world.id}", live world is different. No writes.`;
+  }
+  const rows = plan.items.map((i) => {
+    const assets = i.assets.filter((a) => a.action !== "unchanged").map((a) => `${a.action}:${a.localPath}`).join(", ");
+    return `| ${i.action} | ${i.documentType} | ${i.source} | ${i.reason}${assets ? ` | assets: ${assets}` : ""} |`;
+  });
+  return ["| action | type | source | reason |", "| --- | --- | --- | --- |", ...rows].join("\n");
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePlan } from "./planner.js";
+import { computePlan, planToTable } from "./planner.js";
 import type { Manifest, RepoEntity, LiveState, QuestState } from "./types.js";
 import { questProgressHash } from "./fql.js";
 
@@ -109,5 +109,34 @@ describe("planner — quests", () => {
     const liveQ = live({ Q1: { foundryId: "Q1", modifiedTime: 2, quest: qstate("completed") } });
     const plan = computePlan(m, [quest("quests/q.md", "sha256:2")], liveQ);
     expect(plan.items[0]?.action).toBe("quest-push-and-pull");
+  });
+});
+
+describe("planner — assets + rendering", () => {
+  it("flags a new asset as upload and a changed asset as reupload", () => {
+    const m = manifest({
+      "npcs/a.md": {
+        documentType: "Actor", foundryId: "F1", contentHash: "sha256:1", remoteModifiedTime: 100, lastImportedAt: "t",
+        assets: [{ localPath: "tokens/a.webp", contentHash: "sha256:old", remotePath: "https://x/a.webp" }],
+      },
+    });
+    const repo: RepoEntity[] = [{
+      source: "npcs/a.md", documentType: "Actor", contentHash: "sha256:1",
+      assets: [
+        { localPath: "tokens/a.webp", contentHash: "sha256:new" },
+        { localPath: "tokens/b.webp", contentHash: "sha256:b" },
+      ],
+    }];
+    const plan = computePlan(m, repo, live({ F1: { foundryId: "F1", modifiedTime: 100 } }));
+    const item = plan.items[0]!;
+    expect(item.assets.find((a) => a.localPath === "tokens/a.webp")?.action).toBe("reupload");
+    expect(item.assets.find((a) => a.localPath === "tokens/b.webp")?.action).toBe("upload");
+  });
+
+  it("planToTable renders one row per item", () => {
+    const plan = computePlan(manifest(), [actor("npcs/a.md", "sha256:1")], live());
+    const table = planToTable(plan);
+    expect(table).toContain("npcs/a.md");
+    expect(table).toContain("create");
   });
 });
