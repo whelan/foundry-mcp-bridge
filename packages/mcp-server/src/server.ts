@@ -18,6 +18,8 @@ import {
   FindDocumentsShape,
   GetWorldInfoShape,
   UploadAssetShape,
+  BrowseAssetsShape,
+  BatchUploadAssetsShape,
   CreateEmbeddedShape,
   UpdateEmbeddedShape,
   DeleteEmbeddedShape,
@@ -32,6 +34,8 @@ import {
   runFindDocuments,
   runGetWorldInfo,
   runUploadAsset,
+  runBrowseAssets,
+  runBatchUploadAssets,
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
@@ -39,6 +43,17 @@ import {
   runUpdateQuest,
   runDeleteQuest,
 } from "./tools.js";
+import {
+  ForgeBrowseAssetsShape,
+  ForgeUploadAssetShape,
+  ForgeBatchUploadAssetsShape,
+  ForgeCreateFolderShape,
+  runForgeBrowseAssets,
+  runForgeUploadAsset,
+  runForgeBatchUploadAssets,
+  runForgeCreateFolder,
+  type ForgeClientRef,
+} from "./forge-tools.js";
 
 function toCallResult(outcome: ToolOutcome) {
   return {
@@ -47,7 +62,11 @@ function toCallResult(outcome: ToolOutcome) {
   };
 }
 
-export function buildServer(transport: RelayTransport, opts: PipelineOptions = {}): McpServer {
+export function buildServer(
+  transport: RelayTransport,
+  opts: PipelineOptions = {},
+  forge: ForgeClientRef = null,
+): McpServer {
   const server = new McpServer({ name: "foundry-mcp-bridge", version: "0.1.0" });
   const log = opts.log;
 
@@ -76,6 +95,35 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
     };
     // The SDK can't infer a concrete callback type from a generic shape, so cast
     // only at this boundary (the pairing safety above is unaffected).
+    server.registerTool(
+      name,
+      { description, inputSchema },
+      handler as unknown as Parameters<typeof server.registerTool>[2],
+    );
+  }
+
+  // Forge Phase 2 tools bypass the relay and call the Forge REST API directly,
+  // so they take the (possibly null) Forge client instead of the transport.
+  function registerForge<S extends z.ZodRawShape>(
+    name: string,
+    description: string,
+    inputSchema: S,
+    run: (
+      forge: ForgeClientRef,
+      args: z.infer<z.ZodObject<S>>,
+      opts: PipelineOptions,
+    ) => Promise<ToolOutcome>,
+  ): void {
+    const handler = async (args: z.infer<z.ZodObject<S>>) => {
+      log?.(`▶ ${name}`);
+      const out = await run(forge, args, opts);
+      log?.(
+        out.ok
+          ? `◀ ${name} ok [${out.steps.join(" > ")}]`
+          : `◀ ${name} ERROR ${out.error.code}: ${out.error.message} [${out.steps.join(" > ")}]`,
+      );
+      return toCallResult(out);
+    };
     server.registerTool(
       name,
       { description, inputSchema },
@@ -132,6 +180,18 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
     runUploadAsset,
   );
   register(
+    "browse_assets",
+    "List files and sub-directories in a Foundry asset directory. Use source=\"forgevtt\" when the world is hosted on The Forge. Returns { dirs, files, target }.",
+    BrowseAssetsShape,
+    runBrowseAssets,
+  );
+  register(
+    "batch_upload_assets",
+    "Upload multiple asset files to Foundry storage in one call. Use source=\"forgevtt\" on The Forge. Set skipExisting=true to skip files already present. Returns array of { filename, path, skipped? }. Max 50 files per call.",
+    BatchUploadAssetsShape,
+    runBatchUploadAssets,
+  );
+  register(
     "create_embedded",
     "Create embedded documents (e.g., tokens, items, effects) within a parent. Runs the full reliability pipeline with read-back of the parent.",
     CreateEmbeddedShape,
@@ -166,6 +226,32 @@ export function buildServer(transport: RelayTransport, opts: PipelineOptions = {
     "Delete a quest by id. Runs dry-run and write.",
     DeleteQuestShape,
     runDeleteQuest,
+  );
+
+  // --- Forge Phase 2: direct REST asset tools (no relay) ---------------------
+  registerForge(
+    "forge_browse_assets",
+    "List files and sub-directories in The Forge asset bucket via the direct Forge REST API (no running world needed). Requires FORGE_USER_ID + FORGE_API_KEY. Returns { files, dirs }.",
+    ForgeBrowseAssetsShape,
+    runForgeBrowseAssets,
+  );
+  registerForge(
+    "forge_upload_asset",
+    "Upload a base64 file straight to The Forge bucket via the direct Forge REST API (no running world needed). Requires FORGE_USER_ID + FORGE_API_KEY. Returns { path }.",
+    ForgeUploadAssetShape,
+    runForgeUploadAsset,
+  );
+  registerForge(
+    "forge_batch_upload_assets",
+    "Upload multiple base64 files straight to The Forge bucket via the direct Forge REST API (no running world needed). Requires FORGE_USER_ID + FORGE_API_KEY. Set skipExisting=true to skip files already present (matched by basename). Returns array of { filename, path, skipped? }. Max 50 files per call.",
+    ForgeBatchUploadAssetsShape,
+    runForgeBatchUploadAssets,
+  );
+  registerForge(
+    "forge_create_folder",
+    "Create a folder in The Forge asset bucket via the direct Forge REST API. Requires FORGE_USER_ID + FORGE_API_KEY. Returns { success }.",
+    ForgeCreateFolderShape,
+    runForgeCreateFolder,
   );
 
   return server;

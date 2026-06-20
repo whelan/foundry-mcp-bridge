@@ -44,4 +44,32 @@ describe("loadConfig", () => {
     const cfg = loadConfig({ env: { NODE_ENV: "development", RELAY_URL: "ws://env:9" }, cwd: dir });
     expect(cfg.relayUrl).toBe("ws://env:9");
   });
+
+  it("leaves Forge credentials undefined by default", () => {
+    const cfg = loadConfig({ env: { RELAY_URL: "ws://x:1" }, cwd: dir });
+    expect(cfg.forgeUserId).toBeUndefined();
+    expect(cfg.forgeApiKey).toBeUndefined();
+    expect(cfg.forgeApiBaseUrl).toBeUndefined();
+  });
+
+  it("reads optional Forge credentials when provided", () => {
+    const cfg = loadConfig({
+      env: {
+        RELAY_URL: "ws://x:1",
+        FORGE_USER_ID: "user-123",
+        FORGE_API_KEY: "key-abc",
+        FORGE_API_BASE_URL: "https://forge.example/api",
+      },
+      cwd: dir,
+    });
+    expect(cfg.forgeUserId).toBe("user-123");
+    expect(cfg.forgeApiKey).toBe("key-abc");
+    expect(cfg.forgeApiBaseUrl).toBe("https://forge.example/api");
+  });
+
+  it("rejects a malformed Forge API base URL", () => {
+    expect(() =>
+      loadConfig({ env: { RELAY_URL: "ws://x:1", FORGE_API_BASE_URL: "not-a-url" }, cwd: dir }),
+    ).toThrowError(/forgeApiBaseUrl/);
+  });
 });

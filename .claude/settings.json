@@ -4,10 +4,25 @@
   "permissions": {
     "allow": [
       "mcp__foundry",
+      "mcp__foundry__get_world_info",
+      "mcp__foundry__find_documents",
+      "mcp__foundry__browse_assets",
+      "mcp__foundry__upload_asset",
+      "mcp__foundry__batch_upload_assets",
+      "mcp__foundry__forge_browse_assets",
+      "mcp__foundry__forge_upload_asset",
+      "mcp__foundry__forge_create_folder",
       "mcp__foundry__create_document",
       "mcp__foundry__create_scene",
       "mcp__foundry__update_document",
-      "mcp__foundry__duplicate_document"
+      "mcp__foundry__duplicate_document",
+      "mcp__foundry__delete_document",
+      "mcp__foundry__create_embedded",
+      "mcp__foundry__update_embedded",
+      "mcp__foundry__delete_embedded",
+      "mcp__foundry__create_quest",
+      "mcp__foundry__update_quest",
+      "mcp__foundry__delete_quest"
     ]
   },
   "hooks": {

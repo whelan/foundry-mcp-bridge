@@ -6,12 +6,13 @@
  * protocol logic is tested against the mock. Kept thin and obvious on purpose.
  */
 
-import { COLLECTIONS, getByPath, type DocumentType } from "@foundry-mcp-bridge/shared";
+import { COLLECTIONS, getByPath, assetBaseName, type DocumentType } from "@foundry-mcp-bridge/shared";
 import type {
   ExecuteOptions,
   FindSelector,
   FoundryDocumentApi,
   UploadAssetParams,
+  BatchUploadAssetsParams,
   WorldInfo,
 } from "./protocol-executor.js";
 import { CommandExecutionError } from "./protocol-executor.js";
@@ -162,6 +163,10 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
           name: String(f.name),
           type: String(f.type),
         })),
+        forge: {
+          active: Boolean((globalThis as any).ForgeVTT?.usingTheForge),
+          userId: ((globalThis as any).ForgeVTT?.userId ?? null) as string | null,
+        },
       };
     },
 
@@ -177,6 +182,62 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         throw new CommandExecutionError("INTERNAL", "FilePicker.upload returned no path");
       }
       return { path };
+    },
+
+    async browseAssets(params, opts) {
+      const target = params.target.replace(/\/$/, "");
+      // Dry-run: return empty listing (nothing to validate against).
+      if (opts.dryRun) return { dirs: [], files: [], target };
+      const options: Record<string, unknown> = {};
+      if (params.extensions?.length) options.extensions = params.extensions;
+      const result = await (FilePicker as any).browse(params.source, target, options);
+      return {
+        dirs: (result?.dirs ?? []) as string[],
+        files: (result?.files ?? []) as string[],
+        target: String(result?.target ?? target),
+      };
+    },
+
+    async batchUploadAssets(params: BatchUploadAssetsParams, opts) {
+      const target = params.target.replace(/\/$/, "");
+      // Dry-run: return what would be uploaded without writing.
+      if (opts.dryRun) {
+        return params.files.map((f) => ({ filename: f.filename, path: `${target}/${f.filename}` }));
+      }
+      // Optional skip: pre-browse the directory to find existing files. Match by
+      // basename, not full path: on The Forge `FilePicker.browse("forgevtt", …)`
+      // returns absolute CDN URLs (with the user-id prefix / query strings) rather
+      // than the relative `target/filename` we construct, so a full-path compare
+      // would silently never match and re-upload everything.
+      // Map basename → the asset's *actual* stored path, so a skipped entry
+      // reports the real existing path (an absolute CDN URL on The Forge), not a
+      // reconstructed `target/filename` that wouldn't resolve there.
+      const existing = new Map<string, string>();
+      if (params.skipExisting) {
+        const browse = await (FilePicker as any).browse(params.source, target, {});
+        for (const f of browse?.files ?? []) existing.set(assetBaseName(String(f)), String(f));
+      }
+      const results: Array<{ filename: string; path: string; skipped?: boolean }> = [];
+      for (const entry of params.files) {
+        const known = existing.get(assetBaseName(entry.filename));
+        if (known !== undefined) {
+          results.push({ filename: entry.filename, path: known, skipped: true });
+          continue;
+        }
+        const bytes = Uint8Array.from(atob(entry.contentBase64), (c) => c.charCodeAt(0));
+        const file = new File([bytes], entry.filename, entry.mimeType ? { type: entry.mimeType } : undefined);
+        const result = await (FilePicker as any).upload(params.source, target, file, {});
+        const storedPath = result?.path;
+        if (typeof storedPath !== "string" || !storedPath) {
+          throw new CommandExecutionError("INTERNAL", `FilePicker.upload failed for ${entry.filename}`);
+        }
+        // Record the stored path so later in-batch duplicates report it and are
+        // skipped — but only under skipExisting, which owns the dedup contract.
+        // With skipExisting=false the caller asked to upload everything as given.
+        if (params.skipExisting) existing.set(assetBaseName(entry.filename), storedPath);
+        results.push({ filename: entry.filename, path: storedPath });
+      }
+      return results;
     },
 
     async createQuest(data, parentId, opts) {

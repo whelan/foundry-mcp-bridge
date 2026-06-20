@@ -23,6 +23,8 @@ import {
   updateQuestReliable,
   deleteQuestReliable,
   uploadAssetReliable,
+  browseAssetsReliable,
+  batchUploadAssetsReliable,
   runRead,
   type PipelineOptions,
   type ToolOutcome,
@@ -183,6 +185,49 @@ export function runUploadAsset(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return uploadAssetReliable(transport, args, opts);
+}
+
+// --- browse_assets ----------------------------------------------------------
+
+export const BrowseAssetsShape = {
+  source: z.enum(["data", "forgevtt"]).default("data"),
+  target: z.string().min(1),
+  extensions: z.array(z.string()).optional(),
+};
+const BrowseAssets = z.object(BrowseAssetsShape);
+export type BrowseAssetsArgs = z.infer<typeof BrowseAssets>;
+
+export function runBrowseAssets(
+  transport: RelayTransport,
+  args: BrowseAssetsArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return browseAssetsReliable(transport, args, opts);
+}
+
+// --- batch_upload_assets ----------------------------------------------------
+
+export const BatchUploadAssetsShape = {
+  source: z.enum(["data", "forgevtt"]).default("data"),
+  target: z.string().min(1),
+  files: z.array(
+    z.object({
+      filename: z.string().min(1),
+      contentBase64: z.string().min(1),
+      mimeType: z.string().optional(),
+    }),
+  ).min(1).max(50),
+  skipExisting: z.boolean().optional(),
+};
+const BatchUploadAssets = z.object(BatchUploadAssetsShape);
+export type BatchUploadAssetsArgs = z.infer<typeof BatchUploadAssets>;
+
+export function runBatchUploadAssets(
+  transport: RelayTransport,
+  args: BatchUploadAssetsArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return batchUploadAssetsReliable(transport, args, opts);
 }
 
 // --- create_embedded --------------------------------------------------------

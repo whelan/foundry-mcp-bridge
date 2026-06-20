@@ -15,6 +15,8 @@ import {
   runDuplicateDocument,
   runGetWorldInfo,
   runUploadAsset,
+  runBrowseAssets,
+  runBatchUploadAssets,
   runCreateEmbedded,
   runUpdateEmbedded,
   runDeleteEmbedded,
@@ -209,6 +211,18 @@ describe("get_world_info", () => {
     const info = out.ok ? (out.data as any) : null;
     expect(info.system.id).toBe("dnd5e");
     expect(info.folders).toEqual([{ _id: "f1", name: "NPCs", type: "Actor" }]);
+    // forge detection defaults to off locally; clients read this to pick the asset source.
+    expect(info.forge).toEqual({ active: false, userId: null });
+  });
+
+  it("reports forge hosting when the world is on The Forge", async () => {
+    const mock = new MockFoundry({
+      worldInfo: { forge: { active: true, userId: "forge-user-1" } },
+    });
+    const transport = new MockTransport(mock);
+    const out = await runGetWorldInfo(transport);
+    const info = out.ok ? (out.data as any) : null;
+    expect(info.forge).toEqual({ active: true, userId: "forge-user-1" });
   });
 });
 
@@ -385,6 +399,149 @@ describe("upload_asset", () => {
   });
 });
 
+describe("browse_assets", () => {
+  it("returns empty listing for unknown path", async () => {
+    const { transport } = setup();
+    const out = await runBrowseAssets(transport, { source: "data", target: "worlds/none" });
+    if (!out.ok) throw new Error(`browse failed: ${out.error.message}`);
+    expect(out.data).toMatchObject({ dirs: [], files: [], target: "worlds/none" });
+  });
+
+  it("lists files after upload", async () => {
+    const { transport } = setup();
+    const up = await runUploadAsset(transport, {
+      source: "data",
+      target: "worlds/strahd/scenes",
+      filename: "village.webp",
+      contentBase64: btoa("fake"),
+    });
+    if (!up.ok) throw new Error("upload failed");
+    const out = await runBrowseAssets(transport, { source: "data", target: "worlds/strahd/scenes" });
+    if (!out.ok) throw new Error(`browse failed: ${out.error.message}`);
+    const data = out.data as { files: string[]; dirs: string[]; target: string };
+    expect(data.files).toContain("worlds/strahd/scenes/village.webp");
+  });
+
+  it("filters by extension", async () => {
+    const { transport } = setup();
+    await runUploadAsset(transport, {
+      source: "data", target: "worlds/strahd/maps",
+      filename: "map.png", contentBase64: btoa("png"),
+    });
+    await runUploadAsset(transport, {
+      source: "data", target: "worlds/strahd/maps",
+      filename: "notes.pdf", contentBase64: btoa("pdf"),
+    });
+    const out = await runBrowseAssets(transport, {
+      source: "data", target: "worlds/strahd/maps", extensions: [".png"],
+    });
+    if (!out.ok) throw new Error(`browse failed: ${out.error.message}`);
+    const data = out.data as { files: string[] };
+    expect(data.files.some((f) => f.endsWith(".png"))).toBe(true);
+    expect(data.files.some((f) => f.endsWith(".pdf"))).toBe(false);
+  });
+
+  it("lists subdirectories as dirs", async () => {
+    const { transport } = setup();
+    // Upload a file one level deeper than the browse target.
+    const up = await runUploadAsset(transport, {
+      source: "data",
+      target: "worlds/strahd/regions/barovia",
+      filename: "map.webp",
+      contentBase64: btoa("deep"),
+    });
+    if (!up.ok) throw new Error("upload failed");
+    const out = await runBrowseAssets(transport, { source: "data", target: "worlds/strahd/regions" });
+    if (!out.ok) throw new Error(`browse failed: ${out.error.message}`);
+    const data = out.data as { dirs: string[]; files: string[] };
+    expect(data.dirs).toContain("worlds/strahd/regions/barovia");
+    expect(data.files).toEqual([]); // the file is in a subdir, not a direct child
+  });
+});
+
+describe("batch_upload_assets", () => {
+  it("uploads multiple files and returns paths", async () => {
+    const { transport } = setup();
+    const out = await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/scenes",
+      files: [
+        { filename: "barovia.webp", contentBase64: btoa("map1") },
+        { filename: "castle.webp", contentBase64: btoa("map2") },
+      ],
+    });
+    if (!out.ok) throw new Error(`batch upload failed: ${out.error.message}`);
+    const data = out.data as Array<{ filename: string; path: string }>;
+    expect(data).toHaveLength(2);
+    expect(data[0]!.path).toBe("worlds/strahd/scenes/barovia.webp");
+    expect(data[1]!.path).toBe("worlds/strahd/scenes/castle.webp");
+  });
+
+  it("skips already-existing files when skipExisting=true", async () => {
+    const { transport } = setup();
+    const first = await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/tokens",
+      files: [{ filename: "strahd.webp", contentBase64: btoa("token") }],
+    });
+    if (!first.ok) throw new Error(`first upload failed: ${first.error.message}`);
+    const existingPath = (first.data as Array<{ path: string }>)[0]!.path;
+    const out = await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/tokens",
+      files: [
+        { filename: "strahd.webp", contentBase64: btoa("token") },
+        { filename: "ireena.webp", contentBase64: btoa("token2") },
+      ],
+      skipExisting: true,
+    });
+    if (!out.ok) throw new Error(`batch upload failed: ${out.error.message}`);
+    const data = out.data as Array<{ filename: string; path: string; skipped?: boolean }>;
+    const skipped = data.find((f) => f.filename === "strahd.webp");
+    expect(skipped?.skipped).toBe(true);
+    // The skipped entry reports the asset's actual existing path, not a guess.
+    expect(skipped?.path).toBe(existingPath);
+    expect(data.find((f) => f.filename === "ireena.webp")?.skipped).toBeFalsy();
+  });
+
+  // skipExisting owns the dedup contract: with it on, a filename repeated within
+  // one batch is uploaded once and the later copy is skipped.
+  it("skips in-batch duplicate filenames when skipExisting=true", async () => {
+    const { transport } = setup();
+    const out = await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/maps",
+      files: [
+        { filename: "dup.webp", contentBase64: btoa("a") },
+        { filename: "dup.webp", contentBase64: btoa("b") },
+      ],
+      skipExisting: true,
+    });
+    if (!out.ok) throw new Error(`batch upload failed: ${out.error.message}`);
+    const data = out.data as Array<{ filename: string; skipped?: boolean }>;
+    expect(data[0]!.skipped).toBeFalsy();
+    expect(data[1]!.skipped).toBe(true);
+  });
+
+  // With skipExisting off the caller asked to upload everything as given —
+  // duplicates are NOT silently dropped.
+  it("uploads in-batch duplicate filenames when skipExisting is off", async () => {
+    const { transport } = setup();
+    const out = await runBatchUploadAssets(transport, {
+      source: "data",
+      target: "worlds/strahd/maps",
+      files: [
+        { filename: "dup.webp", contentBase64: btoa("a") },
+        { filename: "dup.webp", contentBase64: btoa("b") },
+      ],
+    });
+    if (!out.ok) throw new Error(`batch upload failed: ${out.error.message}`);
+    const data = out.data as Array<{ filename: string; skipped?: boolean }>;
+    expect(data[0]!.skipped).toBeFalsy();
+    expect(data[1]!.skipped).toBeFalsy();
+  });
+});
+
 describe("duplicate_document pipeline", () => {
   const seedGoblin = (mock: MockFoundry) =>
     seed(mock, {
@@ -432,5 +589,138 @@ describe("duplicate_document pipeline", () => {
     expect(out.steps).toContain("rollback");
     // Only the original survives; the rolled-back copy is gone.
     expect(mock.documents("Actor").length).toBe(1);
+  });
+});
+
+describe("quest hierarchies and rewards", () => {
+  it("creates a sub-quest with parentId reference", async () => {
+    const { mock, transport } = setup();
+    // Create parent quest
+    const parentOut = await runCreateQuest(transport, {
+      data: { name: "Main Quest", status: "active" },
+    });
+    expect(parentOut.ok).toBe(true);
+    if (!parentOut.ok) throw new Error("parent quest creation failed");
+    const parentId = (parentOut.data as { _id: string })._id;
+
+    // Create sub-quest
+    const subOut = await runCreateQuest(transport, {
+      data: { name: "Side Objective", status: "active" },
+      parentId,
+    });
+    expect(subOut.ok).toBe(true);
+    expect(subOut.steps).toContain("write");
+
+    const quests = Array.from(mock.quests.values());
+    expect(quests.length).toBe(2);
+    const subQuest = quests.find((q: any) => q._id !== parentId) as any;
+    expect(subQuest.parent).toBe(parentId);
+  });
+
+  it("creates a quest with rewards (items, gold, xp)", async () => {
+    const { transport } = setup();
+    const out = await runCreateQuest(transport, {
+      data: {
+        name: "Rescue the Princess",
+        status: "active",
+        rewards: {
+          items: [
+            { name: "Crown of Wisdom", type: "loot", value: 500 },
+            { name: "Ring of Protection", type: "wondrous", bonus: 1 },
+          ],
+          gold: 1000,
+          xp: 5000,
+        },
+      },
+    });
+    expect(out.ok).toBe(true);
+    const quest = out.ok ? (out.data as any) : null;
+    expect(quest?.rewards?.items?.length).toBe(2);
+    expect(quest?.rewards?.items?.[0]?.name).toBe("Crown of Wisdom");
+    expect(quest?.rewards?.gold).toBe(1000);
+    expect(quest?.rewards?.xp).toBe(5000);
+  });
+
+  it("creates a hierarchical quest structure with sub-quests and rewards", async () => {
+    const { mock, transport } = setup();
+
+    // Create main quest with rewards
+    const mainOut = await runCreateQuest(transport, {
+      data: {
+        name: "Complete the Dungeon",
+        status: "active",
+        rewards: { xp: 10000, gold: 2000 },
+      },
+    });
+    expect(mainOut.ok).toBe(true);
+    if (!mainOut.ok) throw new Error("main quest creation failed");
+    const mainId = (mainOut.data as { _id: string })._id;
+
+    // Create first sub-quest
+    const sub1Out = await runCreateQuest(transport, {
+      data: {
+        name: "Defeat the Minions",
+        status: "active",
+        rewards: { xp: 3000, gold: 500 },
+      },
+      parentId: mainId,
+    });
+    expect(sub1Out.ok).toBe(true);
+    if (!sub1Out.ok) throw new Error("sub1 quest creation failed");
+    const sub1Id = (sub1Out.data as { _id: string })._id;
+
+    // Create second sub-quest with item rewards
+    const sub2Out = await runCreateQuest(transport, {
+      data: {
+        name: "Retrieve the Artifact",
+        status: "active",
+        rewards: {
+          items: [{ name: "Ancient Artifact", type: "relic", rarity: "legendary" }],
+          xp: 4000,
+          gold: 1000,
+        },
+      },
+      parentId: mainId,
+    });
+    expect(sub2Out.ok).toBe(true);
+    if (!sub2Out.ok) throw new Error("sub2 quest creation failed");
+
+    // Verify structure
+    const quests = Array.from(mock.quests.values());
+    expect(quests.length).toBe(3);
+
+    const main = quests.find((q: any) => q._id === mainId) as any;
+    expect(main.name).toBe("Complete the Dungeon");
+    expect(main.rewards.xp).toBe(10000);
+    expect(main.rewards.gold).toBe(2000);
+
+    const sub1 = quests.find((q: any) => q._id === sub1Id) as any;
+    expect(sub1.parent).toBe(mainId);
+    expect(sub1.rewards.gold).toBe(500);
+
+    const sub2 = quests.find((q: any) => q._id !== sub1Id && q.parent === mainId) as any;
+    expect(sub2.name).toBe("Retrieve the Artifact");
+    expect(sub2.rewards.items?.[0]?.name).toBe("Ancient Artifact");
+  });
+
+  it("update_quest changes rewards and status", async () => {
+    const { mock, transport } = setup();
+    const created = await runCreateQuest(transport, {
+      data: { name: "Fetch Quest", status: "inactive", rewards: { xp: 100 } },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error("quest creation failed");
+    const questId = (created.data as { _id: string })._id;
+
+    const updated = await runUpdateQuest(transport, {
+      id: questId,
+      data: { status: "completed", rewards: { xp: 500, gold: 250 } },
+    });
+    expect(updated.ok).toBe(true);
+
+    const quest = mock.quests.get(questId) as any;
+    expect(quest.status).toBe("completed");
+    expect(quest.rewards.xp).toBe(500);
+    expect(quest.rewards.gold).toBe(250);
   });
 });

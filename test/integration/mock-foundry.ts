@@ -96,6 +96,53 @@ export class MockFilePicker {
     const files = [...this.files[source]].filter((p) => p.startsWith(prefix));
     return { target, files };
   }
+
+  /** Batch variant of put; honours skipExisting against the per-source file set. */
+  putBatch(
+    source: FilePickerSource,
+    target: string,
+    files: Array<{ filename: string }>,
+    skipExisting?: boolean,
+  ): Array<{ filename: string; path: string; skipped?: boolean }> {
+    const prefix = target.replace(/\/$/, "");
+    return files.map((f) => {
+      const path = `${prefix}/${f.filename}`;
+      if (skipExisting && this.files[source].has(path)) {
+        return { filename: f.filename, path, skipped: true };
+      }
+      this.put(source, target, f.filename);
+      return { filename: f.filename, path };
+    });
+  }
+
+  /** Extended browse that also returns direct subdirectories, with optional extension filter. */
+  browseWithDirs(
+    source: FilePickerSource,
+    target: string,
+    extensions?: string[],
+  ): { dirs: string[]; files: string[]; target: string } {
+    const prefix = target.replace(/\/$/, "");
+    const allPaths = [...this.files[source]];
+    const files = allPaths.filter((p) => {
+      if (!p.startsWith(prefix + "/")) return false;
+      const rel = p.slice(prefix.length + 1);
+      if (rel.includes("/")) return false; // not a direct child
+      if (extensions?.length) {
+        return extensions.some((ext) => p.endsWith(ext));
+      }
+      return true;
+    });
+    const dirs = [...new Set(
+      allPaths
+        .filter((p) => p.startsWith(prefix + "/"))
+        .map((p) => {
+          const rel = p.slice(prefix.length + 1);
+          return rel.includes("/") ? `${prefix}/${rel.split("/")[0]}` : null;
+        })
+        .filter((d): d is string => d !== null),
+    )];
+    return { dirs, files, target: prefix };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +191,7 @@ export class MockFoundry {
       system: { id: "dnd5e", version: "3.0.0" },
       world: { id: "test-world", title: "Test World" },
       folders: [],
+      forge: { active: false, userId: null },
       ...options.worldInfo,
     };
   }
@@ -230,6 +278,18 @@ export class MockFoundry {
         const target = command.target.replace(/\/$/, "");
         if (dryRun) return ok(id, { path: `${target}/${command.filename}` });
         return ok(id, this.filePicker.put(command.source, target, command.filename));
+      }
+      case "browseAssets": {
+        const target = command.target.replace(/\/$/, "");
+        if (dryRun) return ok(id, { dirs: [], files: [], target });
+        return ok(id, this.filePicker.browseWithDirs(command.source, target, command.extensions));
+      }
+      case "batchUploadAssets": {
+        const target = command.target.replace(/\/$/, "");
+        if (dryRun) {
+          return ok(id, command.files.map((f) => ({ filename: f.filename, path: `${target}/${f.filename}` })));
+        }
+        return ok(id, this.filePicker.putBatch(command.source, target, command.files, command.skipExisting));
       }
       case "createQuest":
         return this.createQuest(id, command, dryRun);

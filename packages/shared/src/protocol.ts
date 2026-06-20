@@ -194,6 +194,37 @@ export const UploadAssetCommand = z.object({
 });
 export type UploadAssetCommand = z.infer<typeof UploadAssetCommand>;
 
+export const BrowseAssetsCommand = z.object({
+  action: z.literal("browseAssets"),
+  /** Storage source: local "data" or Forge "forgevtt". */
+  source: z.enum(["data", "forgevtt"]).default("data"),
+  /** Directory path to list. Trailing slash optional. */
+  target: z.string().min(1),
+  /** Optional file extension filter (e.g. [".webp", ".png"]). */
+  extensions: z.array(z.string()).optional(),
+});
+export type BrowseAssetsCommand = z.infer<typeof BrowseAssetsCommand>;
+
+export const BatchUploadEntry = z.object({
+  filename: z.string().min(1),
+  contentBase64: z.string().min(1),
+  mimeType: z.string().optional(),
+});
+export type BatchUploadEntry = z.infer<typeof BatchUploadEntry>;
+
+export const BatchUploadAssetsCommand = z.object({
+  action: z.literal("batchUploadAssets"),
+  /** Storage source: local "data" or Forge "forgevtt". */
+  source: z.enum(["data", "forgevtt"]).default("data"),
+  /** Target directory (trailing slash optional). */
+  target: z.string().min(1),
+  /** Files to upload. */
+  files: z.array(BatchUploadEntry).min(1).max(50),
+  /** If true, skip files whose path already exists. */
+  skipExisting: z.boolean().default(false),
+});
+export type BatchUploadAssetsCommand = z.infer<typeof BatchUploadAssetsCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -208,6 +239,8 @@ export const Command = z.discriminatedUnion("action", [
   DeleteQuestCommand,
   GetWorldInfoCommand,
   UploadAssetCommand,
+  BrowseAssetsCommand,
+  BatchUploadAssetsCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

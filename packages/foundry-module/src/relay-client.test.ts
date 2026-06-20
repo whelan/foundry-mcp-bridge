@@ -54,10 +54,17 @@ function stubApi(): FoundryDocumentApi {
         system: { id: "dnd5e", version: "3.0.0" },
         world: { id: "w", title: "World" },
         folders: [],
+        forge: { active: false, userId: null },
       };
     },
     async uploadAsset(params) {
       return { path: `${params.target}/${params.filename}` };
+    },
+    async browseAssets(_params) {
+      return { dirs: [], files: [], target: "/" };
+    },
+    async batchUploadAssets(params) {
+      return params.files.map((f) => ({ filename: f.filename, path: `${params.target}/${f.filename}` }));
     },
     async createQuest(data) {
       return { ...data, _id: "quest" };

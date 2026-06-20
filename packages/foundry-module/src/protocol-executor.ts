@@ -49,6 +49,8 @@ export interface WorldInfo {
   system: { id: string; version: string; title?: string };
   world: { id: string; title: string };
   folders: WorldFolder[];
+  /** The Forge hosting detection. active=true when running on forge-vtt.com. */
+  forge: { active: boolean; userId: string | null };
 }
 
 /** Parameters for an asset upload via Foundry's FilePicker. */
@@ -58,6 +60,21 @@ export interface UploadAssetParams {
   filename: string;
   contentBase64: string;
   mimeType?: string;
+}
+
+/** Parameters for browsing assets via Foundry's FilePicker. */
+export interface BrowseAssetsParams {
+  source: "data" | "forgevtt";
+  target: string;
+  extensions?: string[];
+}
+
+/** Parameters for a batch upload via Foundry's FilePicker. */
+export interface BatchUploadAssetsParams {
+  source: "data" | "forgevtt";
+  target: string;
+  files: Array<{ filename: string; contentBase64: string; mimeType?: string }>;
+  skipExisting?: boolean;
 }
 
 /**
@@ -104,6 +121,11 @@ export interface FoundryDocumentApi {
   find(type: DocumentType, selector: FindSelector): Promise<DocData | DocData[]>;
   getWorldInfo(): Promise<WorldInfo>;
   uploadAsset(params: UploadAssetParams, opts: ExecuteOptions): Promise<{ path: string }>;
+  browseAssets(params: BrowseAssetsParams, opts: ExecuteOptions): Promise<{ dirs: string[]; files: string[]; target: string }>;
+  batchUploadAssets(
+    params: BatchUploadAssetsParams,
+    opts: ExecuteOptions,
+  ): Promise<Array<{ filename: string; path: string; skipped?: boolean }>>;
   createQuest(data: DocData | undefined, parentId: string | undefined, opts: ExecuteOptions): Promise<DocData>;
   updateQuest(id: string, data: DocData, opts: ExecuteOptions): Promise<DocData>;
   deleteQuest(id: string, opts: ExecuteOptions): Promise<void>;
@@ -201,6 +223,16 @@ async function dispatch(
           contentBase64: command.contentBase64,
           mimeType: command.mimeType,
         },
+        opts,
+      );
+    case "browseAssets":
+      return api.browseAssets(
+        { source: command.source, target: command.target, extensions: command.extensions },
+        opts,
+      );
+    case "batchUploadAssets":
+      return api.batchUploadAssets(
+        { source: command.source, target: command.target, files: command.files, skipExisting: command.skipExisting },
         opts,
       );
     case "createQuest":

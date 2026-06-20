@@ -9,6 +9,9 @@ export default defineConfig({
       "@foundry-mcp-bridge/shared": fileURLToPath(
         new URL("./packages/shared/src/index.ts", import.meta.url),
       ),
+      "@foundry-mcp-bridge/campaign-sync": fileURLToPath(
+        new URL("./packages/campaign-sync/src/index.ts", import.meta.url),
+      ),
     },
   },
   test: {

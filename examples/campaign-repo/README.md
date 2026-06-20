@@ -43,3 +43,7 @@ your-campaign-repo/
   (offline LevelDB) are a separate route; the skill won't invoke them on its own.
 - See the bridge's `docs/setup-foundry-forge.md` for local vs. The Forge specifics
   (tokens, URLs, the relay).
+- Import state lives in a committed `foundry-sync.json` manifest (ids, asset paths,
+  hashes, remote `modifiedTime`). The `foundry-sync` skill maintains it and computes
+  a deterministic plan; quest progress (status + task check-offs) is pulled back into
+  the quest notes' front-matter for session planning.

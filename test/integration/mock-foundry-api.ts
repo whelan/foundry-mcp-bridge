@@ -14,6 +14,7 @@ import {
 import { MockFoundry } from "./mock-foundry.js";
 import {
   CommandExecutionError,
+  type BatchUploadAssetsParams,
   type DocData,
   type ExecuteOptions,
   type FindSelector,
@@ -94,6 +95,24 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
     },
     async uploadAsset(params, opts) {
       return (await run({ action: "uploadAsset", ...params }, opts)) as { path: string };
+    },
+    async browseAssets(params, opts) {
+      return (await run(
+        { action: "browseAssets", source: params.source, target: params.target, extensions: params.extensions },
+        opts,
+      )) as { dirs: string[]; files: string[]; target: string };
+    },
+    async batchUploadAssets(params: BatchUploadAssetsParams, opts) {
+      return (await run(
+        {
+          action: "batchUploadAssets",
+          source: params.source,
+          target: params.target,
+          files: params.files,
+          skipExisting: params.skipExisting ?? false,
+        },
+        opts,
+      )) as Array<{ filename: string; path: string; skipped?: boolean }>;
     },
     async createQuest(data, parentId, opts) {
       return (await run({ action: "createQuest", data, parentId }, opts)) as DocData;
