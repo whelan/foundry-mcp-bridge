@@ -1,6 +1,6 @@
 ---
 name: import-campaign-to-foundry
-description: Import Curse of Strahd campaign content into a running Foundry world via the foundry MCP tools — journals, NPCs/actors, scenes (with map upload), and quests, both locally and on The Forge. Use when the user says "import", "push", "sync", or "create in Foundry" for journals, NPCs, scenes, maps, or quests.
+description: Import Curse of Strahd campaign content into a running Foundry world via the foundry MCP tools — journals, NPCs/actors, scenes (with map upload), and quests, both locally and on The Forge. Use when the user wants to import, push, sync, build, populate, or create journals, NPCs, scenes, maps, or quests in Foundry (locally or on The Forge), or stage/upload assets to the Forge bucket.
 ---
 
 # Import Curse of Strahd into Foundry (live MCP path)
@@ -26,14 +26,27 @@ Use this `source` for every `upload_asset`, `batch_upload_assets`, and
 
 ## 1. Asset upload strategy (maps + tokens)
 
-Upload images BEFORE creating the scenes/actors that reference them.
+Upload images BEFORE creating the scenes/actors that reference them. Two paths:
+
+| Tools | Goes through | When to use | `source` arg |
+| --- | --- | --- | --- |
+| `browse_assets` / `upload_asset` / `batch_upload_assets` | the running world (GM browser, via relay) | default; the world is open | `source` from `forge.active` (§0) |
+| `forge_browse_assets` / `forge_upload_asset` / `forge_batch_upload_assets` / `forge_create_folder` | The Forge REST API directly (no world needed) | bulk pre-flight upload / folder setup before a GM is logged in | none — always Forge |
+
+The `forge_*` tools need `FORGE_USER_ID` + `FORGE_API_KEY` configured (`.env`); without
+them they return a structured `UNSUPPORTED` error naming the keys. Prefer the relay
+tools when the world is open; reach for `forge_*` to stage assets without a GM.
+
+**Paths come back ABSOLUTE on The Forge** (`https://assets.forge-vtt.com/<bucket>/worlds/<id>/…`).
+Always reference the `path` the upload/browse call returns on the document — never
+hand-build a `worlds/…` string, or it won't resolve on Forge.
 
 ### Pre-flight dedup
-Call `browse_assets` to see what's already uploaded, then pass `skipExisting: true`
-so re-runs are idempotent:
+Browse first, then pass `skipExisting: true` so re-runs are idempotent. Dedup matches
+by **basename**, so it skips correctly even when existing entries are absolute Forge URLs:
 ```
 browse_assets({ source, target: "worlds/curse-of-strahd/scenes", extensions: [".webp",".jpg",".png"] })
-// → { files: ["worlds/curse-of-strahd/scenes/village-of-barovia.webp", ...], dirs: [...] }
+// → { files: [".../worlds/curse-of-strahd/scenes/village-of-barovia.webp", ...], dirs: [...] }  // absolute URLs on Forge
 
 batch_upload_assets({
   source,
@@ -44,10 +57,11 @@ batch_upload_assets({
   ],
   skipExisting: true,
 })
-// → [{ filename, path }, { filename, path, skipped: true }, ...]
+// → [{ filename, path }, { filename, path, skipped: true }, ...]   ← use each returned `path`
 ```
-Max 50 files per `batch_upload_assets` call — split larger sets into batches.
-Upload token art to `worlds/curse-of-strahd/tokens/` the same way.
+Max 50 files per batch call — split larger sets into batches. Upload token art to
+`worlds/curse-of-strahd/tokens/` the same way. (`forge_create_folder({ path })`
+pre-creates a bucket folder when staging via REST.)
 
 ## 2. Document classification (by folder, not title)
 
@@ -92,16 +106,19 @@ Override per scene when front-matter says otherwise.
 ## 5. Actors / NPCs — full workflow
 
 1. Parse the stat block: `name`, `type: "npc"`, CR, HP, ability scores.
-2. Ensure the token image is uploaded (batch-upload all token art up front, §1).
-3. Create with dot-notation for nested fields and the token texture:
+2. Ensure the token image is uploaded (batch-upload all token art up front, §1) and
+   **capture the returned `path`** — on Forge it's an absolute URL, so reuse it verbatim.
+3. Create with dot-notation for nested fields, using that `tokenPath` for both `img`
+   and the token texture (don't hardcode a relative `worlds/…` path — see §1):
    ```
+   const tokenPath = /* the `path` returned by the upload for this token */;
    create_document({
      documentType: "Actor",
      data: {
        name: "Strahd von Zarovich",
        type: "npc",
-       img: "worlds/curse-of-strahd/tokens/strahd-von-zarovich.webp",
-       "prototypeToken.texture.src": "worlds/curse-of-strahd/tokens/strahd-von-zarovich.webp",
+       img: tokenPath,
+       "prototypeToken.texture.src": tokenPath,
        "system.details.cr": 15,
        "system.attributes.hp.value": 144,
        "system.attributes.hp.max": 144,
@@ -139,16 +156,33 @@ format, not arbitrary `data` fields — setting `data.rewards` may not populate 
 FQL reward UI. Create the quest hierarchy via the tools; add item/gold/xp rewards
 through FQL's own UI if the `data` route doesn't reflect them.
 
-## 8. Guardrails
+## 8. Editing, cloning & querying existing content
+
+Beyond create/update, these round out world-building:
+
+- `find_documents({ documentType, query })` — read or look up before creating; resolve
+  an id by name (`query: { name: "…" }`) instead of guessing. Returns matches (or `[]`).
+- `duplicate_document({ documentType, id, overrides })` — clone a finished actor/scene/
+  journal for a variant (e.g. a reskinned monster) and rename via `overrides`.
+- `update_embedded` / `delete_embedded({ parentType, parentId, embeddedName, … })` — edit
+  or remove items, active effects, journal pages, or scene tokens after creation.
+  `update_embedded` entries must each carry their `_id`.
+- `delete_quest({ id })` — remove a quest; `update_quest` flips status as the party
+  progresses (§7).
+
+## 9. Guardrails
 
 - **source from `worldInfo.forge.active`** — never hardcode `"data"`/`"forgevtt"`.
 - **Show a plan before bulk writes.** For > 3 documents, print a table (file → op
   → name) and wait for go-ahead.
-- **Deletes are terminal** — confirm every delete explicitly; they aren't auto-allowed.
+- **Deletes are terminal** — there's no rollback; confirm every delete with the user
+  before running it, even though the tools are pre-approved.
+- **No delete-asset tool** — uploaded images can't be removed via the bridge; prune them
+  in the Forge/Foundry asset browser if needed.
 - **Preserve language** — `generated/` notes are Danish; extracted `journals/` are
   English. Don't translate unless asked.
 - Read each tool result's `ok`/`steps`; on a non-`ok` result surface `error.code`
-  (`NOT_FOUND`, `VALIDATION`, `READBACK_MISMATCH`, `AUTH`, `TIMEOUT`) — don't blindly retry.
+  (`NOT_FOUND`, `VALIDATION`, `READBACK_MISMATCH`, `AUTH`, `TIMEOUT`, `UNSUPPORTED`) — don't blindly retry.
 - If `mcp__foundry__*` tools are absent the world isn't reachable: tell the user to
   start Foundry (GM logged in, `foundry-mcp-bridge` module enabled, matching relay
   URL/token). Don't fall back to the LevelDB scripts on your own.
