@@ -74,14 +74,14 @@ pre-creates a bucket folder when staging via REST.)
 | `actors/npcs/*.json` | Actor | create_document source | Full extracted JSON; strip `_id` for a fresh create or treat as upsert. |
 | `actors/`, `journals/` (extracted), `rules/` | — | — | Reference. **Read-only — never write back.** |
 
-## 3. Upsert contract (authoritative)
+## 3. Sync contract (authoritative)
 
-- **`id: ""`** → `create_document` (or `create_scene`). On success, **write the
-  returned `_id` back into the note's front-matter** so the next run updates.
-- **`id: "<16-char>"`** → `update_document` `{ documentType, id, data }`. If it
-  returns `NOT_FOUND` (doc not in this world) and you want stable cross-refs,
-  `create_document` with `data._id` set and `keepId: true`.
-The id round-trip is what keeps imports idempotent — never skip writing it back.
+**Don't hand-roll create-vs-update.** Reconcile through the **`foundry-sync`** skill,
+which runs the deterministic `campaign-sync` planner over `foundry-sync.json` and
+tells you exactly what to create / update / skip (and pulls quest progress back).
+The manifest — not per-note front-matter — is the source of truth for ids, asset
+paths, and drift. Run a plan before any bulk write; execute it Foundry-wins
+(skip `remote-ahead`/`conflict`). See the `foundry-sync` skill for the workflow.
 
 ## 4. Scenes — full workflow
 
