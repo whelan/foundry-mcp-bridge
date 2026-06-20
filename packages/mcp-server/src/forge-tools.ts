@@ -101,6 +101,43 @@ export function runForgeUploadAsset(
   );
 }
 
+// --- forge_batch_upload_assets ----------------------------------------------
+
+export const ForgeBatchUploadAssetsShape = {
+  target: z.string().min(1),
+  files: z
+    .array(
+      z.object({
+        filename: z.string().min(1),
+        contentBase64: z.string().min(1),
+        mimeType: z.string().optional(),
+      }),
+    )
+    .min(1)
+    .max(50),
+  skipExisting: z.boolean().optional(),
+};
+const ForgeBatchUploadAssets = z.object(ForgeBatchUploadAssetsShape);
+export type ForgeBatchUploadAssetsArgs = z.infer<typeof ForgeBatchUploadAssets>;
+
+export function runForgeBatchUploadAssets(
+  forge: ForgeClientRef,
+  args: ForgeBatchUploadAssetsArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runForge(
+    forge,
+    "forge-batch-upload-assets",
+    (c) =>
+      c.batchUploadAssets({
+        target: args.target,
+        files: args.files,
+        skipExisting: args.skipExisting,
+      }),
+    opts,
+  );
+}
+
 // --- forge_create_folder ----------------------------------------------------
 
 export const ForgeCreateFolderShape = {

@@ -15,9 +15,10 @@
  * Endpoint shapes mirror the discovery notes in docs/forge-asset-manager.md.
  */
 
+import { assetBaseName } from "@foundry-mcp-bridge/shared";
+
 const DEFAULT_BASE_URL = "https://forge-vtt.com/api";
 const DEFAULT_TIMEOUT_MS = 15_000;
-
 export interface ForgeRestConfig {
   /** Forge user id — the prefix for asset paths and the browse endpoint. */
   userId: string;
@@ -42,6 +43,19 @@ export interface ForgeUploadResult {
 
 export interface ForgeFolderResult {
   success: boolean;
+}
+
+export interface ForgeBatchUploadEntry {
+  filename: string;
+  contentBase64: string;
+  mimeType?: string;
+}
+
+export interface ForgeBatchUploadResult {
+  filename: string;
+  /** The asset's stored path — the real existing path for a skipped entry. */
+  path: string;
+  skipped?: boolean;
 }
 
 /** A failed Forge REST call (non-2xx, network error, or malformed response). */
@@ -110,6 +124,45 @@ export class ForgeRestClient {
       throw new ForgeRestError("Forge upload returned no path", undefined, body);
     }
     return { path };
+  }
+
+  /**
+   * Upload many assets to `target`. With `skipExisting`, pre-browses the target
+   * and skips files already present (matched by basename, so Forge's absolute CDN
+   * URLs compare correctly). A skipped entry reports the real existing path; an
+   * in-batch duplicate reports the first uploaded path. The dedup contract matches
+   * the relay `batch_upload_assets` tool exactly. Files upload sequentially so the
+   * in-batch dedup sees earlier uploads.
+   */
+  async batchUploadAssets(input: {
+    target: string;
+    files: ForgeBatchUploadEntry[];
+    skipExisting?: boolean;
+  }): Promise<ForgeBatchUploadResult[]> {
+    // basename -> the asset's actual stored path (absolute CDN URL on The Forge).
+    const existing = new Map<string, string>();
+    if (input.skipExisting) {
+      const browse = await this.browseAssets({ path: input.target });
+      for (const f of browse.files) existing.set(assetBaseName(f), f);
+    }
+    const results: ForgeBatchUploadResult[] = [];
+    for (const entry of input.files) {
+      const known = existing.get(assetBaseName(entry.filename));
+      if (known !== undefined) {
+        results.push({ filename: entry.filename, path: known, skipped: true });
+        continue;
+      }
+      const { path } = await this.uploadAsset({
+        target: input.target,
+        filename: entry.filename,
+        contentBase64: entry.contentBase64,
+        mimeType: entry.mimeType,
+      });
+      // Only track under skipExisting — its dedup contract owns within-batch skips.
+      if (input.skipExisting) existing.set(assetBaseName(entry.filename), path);
+      results.push({ filename: entry.filename, path });
+    }
+    return results;
   }
 
   /** Create a folder at `path` in The Forge bucket (idempotent on The Forge). */

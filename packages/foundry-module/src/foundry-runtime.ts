@@ -6,7 +6,7 @@
  * protocol logic is tested against the mock. Kept thin and obvious on purpose.
  */
 
-import { COLLECTIONS, getByPath, type DocumentType } from "@foundry-mcp-bridge/shared";
+import { COLLECTIONS, getByPath, assetBaseName, type DocumentType } from "@foundry-mcp-bridge/shared";
 import type {
   ExecuteOptions,
   FindSelector,
@@ -209,18 +209,17 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       // returns absolute CDN URLs (with the user-id prefix / query strings) rather
       // than the relative `target/filename` we construct, so a full-path compare
       // would silently never match and re-upload everything.
-      const baseName = (p: string) => (p.split("?")[0] ?? p).split("/").pop() ?? p;
       // Map basename → the asset's *actual* stored path, so a skipped entry
       // reports the real existing path (an absolute CDN URL on The Forge), not a
       // reconstructed `target/filename` that wouldn't resolve there.
       const existing = new Map<string, string>();
       if (params.skipExisting) {
         const browse = await (FilePicker as any).browse(params.source, target, {});
-        for (const f of browse?.files ?? []) existing.set(baseName(String(f)), String(f));
+        for (const f of browse?.files ?? []) existing.set(assetBaseName(String(f)), String(f));
       }
       const results: Array<{ filename: string; path: string; skipped?: boolean }> = [];
       for (const entry of params.files) {
-        const known = existing.get(baseName(entry.filename));
+        const known = existing.get(assetBaseName(entry.filename));
         if (known !== undefined) {
           results.push({ filename: entry.filename, path: known, skipped: true });
           continue;
@@ -235,7 +234,7 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         // Record the stored path so later in-batch duplicates report it and are
         // skipped — but only under skipExisting, which owns the dedup contract.
         // With skipExisting=false the caller asked to upload everything as given.
-        if (params.skipExisting) existing.set(baseName(entry.filename), storedPath);
+        if (params.skipExisting) existing.set(assetBaseName(entry.filename), storedPath);
         results.push({ filename: entry.filename, path: storedPath });
       }
       return results;

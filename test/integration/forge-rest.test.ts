@@ -6,6 +6,7 @@ import {
 import {
   runForgeBrowseAssets,
   runForgeUploadAsset,
+  runForgeBatchUploadAssets,
   runForgeCreateFolder,
 } from "../../packages/mcp-server/src/forge-tools.js";
 
@@ -21,6 +22,23 @@ function fakeFetch(
   const calls: Captured[] = [];
   const fn = (async (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(url), init });
+    return new Response(reply.body ?? "", {
+      status: reply.status ?? 200,
+      statusText: reply.statusText ?? "OK",
+    });
+  }) as unknown as typeof fetch;
+  return { fetch: fn, calls };
+}
+
+/** Returns canned replies in order (one per call), recording each call. */
+function queuedFetch(
+  replies: Array<{ status?: number; statusText?: string; body?: string }>,
+): { fetch: typeof fetch; calls: Captured[] } {
+  const calls: Captured[] = [];
+  let i = 0;
+  const fn = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    const reply = replies[i++] ?? {};
     return new Response(reply.body ?? "", {
       status: reply.status ?? 200,
       statusText: reply.statusText ?? "OK",
@@ -95,6 +113,68 @@ describe("ForgeRestClient", () => {
     expect(calls[0]!.url).toBe(`${BASE}/user/u1/assets`);
     expect(calls[0]!.init?.method).toBe("PUT");
     expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({ path: "worlds/strahd/tokens" });
+  });
+
+  it("batchUploadAssets uploads every file when skipExisting is off (no pre-browse)", async () => {
+    const { fetch, calls } = queuedFetch([
+      { body: JSON.stringify({ path: "worlds/strahd/maps/a.webp" }) },
+      { body: JSON.stringify({ path: "worlds/strahd/maps/b.webp" }) },
+    ]);
+    const res = await client(fetch).batchUploadAssets({
+      target: "worlds/strahd/maps",
+      files: [
+        { filename: "a.webp", contentBase64: "AA==" },
+        { filename: "b.webp", contentBase64: "BB==" },
+      ],
+    });
+    expect(res).toEqual([
+      { filename: "a.webp", path: "worlds/strahd/maps/a.webp" },
+      { filename: "b.webp", path: "worlds/strahd/maps/b.webp" },
+    ]);
+    // No browse call; just the two uploads.
+    expect(calls.map((c) => c.init?.method)).toEqual(["POST", "POST"]);
+  });
+
+  it("batchUploadAssets skips existing files by basename, returning the real CDN path", async () => {
+    const cdnUrl = "https://cdn.forge/u1/worlds/strahd/maps/map1.webp?token=abc";
+    const { fetch, calls } = queuedFetch([
+      { body: JSON.stringify({ files: [cdnUrl], dirs: [] }) }, // pre-browse
+      { body: JSON.stringify({ path: "worlds/strahd/maps/map2.webp" }) }, // map2 upload
+    ]);
+    const res = await client(fetch).batchUploadAssets({
+      target: "worlds/strahd/maps",
+      files: [
+        { filename: "map1.webp", contentBase64: "AA==" },
+        { filename: "map2.webp", contentBase64: "BB==" },
+      ],
+      skipExisting: true,
+    });
+    expect(res).toEqual([
+      { filename: "map1.webp", path: cdnUrl, skipped: true },
+      { filename: "map2.webp", path: "worlds/strahd/maps/map2.webp" },
+    ]);
+    // browse + exactly one upload (map1 was not re-uploaded).
+    expect(calls.map((c) => c.init?.method)).toEqual(["GET", "POST"]);
+  });
+
+  it("batchUploadAssets skips an in-batch duplicate, echoing the first upload path", async () => {
+    const { fetch, calls } = queuedFetch([
+      { body: JSON.stringify({ files: [], dirs: [] }) }, // pre-browse (empty)
+      { body: JSON.stringify({ path: "worlds/strahd/maps/dup.webp" }) }, // first dup upload
+    ]);
+    const res = await client(fetch).batchUploadAssets({
+      target: "worlds/strahd/maps",
+      files: [
+        { filename: "dup.webp", contentBase64: "AA==" },
+        { filename: "dup.webp", contentBase64: "BB==" },
+      ],
+      skipExisting: true,
+    });
+    expect(res).toEqual([
+      { filename: "dup.webp", path: "worlds/strahd/maps/dup.webp" },
+      { filename: "dup.webp", path: "worlds/strahd/maps/dup.webp", skipped: true },
+    ]);
+    expect(calls.map((c) => c.init?.method)).toEqual(["GET", "POST"]);
   });
 
   it("surfaces non-2xx as a ForgeRestError carrying the status + parsed details", async () => {
@@ -181,6 +261,23 @@ describe("forge tools → ToolOutcome", () => {
       contentBase64: "AA==",
     });
     expect(out.ok && out.data).toEqual({ path: "t/f.webp" });
+  });
+
+  it("batch upload maps success to an ok outcome", async () => {
+    const { fetch } = queuedFetch([{ body: JSON.stringify({ path: "t/f.webp" }) }]);
+    const out = await runForgeBatchUploadAssets(client(fetch), {
+      target: "t",
+      files: [{ filename: "f.webp", contentBase64: "AA==" }],
+    });
+    expect(out.ok && out.data).toEqual([{ filename: "f.webp", path: "t/f.webp" }]);
+  });
+
+  it("batch upload returns UNSUPPORTED when no client is configured", async () => {
+    const out = await runForgeBatchUploadAssets(null, {
+      target: "t",
+      files: [{ filename: "f.webp", contentBase64: "AA==" }],
+    });
+    expect(out.ok === false && out.error.code).toBe("UNSUPPORTED");
   });
 
   it("create folder maps success to an ok outcome", async () => {

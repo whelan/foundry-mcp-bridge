@@ -95,7 +95,14 @@ Body: { path: "worlds/strahd/tokens" }
   |------|---------|--------|
   | `forge_browse_assets` | `GET .../assets?path=` | `{ files, dirs }` |
   | `forge_upload_asset` | `POST .../assets/upload` | `{ path }` |
+  | `forge_batch_upload_assets` | pre-browse + N× `POST .../assets/upload` | `[{ filename, path, skipped? }]` |
   | `forge_create_folder` | `PUT .../assets` | `{ success }` |
+
+  `forge_batch_upload_assets` mirrors the relay `batch_upload_assets`: up to 50
+  files per call, and `skipExisting` dedups by **basename** (so Forge's absolute
+  CDN URLs compare correctly). A skipped entry reports the asset's real existing
+  path; an in-batch duplicate reports the first uploaded path. Files upload
+  sequentially so the in-batch dedup sees earlier uploads.
 
   When the credentials aren't configured the tools return a structured
   `UNSUPPORTED` error naming the env keys, rather than silently doing nothing.

@@ -46,9 +46,11 @@ import {
 import {
   ForgeBrowseAssetsShape,
   ForgeUploadAssetShape,
+  ForgeBatchUploadAssetsShape,
   ForgeCreateFolderShape,
   runForgeBrowseAssets,
   runForgeUploadAsset,
+  runForgeBatchUploadAssets,
   runForgeCreateFolder,
   type ForgeClientRef,
 } from "./forge-tools.js";
@@ -238,6 +240,12 @@ export function buildServer(
     "Upload a base64 file straight to The Forge bucket via the direct Forge REST API (no running world needed). Requires FORGE_USER_ID + FORGE_API_KEY. Returns { path }.",
     ForgeUploadAssetShape,
     runForgeUploadAsset,
+  );
+  registerForge(
+    "forge_batch_upload_assets",
+    "Upload multiple base64 files straight to The Forge bucket via the direct Forge REST API (no running world needed). Requires FORGE_USER_ID + FORGE_API_KEY. Set skipExisting=true to skip files already present (matched by basename). Returns array of { filename, path, skipped? }. Max 50 files per call.",
+    ForgeBatchUploadAssetsShape,
+    runForgeBatchUploadAssets,
   );
   registerForge(
     "forge_create_folder",
