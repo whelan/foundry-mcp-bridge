@@ -12,7 +12,7 @@ export function computePlan(manifest: Manifest, repo: RepoEntity[], live: LiveSt
     const m = manifest.entities[e.source];
     const l = m ? live.docs[m.foundryId] : undefined;
     const assets = planAssets(e, m?.assets ?? []);
-    const base = { source: e.source, documentType: e.documentType, foundryId: m?.foundryId, assets };
+    const base = { source: e.source, documentType: e.documentType, foundryId: m?.foundryId, contentHash: e.contentHash, assets };
 
     if (e.documentType === "Quest") {
       items.push(planQuest(e, m, l, base));
@@ -50,14 +50,15 @@ function planQuest(
   l: LiveState["docs"][string] | undefined,
   base: Omit<PlanItem, "action" | "reason">,
 ): PlanItem {
-  if (!m) return { ...base, action: "create", reason: "no manifest entry" };
+  const progressHash = l?.quest ? questProgressHash(l.quest) : undefined;
+  if (!m) return { ...base, action: "create", reason: "no manifest entry", progressHash };
   if (!l) return { ...base, action: "missing-remote", reason: "quest id not found in world" };
   const structureChanged = e.contentHash !== m.contentHash;
-  const progressChanged = l.quest ? questProgressHash(l.quest) !== m.progressHash : false;
-  if (structureChanged && progressChanged) return { ...base, action: "quest-push-and-pull", reason: "structure + progress changed" };
-  if (structureChanged) return { ...base, action: "quest-push-structure", reason: "structure changed" };
-  if (progressChanged) return { ...base, action: "quest-pull-progress", reason: "progress changed (pull)" };
-  return { ...base, action: "unchanged", reason: "in sync" };
+  const progressChanged = progressHash !== undefined ? progressHash !== m.progressHash : false;
+  if (structureChanged && progressChanged) return { ...base, action: "quest-push-and-pull", reason: "structure + progress changed", progressHash };
+  if (structureChanged) return { ...base, action: "quest-push-structure", reason: "structure changed", progressHash };
+  if (progressChanged) return { ...base, action: "quest-pull-progress", reason: "progress changed (pull)", progressHash };
+  return { ...base, action: "unchanged", reason: "in sync", progressHash };
 }
 
 const RANK: Record<string, number> = {

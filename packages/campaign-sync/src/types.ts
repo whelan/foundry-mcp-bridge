@@ -75,6 +75,10 @@ export interface PlanItem {
   action: PlanAction;
   foundryId?: string;
   reason: string;
+  /** Authored content hash — copy into the manifest when recording the write. */
+  contentHash: string;
+  /** Quests only: hash of the live progress — copy into the manifest on record. */
+  progressHash?: string;
   assets: { localPath: string; action: AssetAction }[];
 }
 
