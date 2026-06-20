@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/shared" },
     { "path": "./packages/foundry-module" },
-    { "path": "./packages/mcp-server" }
+    { "path": "./packages/mcp-server" },
+    { "path": "./packages/campaign-sync" }
   ]
 }

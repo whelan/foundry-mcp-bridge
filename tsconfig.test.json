@@ -9,7 +9,8 @@
     "baseUrl": ".",
     "types": ["node"],
     "paths": {
-      "@foundry-mcp-bridge/shared": ["./packages/shared/src/index.ts"]
+      "@foundry-mcp-bridge/shared": ["./packages/shared/src/index.ts"],
+      "@foundry-mcp-bridge/campaign-sync": ["./packages/campaign-sync/src/index.ts"]
     }
   },
   "include": ["test/**/*.ts", "packages/**/*.test.ts"]
