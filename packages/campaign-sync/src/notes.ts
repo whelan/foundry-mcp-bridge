@@ -30,11 +30,14 @@ const FM_RE = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 
 export function parseNote(source: string, raw: string, map: TypeMap): ParsedNote {
   const documentType = classifyType(source, map) ?? "JournalEntry";
-  const match = FM_RE.exec(raw);
+  // Normalize CRLF → LF up front so front-matter detection and the content hash
+  // are identical whether the notes repo is checked out with LF or CRLF endings.
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const match = FM_RE.exec(normalized);
   const fmRaw = match ? match[1] : undefined;
   const bodyRaw = match ? match[2] : undefined;
   const frontMatter = fmRaw ? ((parseYaml(fmRaw) as Record<string, unknown>) ?? {}) : {};
-  const body = bodyRaw ?? raw;
+  const body = bodyRaw ?? normalized;
 
   // Hash authored content only: front-matter minus MANAGED_KEYS, plus body.
   const authored: Record<string, unknown> = { ...frontMatter };

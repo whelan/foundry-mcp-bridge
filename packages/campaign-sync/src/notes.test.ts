@@ -28,6 +28,14 @@ describe("notes", () => {
     expect(n.body.trim()).toContain("Body text.");
   });
 
+  it("parses CRLF notes identically to LF (cross-platform determinism)", () => {
+    const lf = parseNote("generated/npcs/strahd.md", note, DEFAULT_TYPE_MAP);
+    const crlf = parseNote("generated/npcs/strahd.md", note.replace(/\n/g, "\r\n"), DEFAULT_TYPE_MAP);
+    expect(crlf.frontMatter).toEqual(lf.frontMatter);
+    expect(crlf.body).toBe(lf.body);
+    expect(crlf.contentHash).toBe(lf.contentHash);
+  });
+
   it("contentHash excludes managed (progress) keys", () => {
     const withProgress = parseNote("generated/quests/x.md", note, DEFAULT_TYPE_MAP);
     const noProgress = note.replace("status: active", "status: inactive");

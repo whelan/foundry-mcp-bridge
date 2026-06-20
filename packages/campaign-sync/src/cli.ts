@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadManifest, saveManifest } from "./manifest.js";
 import { DEFAULT_TYPE_MAP } from "./notes.js";

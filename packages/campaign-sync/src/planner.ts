@@ -85,7 +85,7 @@ export function planToTable(plan: Plan): string {
   }
   const rows = plan.items.map((i) => {
     const assets = i.assets.filter((a) => a.action !== "unchanged").map((a) => `${a.action}:${a.localPath}`).join(", ");
-    return `| ${i.action} | ${i.documentType} | ${i.source} | ${i.reason}${assets ? ` | assets: ${assets}` : ""} |`;
+    return `| ${i.action} | ${i.documentType} | ${i.source} | ${i.reason} | ${assets} |`;
   });
-  return ["| action | type | source | reason |", "| --- | --- | --- | --- |", ...rows].join("\n");
+  return ["| action | type | source | reason | assets |", "| --- | --- | --- | --- | --- |", ...rows].join("\n");
 }
