@@ -9,7 +9,15 @@
  */
 
 import { z } from "zod";
-import { DocumentType, buildScene, buildSceneVerify } from "@foundry-mcp-bridge/shared";
+import {
+  DocumentType,
+  buildScene,
+  buildSceneVerify,
+  getByPath,
+  expandObject,
+  isSafePath,
+  filterUnsafePaths,
+} from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
 import {
   createDocumentReliable,
@@ -32,22 +40,45 @@ import {
 
 const documentData = z.record(z.string(), z.unknown());
 
+/**
+ * Optional dot-path projection for a tool's result. Pass e.g. ["_id"] or
+ * ["_id","_stats.modifiedTime"] to return only those paths. On reads (find), omit
+ * for the full document. On mutations the echo is slim by default (see below);
+ * `fields` overrides which paths the slim echo carries.
+ */
+const fieldsParam = z.array(z.string().min(1)).min(1).optional();
+
+/** On a mutation, return the whole written document instead of the slim echo. */
+const fullParam = z.boolean().optional();
+
+/**
+ * Default slim echo for mutating tools: a created/updated document is echoed back,
+ * but the caller already has the data it sent and only needs the id (and, for the
+ * sync, the new modifiedTime). Returning the whole document — a Scene with
+ * walls/lights/tokens, an Actor's full system block — is the dominant token cost of
+ * a bulk import, so mutations default to these keys. Pass full:true for everything,
+ * or fields:[...] for a specific set. (Missing keys are simply dropped.)
+ */
+const DEFAULT_ECHO_FIELDS = ["_id", "name", "_stats.modifiedTime"];
+
 // --- create_document --------------------------------------------------------
 
 export const CreateDocumentShape = {
   documentType: DocumentType,
   data: documentData,
   keepId: z.boolean().optional(),
+  fields: fieldsParam,
+  full: fullParam,
 };
 const CreateDocument = z.object(CreateDocumentShape);
 export type CreateDocumentArgs = z.infer<typeof CreateDocument>;
 
-export function runCreateDocument(
+export async function runCreateDocument(
   transport: RelayTransport,
   args: CreateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return createDocumentReliable(transport, args, opts);
+  return projectEcho(await createDocumentReliable(transport, args, opts), args.fields, args.full);
 }
 
 // --- create_scene -----------------------------------------------------------
@@ -63,18 +94,25 @@ export const CreateSceneShape = {
   background: z.string().optional(),
   backgroundColor: z.string().optional(),
   padding: z.number().min(0).optional(),
+  fields: fieldsParam,
+  full: fullParam,
 };
 const CreateScene = z.object(CreateSceneShape);
 export type CreateSceneArgs = z.infer<typeof CreateScene>;
 
-export function runCreateScene(
+export async function runCreateScene(
   transport: RelayTransport,
   args: CreateSceneArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   const data = buildScene(args);
   const verifyData = buildSceneVerify(args);
-  return createDocumentReliable(transport, { documentType: "Scene", data, verifyData }, opts);
+  const outcome = await createDocumentReliable(
+    transport,
+    { documentType: "Scene", data, verifyData },
+    opts,
+  );
+  return projectEcho(outcome, args.fields, args.full);
 }
 
 // --- update_document --------------------------------------------------------
@@ -83,16 +121,22 @@ export const UpdateDocumentShape = {
   documentType: DocumentType,
   id: z.string().min(1),
   data: documentData,
+  fields: fieldsParam,
+  full: fullParam,
 };
 const UpdateDocument = z.object(UpdateDocumentShape);
 export type UpdateDocumentArgs = z.infer<typeof UpdateDocument>;
 
-export function runUpdateDocument(
+export async function runUpdateDocument(
   transport: RelayTransport,
   args: UpdateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return updateDocumentReliable(transport, args, opts);
+  // Drop unsafe dot-path keys from the outgoing diff so the live runtime never
+  // receives a prototype-pollution path (and stays consistent with the mock,
+  // whose applyUpdate already drops them via expandObject).
+  const safe = { ...args, data: filterUnsafePaths(args.data) };
+  return projectEcho(await updateDocumentReliable(transport, safe, opts), args.fields, args.full);
 }
 
 // --- delete_document --------------------------------------------------------
@@ -118,16 +162,20 @@ export const DuplicateDocumentShape = {
   documentType: DocumentType,
   id: z.string().min(1),
   overrides: documentData.optional(),
+  fields: fieldsParam,
+  full: fullParam,
 };
 const DuplicateDocument = z.object(DuplicateDocumentShape);
 export type DuplicateDocumentArgs = z.infer<typeof DuplicateDocument>;
 
-export function runDuplicateDocument(
+export async function runDuplicateDocument(
   transport: RelayTransport,
   args: DuplicateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return duplicateDocumentReliable(transport, args, opts);
+  // overrides are Foundry dot-notation; drop unsafe keys before they reach the runtime.
+  const safe = { ...args, overrides: args.overrides ? filterUnsafePaths(args.overrides) : args.overrides };
+  return projectEcho(await duplicateDocumentReliable(transport, safe, opts), args.fields, args.full);
 }
 
 // --- find_documents ---------------------------------------------------------
@@ -136,21 +184,70 @@ export const FindDocumentsShape = {
   documentType: DocumentType,
   id: z.string().min(1).optional(),
   query: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * Project each result to only these dot-notation paths (e.g.
+   * ["_id", "_stats.modifiedTime"]). Strongly recommended for bulk reads — a full
+   * document (scene walls/lights/tokens, actor system data) is large; most callers
+   * only need a few fields. Omit to return whole documents.
+   */
+  fields: z.array(z.string().min(1)).min(1).optional(),
 };
 const FindDocuments = z.object(FindDocumentsShape);
 export type FindDocumentsArgs = z.infer<typeof FindDocuments>;
 
-export function runFindDocuments(
+export async function runFindDocuments(
   transport: RelayTransport,
   args: FindDocumentsArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return runRead(
+  const outcome = await runRead(
     transport,
     { action: "find", documentType: args.documentType, id: args.id, query: args.query },
     "find",
     opts,
   );
+  return project(outcome, args.fields);
+}
+
+/**
+ * Read projection (find): opt-in. Returns the full result unless `fields` is given.
+ * Trimming happens server-side so only the requested paths reach the model's
+ * context — the relay already returned the full doc(s) (the wire/Node hop isn't
+ * token-billed, the tool result is).
+ */
+function project(outcome: ToolOutcome, fields?: string[]): ToolOutcome {
+  if (!outcome.ok || !fields) return outcome;
+  return { ...outcome, data: projectResult(outcome.data, fields) };
+}
+
+/**
+ * Mutation echo projection: slim by DEFAULT (DEFAULT_ECHO_FIELDS). `full:true`
+ * returns the whole written document; `fields` overrides the slim key set. The
+ * read-back verification is unaffected — it uses the server-side re-read, not this
+ * echo — so correctness/rollback are intact regardless of what's echoed.
+ */
+function projectEcho(outcome: ToolOutcome, fields?: string[], full?: boolean): ToolOutcome {
+  if (!outcome.ok || full) return outcome;
+  return { ...outcome, data: projectResult(outcome.data, fields ?? DEFAULT_ECHO_FIELDS) };
+}
+
+/** Apply a dot-path projection to a result (single doc or array of docs). */
+function projectResult(data: unknown, fields: string[]): unknown {
+  if (Array.isArray(data)) return data.map((d) => projectDoc(d, fields));
+  return projectDoc(data, fields);
+}
+
+function projectDoc(doc: unknown, fields: string[]): unknown {
+  if (doc === null || typeof doc !== "object") return doc;
+  const flat: Record<string, unknown> = {};
+  for (const path of fields) {
+    // Skip prototype-chain paths up-front (consistent with expandObject's guard)
+    // so a "__proto__"-style field never even reads an inherited property.
+    if (!isSafePath(path)) continue;
+    const value = getByPath(doc, path);
+    if (value !== undefined) flat[path] = value;
+  }
+  return expandObject(flat);
 }
 
 // --- get_world_info ---------------------------------------------------------
@@ -237,16 +334,18 @@ export const CreateEmbeddedShape = {
   parentId: z.string().min(1),
   embeddedName: z.string().min(1),
   data: z.array(documentData).min(1),
+  fields: fieldsParam,
+  full: fullParam,
 };
 const CreateEmbedded = z.object(CreateEmbeddedShape);
 export type CreateEmbeddedArgs = z.infer<typeof CreateEmbedded>;
 
-export function runCreateEmbedded(
+export async function runCreateEmbedded(
   transport: RelayTransport,
   args: CreateEmbeddedArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return createEmbeddedReliable(transport, args, opts);
+  return projectEcho(await createEmbeddedReliable(transport, args, opts), args.fields, args.full);
 }
 
 // --- update_embedded --------------------------------------------------------
@@ -256,16 +355,23 @@ export const UpdateEmbeddedShape = {
   parentId: z.string().min(1),
   embeddedName: z.string().min(1),
   data: z.array(documentData.and(z.object({ _id: z.string().min(1) }))).min(1),
+  fields: fieldsParam,
+  full: fullParam,
 };
 const UpdateEmbedded = z.object(UpdateEmbeddedShape);
 export type UpdateEmbeddedArgs = z.infer<typeof UpdateEmbedded>;
 
-export function runUpdateEmbedded(
+export async function runUpdateEmbedded(
   transport: RelayTransport,
   args: UpdateEmbeddedArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return updateEmbeddedReliable(transport, args, opts);
+  // Each embedded diff is dot-notation too — strip unsafe keys (keeping the
+  // required _id) before the entries reach the live runtime.
+  const data = args.data.map(
+    (d) => filterUnsafePaths(d) as typeof d,
+  );
+  return projectEcho(await updateEmbeddedReliable(transport, { ...args, data }, opts), args.fields, args.full);
 }
 
 // --- delete_embedded --------------------------------------------------------

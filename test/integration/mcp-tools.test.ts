@@ -13,6 +13,7 @@ import {
   runCreateScene,
   runUpdateDocument,
   runDuplicateDocument,
+  runFindDocuments,
   runGetWorldInfo,
   runUploadAsset,
   runBrowseAssets,
@@ -119,6 +120,46 @@ describe("create_document pipeline", () => {
     expect(mock.documents("Actor").length).toBe(1);
   });
 
+  it("slims the write echo by default (no full document in context)", async () => {
+    const { transport } = setup();
+    const out = await runCreateDocument(transport, {
+      documentType: "Actor",
+      data: { name: "Bob", type: "npc", system: { big: "payload".repeat(50) } },
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      // Assert presence of the identifying keys + absence of the bulky block —
+      // not exact keys, since _stats.modifiedTime is included when present.
+      const data = out.data as Record<string, unknown>;
+      expect(data._id).toBeDefined();
+      expect(data.name).toBe("Bob");
+      expect(data.system).toBeUndefined();
+      expect(JSON.stringify(out.data)).not.toContain("payload");
+    }
+  });
+
+  it("honours an explicit fields list on the write echo", async () => {
+    const { transport } = setup();
+    const out = await runCreateDocument(transport, {
+      documentType: "Actor",
+      data: { name: "Bob", type: "npc" },
+      fields: ["_id"],
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(Object.keys(out.data as object)).toEqual(["_id"]);
+  });
+
+  it("returns the whole document when full=true (opt-out)", async () => {
+    const { transport } = setup();
+    const out = await runCreateDocument(transport, {
+      documentType: "Actor",
+      data: { name: "Bob", type: "npc", system: { big: "payload" } },
+      full: true,
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect((out.data as { system: unknown }).system).toEqual({ big: "payload" });
+  });
+
   it("preserves an explicit _id when keepId is set", async () => {
     const { mock, transport } = setup();
     const out = await runCreateDocument(transport, {
@@ -193,6 +234,93 @@ describe("update_document pipeline", () => {
       data: { name: "x" },
     });
     expectErr(out, "NOT_FOUND");
+  });
+
+  it("drops unsafe dot-path keys from the diff before it reaches the runtime", async () => {
+    const { mock, transport } = setup();
+    await seed(mock, {
+      action: "create",
+      documentType: "Actor",
+      data: { _id: "a1", name: "Bob" },
+      keepId: true,
+    });
+    const out = await runUpdateDocument(transport, {
+      documentType: "Actor",
+      id: "a1",
+      data: { name: "Renamed", "__proto__.polluted": "x", "a..b": 1 },
+    });
+    expect(out.ok).toBe(true);
+    const actor = mock.documents("Actor")[0] as { name: string };
+    expect(actor.name).toBe("Renamed"); // safe key applied
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined(); // unsafe key never sent
+  });
+});
+
+describe("find_documents projection", () => {
+  const seedActor = (mock: MockFoundry, id: string, name: string) =>
+    seed(mock, {
+      action: "create",
+      documentType: "Actor",
+      keepId: true,
+      data: {
+        _id: id,
+        name,
+        system: { attributes: { hp: { value: 42, max: 50 } } },
+        _stats: { modifiedTime: 1234 },
+      },
+    });
+
+  it("projects a single document to only the requested dot-paths", async () => {
+    const { mock, transport } = setup();
+    await seedActor(mock, "a1", "Strahd");
+    const out = await runFindDocuments(transport, {
+      documentType: "Actor",
+      id: "a1",
+      fields: ["_id", "_stats.modifiedTime"],
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.data).toEqual({ _id: "a1", _stats: { modifiedTime: 1234 } });
+  });
+
+  it("projects every doc in a query result, dropping bulky fields", async () => {
+    const { mock, transport } = setup();
+    await seedActor(mock, "a1", "Strahd");
+    await seedActor(mock, "a2", "Ireena");
+    const out = await runFindDocuments(transport, {
+      documentType: "Actor",
+      query: {},
+      fields: ["_id", "name"],
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.data).toEqual([
+        { _id: "a1", name: "Strahd" },
+        { _id: "a2", name: "Ireena" },
+      ]);
+      // The heavy system data never reaches the caller.
+      expect(JSON.stringify(out.data)).not.toContain("attributes");
+    }
+  });
+
+  it("returns whole documents when no fields are given (back-compat)", async () => {
+    const { mock, transport } = setup();
+    await seedActor(mock, "a1", "Strahd");
+    const out = await runFindDocuments(transport, { documentType: "Actor", id: "a1" });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect((out.data as { system: unknown }).system).toBeDefined();
+  });
+
+  it("ignores prototype-chain field paths (no pollution, no inherited reads)", async () => {
+    const { mock, transport } = setup();
+    await seedActor(mock, "a1", "Strahd");
+    const out = await runFindDocuments(transport, {
+      documentType: "Actor",
+      id: "a1",
+      fields: ["_id", "__proto__.polluted", "constructor.prototype.x"],
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.data).toEqual({ _id: "a1" });
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });
 
@@ -280,6 +408,21 @@ describe("update_embedded pipeline", () => {
     expect(out.steps).toEqual(["pre-read", "dry-run", "write", "read-back"]);
     const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
     expect(scene.tokens[0]!.x).toBe(250);
+  });
+
+  it("drops unsafe dot-path keys from each embedded diff before the runtime", async () => {
+    const { mock, transport } = setup();
+    await seedSceneWithToken(mock);
+    const out = await runUpdateEmbedded(transport, {
+      parentType: "Scene",
+      parentId: "s1",
+      embeddedName: "Token",
+      data: [{ _id: "t1", x: 250, "__proto__.polluted": "x" }],
+    });
+    expect(out.ok).toBe(true);
+    const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
+    expect(scene.tokens[0]!.x).toBe(250); // safe key applied
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined(); // unsafe key never sent
   });
 
   it("restores the prior embedded state when parent read-back fails", async () => {

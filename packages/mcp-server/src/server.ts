@@ -56,8 +56,10 @@ import {
 } from "./forge-tools.js";
 
 function toCallResult(outcome: ToolOutcome) {
+  // Compact (no pretty-print): the result is consumed by an LLM, so indentation
+  // whitespace is pure token cost with no benefit.
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(outcome, null, 2) }],
+    content: [{ type: "text" as const, text: JSON.stringify(outcome) }],
     isError: !outcome.ok,
   };
 }
@@ -133,19 +135,19 @@ export function buildServer(
 
   register(
     "create_document",
-    "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch).",
+    "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch). The echoed result is slim by default (_id, name, _stats.modifiedTime) to save context — read-back still verifies the whole document server-side; pass full:true for the entire document, or fields:[...] for specific dot-paths.",
     CreateDocumentShape,
     runCreateDocument,
   );
   register(
     "create_scene",
-    "Create a V14 Scene from high-level parameters (built with the shared scene builders), then run the reliability pipeline.",
+    "Create a V14 Scene from high-level parameters (built with the shared scene builders), then run the reliability pipeline. The echo is slim by default (a full Scene with walls/lights/tokens is large); pass full:true for the whole Scene, or fields:[...] for specific paths.",
     CreateSceneShape,
     runCreateScene,
   );
   register(
     "update_document",
-    "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch.",
+    "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true for the whole document or fields:[...] for specific paths.",
     UpdateDocumentShape,
     runUpdateDocument,
   );
@@ -157,13 +159,13 @@ export function buildServer(
   );
   register(
     "duplicate_document",
-    "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure.",
+    "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     DuplicateDocumentShape,
     runDuplicateDocument,
   );
   register(
     "find_documents",
-    "Query and read Foundry documents. Pass id for a single document, or query for shallow field matching. Returns document(s) for inspection.",
+    "Query and read Foundry documents. Pass id for a single document, or query for shallow field matching. Pass fields (e.g. [\"_id\",\"_stats.modifiedTime\"]) to project each result to just those dot-paths — strongly recommended for bulk reads to avoid returning whole documents. Returns document(s) for inspection.",
     FindDocumentsShape,
     runFindDocuments,
   );
@@ -193,13 +195,13 @@ export function buildServer(
   );
   register(
     "create_embedded",
-    "Create embedded documents (e.g., tokens, items, effects) within a parent. Runs the full reliability pipeline with read-back of the parent.",
+    "Create embedded documents (e.g., tokens, items, effects) within a parent. Runs the full reliability pipeline with read-back of the parent. Echo (the created entries) is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     CreateEmbeddedShape,
     runCreateEmbedded,
   );
   register(
     "update_embedded",
-    "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch.",
+    "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     UpdateEmbeddedShape,
     runUpdateEmbedded,
   );

@@ -14,10 +14,14 @@ in the bridge — never improvise the diff. Bridge path = the absolute path in
 
 1. `get_world_info` → if `world.id` ≠ the manifest's `world.id`, **STOP** (every id
    points at a different world). Otherwise continue.
-2. Build live state. For each tracked `documentType`, `find_documents` to read
-   `_stats.modifiedTime`; for quests, `find_documents({ documentType: "JournalEntry",
-   query: { folder: <_fql_quests folder id from get_world_info> } })` and keep each
-   entry's `flags["forien-quest-log"].json`. Write a `live.json`:
+2. Build live state. For each tracked `documentType`, `find_documents` with
+   **`fields: ["_id", "_stats.modifiedTime"]`** to read just the id + mtime; for
+   quests, `find_documents({ documentType: "JournalEntry", query: { folder:
+   <_fql_quests folder id from get_world_info> }, fields: ["_id",
+   "_stats.modifiedTime", "flags.forien-quest-log.json"] })`. **Always pass
+   `fields`** — without it each call returns whole documents (scene walls/lights,
+   actor system data) and floods context; the projection is what keeps a full-world
+   read cheap. Write a `live.json`:
    `{ "world": { "id": "<world.id>" }, "docs": { "<foundryId>": { "foundryId", "modifiedTime", "quest"? } } }`.
 3. Run the planner:
    `node <bridge>/packages/campaign-sync/dist/cli.js plan --notes . --manifest foundry-sync.json --live live.json --system <system.id> --forge <true|false>`
@@ -53,3 +57,8 @@ in the bridge — never improvise the diff. Bridge path = the absolute path in
   world-owned; pushing them would clobber live progress).
 - Deletes are terminal — confirm with the user before any delete.
 - Surface `error.code` on a non-`ok` result; never blind-retry.
+- **Token discipline.** The diff is computed in Node by the CLI from `live.json`, not
+  by reading documents into context. Never `find_documents` without `fields`, never
+  dump whole documents to "inspect" them, and don't re-read a doc you just wrote — the
+  write result already carries its `_id` and `_stats.modifiedTime`. A whole-world read
+  with projection is a few bytes per doc; without it, it's the entire world.
