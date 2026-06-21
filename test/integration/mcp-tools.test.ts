@@ -13,6 +13,7 @@ import {
   runCreateScene,
   runUpdateDocument,
   runDuplicateDocument,
+  runFindDocuments,
   runGetWorldInfo,
   runUploadAsset,
   runBrowseAssets,
@@ -193,6 +194,61 @@ describe("update_document pipeline", () => {
       data: { name: "x" },
     });
     expectErr(out, "NOT_FOUND");
+  });
+});
+
+describe("find_documents projection", () => {
+  const seedActor = (mock: MockFoundry, id: string, name: string) =>
+    seed(mock, {
+      action: "create",
+      documentType: "Actor",
+      keepId: true,
+      data: {
+        _id: id,
+        name,
+        system: { attributes: { hp: { value: 42, max: 50 } } },
+        _stats: { modifiedTime: 1234 },
+      },
+    });
+
+  it("projects a single document to only the requested dot-paths", async () => {
+    const { mock, transport } = setup();
+    await seedActor(mock, "a1", "Strahd");
+    const out = await runFindDocuments(transport, {
+      documentType: "Actor",
+      id: "a1",
+      fields: ["_id", "_stats.modifiedTime"],
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.data).toEqual({ _id: "a1", _stats: { modifiedTime: 1234 } });
+  });
+
+  it("projects every doc in a query result, dropping bulky fields", async () => {
+    const { mock, transport } = setup();
+    await seedActor(mock, "a1", "Strahd");
+    await seedActor(mock, "a2", "Ireena");
+    const out = await runFindDocuments(transport, {
+      documentType: "Actor",
+      query: {},
+      fields: ["_id", "name"],
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.data).toEqual([
+        { _id: "a1", name: "Strahd" },
+        { _id: "a2", name: "Ireena" },
+      ]);
+      // The heavy system data never reaches the caller.
+      expect(JSON.stringify(out.data)).not.toContain("attributes");
+    }
+  });
+
+  it("returns whole documents when no fields are given (back-compat)", async () => {
+    const { mock, transport } = setup();
+    await seedActor(mock, "a1", "Strahd");
+    const out = await runFindDocuments(transport, { documentType: "Actor", id: "a1" });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect((out.data as { system: unknown }).system).toBeDefined();
   });
 });
 

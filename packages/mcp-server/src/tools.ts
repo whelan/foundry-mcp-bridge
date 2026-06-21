@@ -9,7 +9,13 @@
  */
 
 import { z } from "zod";
-import { DocumentType, buildScene, buildSceneVerify } from "@foundry-mcp-bridge/shared";
+import {
+  DocumentType,
+  buildScene,
+  buildSceneVerify,
+  getByPath,
+  expandObject,
+} from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
 import {
   createDocumentReliable,
@@ -136,21 +142,49 @@ export const FindDocumentsShape = {
   documentType: DocumentType,
   id: z.string().min(1).optional(),
   query: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * Project each result to only these dot-notation paths (e.g.
+   * ["_id", "_stats.modifiedTime"]). Strongly recommended for bulk reads — a full
+   * document (scene walls/lights/tokens, actor system data) is large; most callers
+   * only need a few fields. Omit to return whole documents.
+   */
+  fields: z.array(z.string().min(1)).min(1).optional(),
 };
 const FindDocuments = z.object(FindDocumentsShape);
 export type FindDocumentsArgs = z.infer<typeof FindDocuments>;
 
-export function runFindDocuments(
+export async function runFindDocuments(
   transport: RelayTransport,
   args: FindDocumentsArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return runRead(
+  const outcome = await runRead(
     transport,
     { action: "find", documentType: args.documentType, id: args.id, query: args.query },
     "find",
     opts,
   );
+  if (!outcome.ok || !args.fields) return outcome;
+  // Project server-side so only the requested fields ever reach the model's
+  // context. The relay already returned the full doc(s); trimming here is what
+  // saves tokens (the wire/Node hop isn't token-billed, the tool result is).
+  return { ...outcome, data: projectResult(outcome.data, args.fields) };
+}
+
+/** Apply a dot-path projection to a find result (single doc or array of docs). */
+function projectResult(data: unknown, fields: string[]): unknown {
+  if (Array.isArray(data)) return data.map((d) => projectDoc(d, fields));
+  return projectDoc(data, fields);
+}
+
+function projectDoc(doc: unknown, fields: string[]): unknown {
+  if (doc === null || typeof doc !== "object") return doc;
+  const flat: Record<string, unknown> = {};
+  for (const path of fields) {
+    const value = getByPath(doc, path);
+    if (value !== undefined) flat[path] = value;
+  }
+  return expandObject(flat);
 }
 
 // --- get_world_info ---------------------------------------------------------

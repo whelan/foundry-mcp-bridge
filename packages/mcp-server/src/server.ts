@@ -56,8 +56,10 @@ import {
 } from "./forge-tools.js";
 
 function toCallResult(outcome: ToolOutcome) {
+  // Compact (no pretty-print): the result is consumed by an LLM, so indentation
+  // whitespace is pure token cost with no benefit.
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(outcome, null, 2) }],
+    content: [{ type: "text" as const, text: JSON.stringify(outcome) }],
     isError: !outcome.ok,
   };
 }
@@ -163,7 +165,7 @@ export function buildServer(
   );
   register(
     "find_documents",
-    "Query and read Foundry documents. Pass id for a single document, or query for shallow field matching. Returns document(s) for inspection.",
+    "Query and read Foundry documents. Pass id for a single document, or query for shallow field matching. Pass fields (e.g. [\"_id\",\"_stats.modifiedTime\"]) to project each result to just those dot-paths — strongly recommended for bulk reads to avoid returning whole documents. Returns document(s) for inspection.",
     FindDocumentsShape,
     runFindDocuments,
   );
