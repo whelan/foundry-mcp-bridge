@@ -233,14 +233,19 @@ export function htmlToMarkdown(html: string): string {
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** Strip remaining tags and decode the handful of entities Foundry emits. */
+/**
+ * Strip remaining tags and decode the safe entities Foundry emits. `&lt;`/`&gt;`
+ * are deliberately NOT decoded: turning them back into `<`/`>` would re-introduce
+ * raw HTML (e.g. `&lt;img onerror=…&gt;` → a live tag) into the markdown, which
+ * Obsidian would render — an injection vector. Left as entities they display as
+ * literal `<`/`>` text instead. `&amp;` is decoded last so it can't compose a new
+ * entity from already-decoded text.
+ */
 function strip(html: string): string {
   return html
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 }

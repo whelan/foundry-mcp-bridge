@@ -142,6 +142,12 @@ describe("htmlToMarkdown", () => {
   it("returns empty for empty input", () => {
     expect(htmlToMarkdown("")).toBe("");
   });
+
+  it("does not re-introduce raw HTML from encoded angle brackets (no injection)", () => {
+    const out = htmlToMarkdown("<p>&lt;img src=x onerror=alert(1)&gt;</p>");
+    expect(out).not.toContain("<img");
+    expect(out).toContain("&lt;img"); // stays inert as literal text
+  });
 });
 
 describe("slugify", () => {
