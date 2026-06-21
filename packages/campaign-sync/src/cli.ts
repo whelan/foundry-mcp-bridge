@@ -56,6 +56,9 @@ async function cmdExport(): Promise<void> {
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, f.content);
   }
+  // Ensure the manifest's directory exists even when no notes were written (or
+  // --manifest points elsewhere) — otherwise saveManifest would ENOENT.
+  mkdirSync(dirname(manifestPath), { recursive: true });
   saveManifest(manifestPath, manifest);
   process.stderr.write(
     `exported ${files.length} notes + manifest → ${outDir} (world ${manifest.world.id})\n`,
