@@ -366,7 +366,12 @@ export async function runUpdateEmbedded(
   args: UpdateEmbeddedArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return projectEcho(await updateEmbeddedReliable(transport, args, opts), args.fields, args.full);
+  // Each embedded diff is dot-notation too — strip unsafe keys (keeping the
+  // required _id) before the entries reach the live runtime.
+  const data = args.data.map(
+    (d) => filterUnsafePaths(d) as typeof d,
+  );
+  return projectEcho(await updateEmbeddedReliable(transport, { ...args, data }, opts), args.fields, args.full);
 }
 
 // --- delete_embedded --------------------------------------------------------

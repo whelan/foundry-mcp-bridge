@@ -410,6 +410,21 @@ describe("update_embedded pipeline", () => {
     expect(scene.tokens[0]!.x).toBe(250);
   });
 
+  it("drops unsafe dot-path keys from each embedded diff before the runtime", async () => {
+    const { mock, transport } = setup();
+    await seedSceneWithToken(mock);
+    const out = await runUpdateEmbedded(transport, {
+      parentType: "Scene",
+      parentId: "s1",
+      embeddedName: "Token",
+      data: [{ _id: "t1", x: 250, "__proto__.polluted": "x" }],
+    });
+    expect(out.ok).toBe(true);
+    const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
+    expect(scene.tokens[0]!.x).toBe(250); // safe key applied
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined(); // unsafe key never sent
+  });
+
   it("restores the prior embedded state when parent read-back fails", async () => {
     const { mock, transport } = setup();
     await seedSceneWithToken(mock);
