@@ -8,7 +8,7 @@
  * reading (leveldb.ts) and file writing (cli.ts) are thin I/O layers around it.
  */
 
-import { parseNote, renderNote, DEFAULT_TYPE_MAP } from "./notes.js";
+import { parseNote, renderNote, exportDir, DEFAULT_TYPE_MAP } from "./notes.js";
 import { extractQuest, questProgressHash, renderProgressFrontMatter } from "./fql.js";
 import { emptyManifest } from "./manifest.js";
 import type { Manifest, ManifestEntity } from "./types.js";
@@ -58,12 +58,14 @@ export function buildVault(dump: WorldDump, now: () => string = NOW): ExportResu
   const used = new Set<string>();
 
   const emit = (
-    dir: string,
     doc: WorldDoc,
     frontMatter: Record<string, unknown>,
     body: string,
     entity: Omit<ManifestEntity, "contentHash" | "lastImportedAt">,
   ): void => {
+    // The directory comes from the type map (single source of truth with the CLI's
+    // stale-note guard), not a hardcoded string per call site.
+    const dir = exportDir(entity.documentType);
     const source = `${dir}/${uniqueSlug(used, dir, doc.name, doc._id)}.md`;
     const content = renderNote(frontMatter, body);
     // Hash the rendered file the same way a checkout would, so an immediate
@@ -80,7 +82,7 @@ export function buildVault(dump: WorldDump, now: () => string = NOW): ExportResu
   for (const j of dump.journals) {
     if (isQuest(j)) {
       const { frontMatter, body, progressHash } = questNote(j);
-      emit("generated/quests", j, frontMatter, body, {
+      emit(j, frontMatter, body, {
         documentType: "Quest",
         foundryId: j._id,
         remoteModifiedTime: modifiedTime(j),
@@ -89,7 +91,7 @@ export function buildVault(dump: WorldDump, now: () => string = NOW): ExportResu
       });
     } else {
       const { frontMatter, body } = journalNote(j);
-      emit("generated/journals", j, frontMatter, body, {
+      emit(j, frontMatter, body, {
         documentType: "JournalEntry",
         foundryId: j._id,
         remoteModifiedTime: modifiedTime(j),
@@ -100,7 +102,7 @@ export function buildVault(dump: WorldDump, now: () => string = NOW): ExportResu
 
   for (const a of dump.actors) {
     const { frontMatter, body } = actorNote(a);
-    emit("generated/npcs", a, frontMatter, body, {
+    emit(a, frontMatter, body, {
       documentType: "Actor",
       foundryId: a._id,
       remoteModifiedTime: modifiedTime(a),
@@ -110,7 +112,7 @@ export function buildVault(dump: WorldDump, now: () => string = NOW): ExportResu
 
   for (const s of dump.scenes) {
     const { frontMatter, body } = sceneNote(s);
-    emit("generated/scenes", s, frontMatter, body, {
+    emit(s, frontMatter, body, {
       documentType: "Scene",
       foundryId: s._id,
       remoteModifiedTime: modifiedTime(s),

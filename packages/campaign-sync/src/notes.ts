@@ -18,6 +18,13 @@ export function classifyType(source: string, map: TypeMap): EntityType | undefin
   return map.find((m) => source.startsWith(m.prefix))?.type;
 }
 
+/** The directory (no trailing slash) an entity type lives in — inverse of classifyType. */
+export function exportDir(type: EntityType, map: TypeMap = DEFAULT_TYPE_MAP): string {
+  const entry = map.find((m) => m.type === type);
+  if (!entry) throw new Error(`no export directory mapped for type ${type}`);
+  return entry.prefix.replace(/\/+$/, "");
+}
+
 export interface ParsedNote {
   source: string;
   documentType: EntityType;
