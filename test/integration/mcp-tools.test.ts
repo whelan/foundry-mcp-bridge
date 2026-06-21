@@ -128,8 +128,12 @@ describe("create_document pipeline", () => {
     });
     expect(out.ok).toBe(true);
     if (out.ok) {
-      // Default echo carries id/name only; the bulky system block is dropped.
-      expect(Object.keys(out.data as object).sort()).toEqual(["_id", "name"]);
+      // Assert presence of the identifying keys + absence of the bulky block —
+      // not exact keys, since _stats.modifiedTime is included when present.
+      const data = out.data as Record<string, unknown>;
+      expect(data._id).toBeDefined();
+      expect(data.name).toBe("Bob");
+      expect(data.system).toBeUndefined();
       expect(JSON.stringify(out.data)).not.toContain("payload");
     }
   });

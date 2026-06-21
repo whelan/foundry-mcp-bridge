@@ -25,10 +25,23 @@ export function deepMerge<T extends Json>(base: T, override?: Json): T {
   return out as T;
 }
 
-/** Foundry expandObject: {"a.b": 1} -> {a:{b:1}}. */
+/**
+ * Path segments that would let a dot-path reach an object's prototype chain.
+ * Dot-paths here are user/LLM-controlled (update diffs, field projections), so a
+ * path like "__proto__.polluted" must never walk into Object.prototype.
+ */
+const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+/** True when no segment of a dot-path can escape to the prototype chain. */
+export function isSafePath(path: string): boolean {
+  return path.split(".").every((seg) => !UNSAFE_KEYS.has(seg));
+}
+
+/** Foundry expandObject: {"a.b": 1} -> {a:{b:1}}. Paths touching prototype keys are skipped. */
 export function expandObject(flat: Json): Json {
   const out: Json = {};
   for (const [path, value] of Object.entries(flat)) {
+    if (!isSafePath(path)) continue; // drop prototype-pollution attempts
     const parts = path.split(".");
     let cursor = out;
     for (let i = 0; i < parts.length - 1; i++) {
