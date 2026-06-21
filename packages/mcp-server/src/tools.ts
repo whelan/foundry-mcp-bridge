@@ -15,6 +15,7 @@ import {
   buildSceneVerify,
   getByPath,
   expandObject,
+  isSafePath,
 } from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
 import {
@@ -233,6 +234,9 @@ function projectDoc(doc: unknown, fields: string[]): unknown {
   if (doc === null || typeof doc !== "object") return doc;
   const flat: Record<string, unknown> = {};
   for (const path of fields) {
+    // Skip prototype-chain paths up-front (consistent with expandObject's guard)
+    // so a "__proto__"-style field never even reads an inherited property.
+    if (!isSafePath(path)) continue;
     const value = getByPath(doc, path);
     if (value !== undefined) flat[path] = value;
   }

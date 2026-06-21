@@ -145,7 +145,8 @@ describe("create_document pipeline", () => {
       data: { name: "Bob", type: "npc" },
       fields: ["_id"],
     });
-    expect(out.ok && Object.keys(out.data as object)).toEqual(["_id"]);
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(Object.keys(out.data as object)).toEqual(["_id"]);
   });
 
   it("returns the whole document when full=true (opt-out)", async () => {
@@ -288,6 +289,19 @@ describe("find_documents projection", () => {
     const out = await runFindDocuments(transport, { documentType: "Actor", id: "a1" });
     expect(out.ok).toBe(true);
     if (out.ok) expect((out.data as { system: unknown }).system).toBeDefined();
+  });
+
+  it("ignores prototype-chain field paths (no pollution, no inherited reads)", async () => {
+    const { mock, transport } = setup();
+    await seedActor(mock, "a1", "Strahd");
+    const out = await runFindDocuments(transport, {
+      documentType: "Actor",
+      id: "a1",
+      fields: ["_id", "__proto__.polluted", "constructor.prototype.x"],
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect(out.data).toEqual({ _id: "a1" });
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });
 

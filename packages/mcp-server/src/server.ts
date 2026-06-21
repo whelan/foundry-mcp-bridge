@@ -147,7 +147,7 @@ export function buildServer(
   );
   register(
     "update_document",
-    "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch.",
+    "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true for the whole document or fields:[...] for specific paths.",
     UpdateDocumentShape,
     runUpdateDocument,
   );
@@ -159,7 +159,7 @@ export function buildServer(
   );
   register(
     "duplicate_document",
-    "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure.",
+    "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     DuplicateDocumentShape,
     runDuplicateDocument,
   );
@@ -195,13 +195,13 @@ export function buildServer(
   );
   register(
     "create_embedded",
-    "Create embedded documents (e.g., tokens, items, effects) within a parent. Runs the full reliability pipeline with read-back of the parent.",
+    "Create embedded documents (e.g., tokens, items, effects) within a parent. Runs the full reliability pipeline with read-back of the parent. Echo (the created entries) is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     CreateEmbeddedShape,
     runCreateEmbedded,
   );
   register(
     "update_embedded",
-    "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch.",
+    "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     UpdateEmbeddedShape,
     runUpdateEmbedded,
   );
