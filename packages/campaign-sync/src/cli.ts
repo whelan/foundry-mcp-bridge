@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { resolve, join, dirname } from "node:path";
 import { loadManifest, saveManifest } from "./manifest.js";
 import { DEFAULT_TYPE_MAP } from "./notes.js";
 import { scanRepo } from "./scan.js";
 import { computePlan, planToTable } from "./planner.js";
+import { readWorld } from "./leveldb.js";
+import { buildVault } from "./world-export.js";
 import type { LiveState, Manifest } from "./types.js";
 
 function arg(name: string, fallback?: string): string {
@@ -39,10 +41,44 @@ function cmdRecord(): void {
   process.stderr.write(`recorded ${Object.keys(updates).length} entities → ${manifestPath}\n`);
 }
 
-const cmd = process.argv[2];
-if (cmd === "plan") cmdPlan();
-else if (cmd === "record") cmdRecord();
-else {
-  process.stderr.write("usage: foundry-sync <plan|record> --live <file> [--notes dir] [--manifest path] [--results file]\n");
-  process.exit(1);
+/**
+ * export: read a downloaded Foundry world folder (LevelDB) and write campaign-sync
+ * markdown notes + a foundry-sync.json manifest into an Obsidian vault.
+ */
+async function cmdExport(): Promise<void> {
+  const worldDir = resolve(arg("world"));
+  const outDir = resolve(arg("out"));
+  const manifestPath = resolve(arg("manifest", join(outDir, "foundry-sync.json")));
+  const dump = await readWorld(worldDir);
+  const { files, manifest } = buildVault(dump);
+  for (const f of files) {
+    const full = join(outDir, f.path);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, f.content);
+  }
+  saveManifest(manifestPath, manifest);
+  process.stderr.write(
+    `exported ${files.length} notes + manifest → ${outDir} (world ${manifest.world.id})\n`,
+  );
 }
+
+async function main(): Promise<void> {
+  const cmd = process.argv[2];
+  if (cmd === "plan") cmdPlan();
+  else if (cmd === "record") cmdRecord();
+  else if (cmd === "export") await cmdExport();
+  else {
+    process.stderr.write(
+      "usage: foundry-sync <plan|record|export>\n" +
+        "  plan   --live <file> [--notes dir] [--manifest path]\n" +
+        "  record --results <file> --live <file> [--manifest path]\n" +
+        "  export --world <foundry-world-dir> --out <vault-dir> [--manifest path]\n",
+    );
+    process.exit(1);
+  }
+}
+
+main().catch((e: unknown) => {
+  process.stderr.write(`error: ${(e as Error).message}\n`);
+  process.exit(1);
+});

@@ -28,6 +28,17 @@ export interface ParsedNote {
 
 const FM_RE = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
 
+/**
+ * Inverse of {@link parseNote}: render a note file from front-matter + body. The
+ * output parses back to the same front-matter/body (and hence the same
+ * contentHash), so an export → `foundry-sync plan` shows everything `unchanged`.
+ */
+export function renderNote(frontMatter: Record<string, unknown>, body: string): string {
+  const fm = Object.keys(frontMatter).length ? `---\n${stringifyYaml(frontMatter)}---\n` : "";
+  const b = body === "" || body.endsWith("\n") ? body : body + "\n";
+  return fm + b;
+}
+
 export function parseNote(source: string, raw: string, map: TypeMap): ParsedNote {
   const documentType = classifyType(source, map) ?? "JournalEntry";
   // Normalize CRLF → LF up front so front-matter detection and the content hash
