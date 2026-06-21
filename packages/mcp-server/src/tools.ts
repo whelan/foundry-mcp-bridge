@@ -38,22 +38,31 @@ import {
 
 const documentData = z.record(z.string(), z.unknown());
 
+/**
+ * Optional dot-path projection for a tool's result echo. Mutating tools echo the
+ * written document back; for bulk work (imports) that's the dominant token cost
+ * and callers usually only need a key or two. Pass e.g. ["_id"] or
+ * ["_id","_stats.modifiedTime"] to slim the echo. Omit for the full document.
+ */
+const fieldsParam = z.array(z.string().min(1)).min(1).optional();
+
 // --- create_document --------------------------------------------------------
 
 export const CreateDocumentShape = {
   documentType: DocumentType,
   data: documentData,
   keepId: z.boolean().optional(),
+  fields: fieldsParam,
 };
 const CreateDocument = z.object(CreateDocumentShape);
 export type CreateDocumentArgs = z.infer<typeof CreateDocument>;
 
-export function runCreateDocument(
+export async function runCreateDocument(
   transport: RelayTransport,
   args: CreateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return createDocumentReliable(transport, args, opts);
+  return project(await createDocumentReliable(transport, args, opts), args.fields);
 }
 
 // --- create_scene -----------------------------------------------------------
@@ -69,18 +78,24 @@ export const CreateSceneShape = {
   background: z.string().optional(),
   backgroundColor: z.string().optional(),
   padding: z.number().min(0).optional(),
+  fields: fieldsParam,
 };
 const CreateScene = z.object(CreateSceneShape);
 export type CreateSceneArgs = z.infer<typeof CreateScene>;
 
-export function runCreateScene(
+export async function runCreateScene(
   transport: RelayTransport,
   args: CreateSceneArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   const data = buildScene(args);
   const verifyData = buildSceneVerify(args);
-  return createDocumentReliable(transport, { documentType: "Scene", data, verifyData }, opts);
+  const outcome = await createDocumentReliable(
+    transport,
+    { documentType: "Scene", data, verifyData },
+    opts,
+  );
+  return project(outcome, args.fields);
 }
 
 // --- update_document --------------------------------------------------------
@@ -89,16 +104,17 @@ export const UpdateDocumentShape = {
   documentType: DocumentType,
   id: z.string().min(1),
   data: documentData,
+  fields: fieldsParam,
 };
 const UpdateDocument = z.object(UpdateDocumentShape);
 export type UpdateDocumentArgs = z.infer<typeof UpdateDocument>;
 
-export function runUpdateDocument(
+export async function runUpdateDocument(
   transport: RelayTransport,
   args: UpdateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return updateDocumentReliable(transport, args, opts);
+  return project(await updateDocumentReliable(transport, args, opts), args.fields);
 }
 
 // --- delete_document --------------------------------------------------------
@@ -124,16 +140,17 @@ export const DuplicateDocumentShape = {
   documentType: DocumentType,
   id: z.string().min(1),
   overrides: documentData.optional(),
+  fields: fieldsParam,
 };
 const DuplicateDocument = z.object(DuplicateDocumentShape);
 export type DuplicateDocumentArgs = z.infer<typeof DuplicateDocument>;
 
-export function runDuplicateDocument(
+export async function runDuplicateDocument(
   transport: RelayTransport,
   args: DuplicateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return duplicateDocumentReliable(transport, args, opts);
+  return project(await duplicateDocumentReliable(transport, args, opts), args.fields);
 }
 
 // --- find_documents ---------------------------------------------------------
@@ -164,14 +181,22 @@ export async function runFindDocuments(
     "find",
     opts,
   );
-  if (!outcome.ok || !args.fields) return outcome;
-  // Project server-side so only the requested fields ever reach the model's
-  // context. The relay already returned the full doc(s); trimming here is what
-  // saves tokens (the wire/Node hop isn't token-billed, the tool result is).
-  return { ...outcome, data: projectResult(outcome.data, args.fields) };
+  return project(outcome, args.fields);
 }
 
-/** Apply a dot-path projection to a find result (single doc or array of docs). */
+/**
+ * Project a successful tool result to only the requested dot-paths, so a large
+ * document echo (a created Scene, an updated Actor) never reaches the model's
+ * context. The relay already returned the full doc(s); trimming here is what saves
+ * tokens (the wire/Node hop isn't token-billed, the tool result is). A no-op when
+ * the outcome failed or no fields were requested (full echo, back-compat).
+ */
+function project(outcome: ToolOutcome, fields?: string[]): ToolOutcome {
+  if (!outcome.ok || !fields) return outcome;
+  return { ...outcome, data: projectResult(outcome.data, fields) };
+}
+
+/** Apply a dot-path projection to a result (single doc or array of docs). */
 function projectResult(data: unknown, fields: string[]): unknown {
   if (Array.isArray(data)) return data.map((d) => projectDoc(d, fields));
   return projectDoc(data, fields);
@@ -271,16 +296,17 @@ export const CreateEmbeddedShape = {
   parentId: z.string().min(1),
   embeddedName: z.string().min(1),
   data: z.array(documentData).min(1),
+  fields: fieldsParam,
 };
 const CreateEmbedded = z.object(CreateEmbeddedShape);
 export type CreateEmbeddedArgs = z.infer<typeof CreateEmbedded>;
 
-export function runCreateEmbedded(
+export async function runCreateEmbedded(
   transport: RelayTransport,
   args: CreateEmbeddedArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return createEmbeddedReliable(transport, args, opts);
+  return project(await createEmbeddedReliable(transport, args, opts), args.fields);
 }
 
 // --- update_embedded --------------------------------------------------------
@@ -290,16 +316,17 @@ export const UpdateEmbeddedShape = {
   parentId: z.string().min(1),
   embeddedName: z.string().min(1),
   data: z.array(documentData.and(z.object({ _id: z.string().min(1) }))).min(1),
+  fields: fieldsParam,
 };
 const UpdateEmbedded = z.object(UpdateEmbeddedShape);
 export type UpdateEmbeddedArgs = z.infer<typeof UpdateEmbedded>;
 
-export function runUpdateEmbedded(
+export async function runUpdateEmbedded(
   transport: RelayTransport,
   args: UpdateEmbeddedArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return updateEmbeddedReliable(transport, args, opts);
+  return project(await updateEmbeddedReliable(transport, args, opts), args.fields);
 }
 
 // --- delete_embedded --------------------------------------------------------

@@ -120,6 +120,21 @@ describe("create_document pipeline", () => {
     expect(mock.documents("Actor").length).toBe(1);
   });
 
+  it("projects the write echo to fields, dropping the full document", async () => {
+    const { transport } = setup();
+    const out = await runCreateDocument(transport, {
+      documentType: "Actor",
+      data: { name: "Bob", type: "npc", system: { big: "payload".repeat(50) } },
+      fields: ["_id"],
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      // Only _id comes back — the bulky system payload never reaches the model.
+      expect(Object.keys(out.data as object)).toEqual(["_id"]);
+      expect(JSON.stringify(out.data)).not.toContain("payload");
+    }
+  });
+
   it("preserves an explicit _id when keepId is set", async () => {
     const { mock, transport } = setup();
     const out = await runCreateDocument(transport, {

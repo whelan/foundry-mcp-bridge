@@ -183,6 +183,13 @@ Beyond create/update, these round out world-building:
   English. Don't translate unless asked.
 - Read each tool result's `ok`/`steps`; on a non-`ok` result surface `error.code`
   (`NOT_FOUND`, `VALIDATION`, `READBACK_MISMATCH`, `AUTH`, `TIMEOUT`, `UNSUPPORTED`) — don't blindly retry.
+- **Token discipline (bulk imports).** Pass `fields: ["_id"]` on every
+  `create_document` / `create_scene` / `update_document` / `create_embedded` so the
+  tool echoes back only the id you need, not the whole written document. The
+  read-back still verifies the full document server-side; `ok` + the returned `_id`
+  is all you need to write back to front-matter. Without `fields`, each create
+  returns the entire document (a Scene with walls/lights/tokens, an Actor's full
+  system data) into context — that is the dominant cost of a large import.
 - If `mcp__foundry__*` tools are absent the world isn't reachable: tell the user to
   start Foundry (GM logged in, `foundry-mcp-bridge` module enabled, matching relay
   URL/token). Don't fall back to the LevelDB scripts on your own.
