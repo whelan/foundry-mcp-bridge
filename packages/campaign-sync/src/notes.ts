@@ -18,6 +18,13 @@ export function classifyType(source: string, map: TypeMap): EntityType | undefin
   return map.find((m) => source.startsWith(m.prefix))?.type;
 }
 
+/** The directory (no trailing slash) an entity type lives in — inverse of classifyType. */
+export function exportDir(type: EntityType, map: TypeMap = DEFAULT_TYPE_MAP): string {
+  const entry = map.find((m) => m.type === type);
+  if (!entry) throw new Error(`no export directory mapped for type ${type}`);
+  return entry.prefix.replace(/\/+$/, "");
+}
+
 export interface ParsedNote {
   source: string;
   documentType: EntityType;
@@ -27,6 +34,17 @@ export interface ParsedNote {
 }
 
 const FM_RE = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+
+/**
+ * Inverse of {@link parseNote}: render a note file from front-matter + body. The
+ * output parses back to the same front-matter/body (and hence the same
+ * contentHash), so an export → `foundry-sync plan` shows everything `unchanged`.
+ */
+export function renderNote(frontMatter: Record<string, unknown>, body: string): string {
+  const fm = Object.keys(frontMatter).length ? `---\n${stringifyYaml(frontMatter)}---\n` : "";
+  const b = body === "" || body.endsWith("\n") ? body : body + "\n";
+  return fm + b;
+}
 
 export function parseNote(source: string, raw: string, map: TypeMap): ParsedNote {
   const documentType = classifyType(source, map) ?? "JournalEntry";
