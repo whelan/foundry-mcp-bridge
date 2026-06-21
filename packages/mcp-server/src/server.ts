@@ -135,13 +135,13 @@ export function buildServer(
 
   register(
     "create_document",
-    "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch). Pass fields (e.g. [\"_id\"]) to slim the echoed result — recommended for bulk imports so the full created document isn't returned into context.",
+    "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch). The echoed result is slim by default (_id, name, _stats.modifiedTime) to save context — read-back still verifies the whole document server-side; pass full:true for the entire document, or fields:[...] for specific dot-paths.",
     CreateDocumentShape,
     runCreateDocument,
   );
   register(
     "create_scene",
-    "Create a V14 Scene from high-level parameters (built with the shared scene builders), then run the reliability pipeline. Pass fields (e.g. [\"_id\"]) to slim the echo — a full Scene (walls/lights/tokens) is large.",
+    "Create a V14 Scene from high-level parameters (built with the shared scene builders), then run the reliability pipeline. The echo is slim by default (a full Scene with walls/lights/tokens is large); pass full:true for the whole Scene, or fields:[...] for specific paths.",
     CreateSceneShape,
     runCreateScene,
   );

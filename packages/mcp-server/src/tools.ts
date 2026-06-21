@@ -39,12 +39,25 @@ import {
 const documentData = z.record(z.string(), z.unknown());
 
 /**
- * Optional dot-path projection for a tool's result echo. Mutating tools echo the
- * written document back; for bulk work (imports) that's the dominant token cost
- * and callers usually only need a key or two. Pass e.g. ["_id"] or
- * ["_id","_stats.modifiedTime"] to slim the echo. Omit for the full document.
+ * Optional dot-path projection for a tool's result. Pass e.g. ["_id"] or
+ * ["_id","_stats.modifiedTime"] to return only those paths. On reads (find), omit
+ * for the full document. On mutations the echo is slim by default (see below);
+ * `fields` overrides which paths the slim echo carries.
  */
 const fieldsParam = z.array(z.string().min(1)).min(1).optional();
+
+/** On a mutation, return the whole written document instead of the slim echo. */
+const fullParam = z.boolean().optional();
+
+/**
+ * Default slim echo for mutating tools: a created/updated document is echoed back,
+ * but the caller already has the data it sent and only needs the id (and, for the
+ * sync, the new modifiedTime). Returning the whole document — a Scene with
+ * walls/lights/tokens, an Actor's full system block — is the dominant token cost of
+ * a bulk import, so mutations default to these keys. Pass full:true for everything,
+ * or fields:[...] for a specific set. (Missing keys are simply dropped.)
+ */
+const DEFAULT_ECHO_FIELDS = ["_id", "name", "_stats.modifiedTime"];
 
 // --- create_document --------------------------------------------------------
 
@@ -53,6 +66,7 @@ export const CreateDocumentShape = {
   data: documentData,
   keepId: z.boolean().optional(),
   fields: fieldsParam,
+  full: fullParam,
 };
 const CreateDocument = z.object(CreateDocumentShape);
 export type CreateDocumentArgs = z.infer<typeof CreateDocument>;
@@ -62,7 +76,7 @@ export async function runCreateDocument(
   args: CreateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return project(await createDocumentReliable(transport, args, opts), args.fields);
+  return projectEcho(await createDocumentReliable(transport, args, opts), args.fields, args.full);
 }
 
 // --- create_scene -----------------------------------------------------------
@@ -79,6 +93,7 @@ export const CreateSceneShape = {
   backgroundColor: z.string().optional(),
   padding: z.number().min(0).optional(),
   fields: fieldsParam,
+  full: fullParam,
 };
 const CreateScene = z.object(CreateSceneShape);
 export type CreateSceneArgs = z.infer<typeof CreateScene>;
@@ -95,7 +110,7 @@ export async function runCreateScene(
     { documentType: "Scene", data, verifyData },
     opts,
   );
-  return project(outcome, args.fields);
+  return projectEcho(outcome, args.fields, args.full);
 }
 
 // --- update_document --------------------------------------------------------
@@ -105,6 +120,7 @@ export const UpdateDocumentShape = {
   id: z.string().min(1),
   data: documentData,
   fields: fieldsParam,
+  full: fullParam,
 };
 const UpdateDocument = z.object(UpdateDocumentShape);
 export type UpdateDocumentArgs = z.infer<typeof UpdateDocument>;
@@ -114,7 +130,7 @@ export async function runUpdateDocument(
   args: UpdateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return project(await updateDocumentReliable(transport, args, opts), args.fields);
+  return projectEcho(await updateDocumentReliable(transport, args, opts), args.fields, args.full);
 }
 
 // --- delete_document --------------------------------------------------------
@@ -141,6 +157,7 @@ export const DuplicateDocumentShape = {
   id: z.string().min(1),
   overrides: documentData.optional(),
   fields: fieldsParam,
+  full: fullParam,
 };
 const DuplicateDocument = z.object(DuplicateDocumentShape);
 export type DuplicateDocumentArgs = z.infer<typeof DuplicateDocument>;
@@ -150,7 +167,7 @@ export async function runDuplicateDocument(
   args: DuplicateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return project(await duplicateDocumentReliable(transport, args, opts), args.fields);
+  return projectEcho(await duplicateDocumentReliable(transport, args, opts), args.fields, args.full);
 }
 
 // --- find_documents ---------------------------------------------------------
@@ -185,15 +202,25 @@ export async function runFindDocuments(
 }
 
 /**
- * Project a successful tool result to only the requested dot-paths, so a large
- * document echo (a created Scene, an updated Actor) never reaches the model's
- * context. The relay already returned the full doc(s); trimming here is what saves
- * tokens (the wire/Node hop isn't token-billed, the tool result is). A no-op when
- * the outcome failed or no fields were requested (full echo, back-compat).
+ * Read projection (find): opt-in. Returns the full result unless `fields` is given.
+ * Trimming happens server-side so only the requested paths reach the model's
+ * context — the relay already returned the full doc(s) (the wire/Node hop isn't
+ * token-billed, the tool result is).
  */
 function project(outcome: ToolOutcome, fields?: string[]): ToolOutcome {
   if (!outcome.ok || !fields) return outcome;
   return { ...outcome, data: projectResult(outcome.data, fields) };
+}
+
+/**
+ * Mutation echo projection: slim by DEFAULT (DEFAULT_ECHO_FIELDS). `full:true`
+ * returns the whole written document; `fields` overrides the slim key set. The
+ * read-back verification is unaffected — it uses the server-side re-read, not this
+ * echo — so correctness/rollback are intact regardless of what's echoed.
+ */
+function projectEcho(outcome: ToolOutcome, fields?: string[], full?: boolean): ToolOutcome {
+  if (!outcome.ok || full) return outcome;
+  return { ...outcome, data: projectResult(outcome.data, fields ?? DEFAULT_ECHO_FIELDS) };
 }
 
 /** Apply a dot-path projection to a result (single doc or array of docs). */
@@ -297,6 +324,7 @@ export const CreateEmbeddedShape = {
   embeddedName: z.string().min(1),
   data: z.array(documentData).min(1),
   fields: fieldsParam,
+  full: fullParam,
 };
 const CreateEmbedded = z.object(CreateEmbeddedShape);
 export type CreateEmbeddedArgs = z.infer<typeof CreateEmbedded>;
@@ -306,7 +334,7 @@ export async function runCreateEmbedded(
   args: CreateEmbeddedArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return project(await createEmbeddedReliable(transport, args, opts), args.fields);
+  return projectEcho(await createEmbeddedReliable(transport, args, opts), args.fields, args.full);
 }
 
 // --- update_embedded --------------------------------------------------------
@@ -317,6 +345,7 @@ export const UpdateEmbeddedShape = {
   embeddedName: z.string().min(1),
   data: z.array(documentData.and(z.object({ _id: z.string().min(1) }))).min(1),
   fields: fieldsParam,
+  full: fullParam,
 };
 const UpdateEmbedded = z.object(UpdateEmbeddedShape);
 export type UpdateEmbeddedArgs = z.infer<typeof UpdateEmbedded>;
@@ -326,7 +355,7 @@ export async function runUpdateEmbedded(
   args: UpdateEmbeddedArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return project(await updateEmbeddedReliable(transport, args, opts), args.fields);
+  return projectEcho(await updateEmbeddedReliable(transport, args, opts), args.fields, args.full);
 }
 
 // --- delete_embedded --------------------------------------------------------

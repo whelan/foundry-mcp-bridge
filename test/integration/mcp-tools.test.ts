@@ -120,19 +120,39 @@ describe("create_document pipeline", () => {
     expect(mock.documents("Actor").length).toBe(1);
   });
 
-  it("projects the write echo to fields, dropping the full document", async () => {
+  it("slims the write echo by default (no full document in context)", async () => {
     const { transport } = setup();
     const out = await runCreateDocument(transport, {
       documentType: "Actor",
       data: { name: "Bob", type: "npc", system: { big: "payload".repeat(50) } },
-      fields: ["_id"],
     });
     expect(out.ok).toBe(true);
     if (out.ok) {
-      // Only _id comes back — the bulky system payload never reaches the model.
-      expect(Object.keys(out.data as object)).toEqual(["_id"]);
+      // Default echo carries id/name only; the bulky system block is dropped.
+      expect(Object.keys(out.data as object).sort()).toEqual(["_id", "name"]);
       expect(JSON.stringify(out.data)).not.toContain("payload");
     }
+  });
+
+  it("honours an explicit fields list on the write echo", async () => {
+    const { transport } = setup();
+    const out = await runCreateDocument(transport, {
+      documentType: "Actor",
+      data: { name: "Bob", type: "npc" },
+      fields: ["_id"],
+    });
+    expect(out.ok && Object.keys(out.data as object)).toEqual(["_id"]);
+  });
+
+  it("returns the whole document when full=true (opt-out)", async () => {
+    const { transport } = setup();
+    const out = await runCreateDocument(transport, {
+      documentType: "Actor",
+      data: { name: "Bob", type: "npc", system: { big: "payload" } },
+      full: true,
+    });
+    expect(out.ok).toBe(true);
+    if (out.ok) expect((out.data as { system: unknown }).system).toEqual({ big: "payload" });
   });
 
   it("preserves an explicit _id when keepId is set", async () => {
