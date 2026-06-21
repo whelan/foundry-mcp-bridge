@@ -28,12 +28,18 @@ npm i classic-level   # in the bridge repo (it's an optionalDependency)
 node <bridge>/packages/campaign-sync/dist/cli.js export \
   --world /path/to/foundrydata/Data/worlds/curse-of-strahd \
   --out   /path/to/your-obsidian-vault \
-  [--manifest /path/to/your-obsidian-vault/foundry-sync.json]
+  [--manifest /path/to/your-obsidian-vault/foundry-sync.json] [--force]
 ```
 
 `--world` points at a world folder (the one containing `world.json` and a `data/`
 directory of LevelDB stores). The world must **not** be open in Foundry while you
 read it (LevelDB takes an exclusive lock).
+
+**Re-exporting:** if the vault already has notes under `generated/{journals,npcs,
+scenes,quests}`, export refuses (so it never mixes a fresh world with stale notes
+that would plan as spurious creates). Re-run with `--force` to clear those four
+exporter-owned directories first — this deletes generated notes no longer in the
+world but leaves the rest of your vault untouched.
 
 ## Notes
 

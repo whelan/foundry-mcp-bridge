@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseNote, classifyType, DEFAULT_TYPE_MAP, MANAGED_KEYS } from "./notes.js";
+import { parseNote, renderNote, classifyType, DEFAULT_TYPE_MAP, MANAGED_KEYS } from "./notes.js";
 
 const note = `---
 id: ""
@@ -34,6 +34,22 @@ describe("notes", () => {
     expect(crlf.frontMatter).toEqual(lf.frontMatter);
     expect(crlf.body).toBe(lf.body);
     expect(crlf.contentHash).toBe(lf.contentHash);
+  });
+
+  it("renderNote round-trips through parseNote (front-matter, body, hash)", () => {
+    const frontMatter = { id: "A1", name: "Strahd", cr: 15, tags: ["villain", "vampire"] };
+    const body = "Lord of **Barovia**.\n\n## Lair\n\nCastle Ravenloft.";
+    const rendered = renderNote(frontMatter, body);
+    const a = parseNote("generated/npcs/strahd.md", rendered, DEFAULT_TYPE_MAP);
+    expect(a.frontMatter).toEqual(frontMatter);
+    expect(a.body.trim()).toBe(body);
+    // Re-rendering and re-parsing is stable (no formatting drift in the hash).
+    const b = parseNote("generated/npcs/strahd.md", renderNote(a.frontMatter, a.body), DEFAULT_TYPE_MAP);
+    expect(b.contentHash).toBe(a.contentHash);
+  });
+
+  it("renderNote omits the front-matter block when there is none", () => {
+    expect(renderNote({}, "just body\n")).toBe("just body\n");
   });
 
   it("contentHash excludes managed (progress) keys", () => {

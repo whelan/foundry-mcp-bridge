@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, existsSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { loadManifest, saveManifest } from "./manifest.js";
 import { DEFAULT_TYPE_MAP } from "./notes.js";
@@ -49,6 +49,22 @@ async function cmdExport(): Promise<void> {
   const worldDir = resolve(arg("world"));
   const outDir = resolve(arg("out"));
   const manifestPath = resolve(arg("manifest", join(outDir, "foundry-sync.json")));
+  // Stale-note guard: a re-export into an existing vault must not leave obsolete
+  // generated/* notes behind (they'd plan as spurious creates). Refuse unless
+  // --force, which first clears the four exporter-owned directories.
+  const force = process.argv.includes("--force");
+  const managedDirs = DEFAULT_TYPE_MAP.map((m) => m.prefix.replace(/\/$/, ""));
+  const dirty = managedDirs.filter((d) => containsMarkdown(join(outDir, d)));
+  if (dirty.length && !force) {
+    throw new Error(
+      `vault already has exported notes in ${dirty.join(", ")} — re-run with --force to replace ` +
+        "the generated/* notes (otherwise stale files plan as spurious creates).",
+    );
+  }
+  if (force) {
+    for (const d of managedDirs) rmSync(join(outDir, d), { recursive: true, force: true });
+  }
+
   const dump = await readWorld(worldDir);
   const { files, manifest } = buildVault(dump);
   for (const f of files) {
@@ -65,6 +81,19 @@ async function cmdExport(): Promise<void> {
   );
 }
 
+/** True when `dir` (recursively) holds any markdown note. */
+function containsMarkdown(dir: string): boolean {
+  if (!existsSync(dir)) return false;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (containsMarkdown(join(dir, entry.name))) return true;
+    } else if (entry.name.endsWith(".md")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (cmd === "plan") cmdPlan();
@@ -75,13 +104,14 @@ async function main(): Promise<void> {
       "usage: foundry-sync <plan|record|export>\n" +
         "  plan   --live <file> [--notes dir] [--manifest path]\n" +
         "  record --results <file> --live <file> [--manifest path]\n" +
-        "  export --world <foundry-world-dir> --out <vault-dir> [--manifest path]\n",
+        "  export --world <foundry-world-dir> --out <vault-dir> [--manifest path] [--force]\n",
     );
     process.exit(1);
   }
 }
 
 main().catch((e: unknown) => {
-  process.stderr.write(`error: ${(e as Error).message}\n`);
+  const message = e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
+  process.stderr.write(`error: ${message}\n`);
   process.exit(1);
 });

@@ -47,4 +47,20 @@ describe("fql", () => {
       { name: "Leave the village", completed: false },
     ]);
   });
+
+  it("preserves a failed task flag (only when set)", () => {
+    const q = {
+      status: "active",
+      tasks: [
+        { name: "Cross the mists", completed: false, failed: true },
+        { name: "Find the gate", completed: false, failed: false },
+      ],
+      dateStart: null,
+      dateEnd: null,
+    };
+    expect(renderProgressFrontMatter(q).tasks).toEqual([
+      { name: "Cross the mists", completed: false, failed: true },
+      { name: "Find the gate", completed: false },
+    ]);
+  });
 });

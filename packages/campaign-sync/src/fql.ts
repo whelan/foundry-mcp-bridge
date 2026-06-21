@@ -42,6 +42,8 @@ export function questProgressHash(q: QuestState): string {
 export function renderProgressFrontMatter(q: QuestState): Record<string, unknown> {
   return {
     status: q.status,
-    tasks: q.tasks.map((t) => ({ name: t.name, completed: t.completed })),
+    // Keep `failed` only when set, so a failed task stays distinguishable from an
+    // incomplete one without cluttering the common case.
+    tasks: q.tasks.map((t) => ({ name: t.name, completed: t.completed, ...(t.failed ? { failed: true } : {}) })),
   };
 }
