@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { expandObject, isSafePath, applyUpdate } from "./objects.js";
+import { expandObject, isSafePath, applyUpdate, filterUnsafePaths } from "./objects.js";
 
 describe("expandObject", () => {
   it("expands dot-paths into nested objects", () => {
@@ -28,6 +28,21 @@ describe("isSafePath", () => {
     expect(isSafePath("__proto__.x")).toBe(false);
     expect(isSafePath("a.constructor")).toBe(false);
     expect(isSafePath("a.prototype.b")).toBe(false);
+  });
+
+  it("rejects empty segments", () => {
+    expect(isSafePath("a..b")).toBe(false);
+    expect(isSafePath(".x")).toBe(false);
+    expect(isSafePath("x.")).toBe(false);
+    expect(isSafePath("")).toBe(false);
+  });
+});
+
+describe("filterUnsafePaths", () => {
+  it("keeps safe keys and drops prototype-chain / malformed ones", () => {
+    expect(
+      filterUnsafePaths({ "system.hp": 5, name: "x", "__proto__.bad": 1, "a..b": 2 }),
+    ).toEqual({ "system.hp": 5, name: "x" });
   });
 });
 

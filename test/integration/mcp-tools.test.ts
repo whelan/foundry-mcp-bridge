@@ -235,6 +235,25 @@ describe("update_document pipeline", () => {
     });
     expectErr(out, "NOT_FOUND");
   });
+
+  it("drops unsafe dot-path keys from the diff before it reaches the runtime", async () => {
+    const { mock, transport } = setup();
+    await seed(mock, {
+      action: "create",
+      documentType: "Actor",
+      data: { _id: "a1", name: "Bob" },
+      keepId: true,
+    });
+    const out = await runUpdateDocument(transport, {
+      documentType: "Actor",
+      id: "a1",
+      data: { name: "Renamed", "__proto__.polluted": "x", "a..b": 1 },
+    });
+    expect(out.ok).toBe(true);
+    const actor = mock.documents("Actor")[0] as { name: string };
+    expect(actor.name).toBe("Renamed"); // safe key applied
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined(); // unsafe key never sent
+  });
 });
 
 describe("find_documents projection", () => {

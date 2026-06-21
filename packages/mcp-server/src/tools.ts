@@ -16,6 +16,7 @@ import {
   getByPath,
   expandObject,
   isSafePath,
+  filterUnsafePaths,
 } from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
 import {
@@ -131,7 +132,11 @@ export async function runUpdateDocument(
   args: UpdateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return projectEcho(await updateDocumentReliable(transport, args, opts), args.fields, args.full);
+  // Drop unsafe dot-path keys from the outgoing diff so the live runtime never
+  // receives a prototype-pollution path (and stays consistent with the mock,
+  // whose applyUpdate already drops them via expandObject).
+  const safe = { ...args, data: filterUnsafePaths(args.data) };
+  return projectEcho(await updateDocumentReliable(transport, safe, opts), args.fields, args.full);
 }
 
 // --- delete_document --------------------------------------------------------
@@ -168,7 +173,9 @@ export async function runDuplicateDocument(
   args: DuplicateDocumentArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  return projectEcho(await duplicateDocumentReliable(transport, args, opts), args.fields, args.full);
+  // overrides are Foundry dot-notation; drop unsafe keys before they reach the runtime.
+  const safe = { ...args, overrides: args.overrides ? filterUnsafePaths(args.overrides) : args.overrides };
+  return projectEcho(await duplicateDocumentReliable(transport, safe, opts), args.fields, args.full);
 }
 
 // --- find_documents ---------------------------------------------------------

@@ -32,9 +32,22 @@ export function deepMerge<T extends Json>(base: T, override?: Json): T {
  */
 const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
-/** True when no segment of a dot-path can escape to the prototype chain. */
+/**
+ * True when a dot-path is a well-formed, safe key path: no segment escapes to the
+ * prototype chain, and no segment is empty (e.g. "a..b" or ".x" would create an
+ * empty-string key — almost certainly invalid input).
+ */
 export function isSafePath(path: string): boolean {
-  return path.split(".").every((seg) => !UNSAFE_KEYS.has(seg));
+  return path.split(".").every((seg) => seg !== "" && !UNSAFE_KEYS.has(seg));
+}
+
+/** Drop top-level keys whose dot-path is unsafe (prototype-chain or malformed). */
+export function filterUnsafePaths(record: Json): Json {
+  const out: Json = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (isSafePath(key)) out[key] = value;
+  }
+  return out;
 }
 
 /** Foundry expandObject: {"a.b": 1} -> {a:{b:1}}. Paths touching prototype keys are skipped. */
