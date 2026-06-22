@@ -41,6 +41,41 @@ To produce the browser-loadable Foundry module bundle:
 npm run bundle:module   # -> packages/foundry-module/dist/index.js (self-contained)
 ```
 
+## Local image generation (optional)
+
+Generate art with a **local** diffusion model and push it into your world. The
+upload path (`upload_asset` MCP tool) already exists; this adds the generator.
+
+Turnkey on macOS. Two backends, same everyday command (`make-image.sh`):
+
+```bash
+# CPU path (any Mac) — diffusers + 1-step sd-turbo:
+./scripts/setup-local-image-gen.sh
+
+# stable-diffusion.cpp path (DreamShaper 8 / SD 1.5) — Metal if usable, else CPU:
+./scripts/setup-sdcpp-metal.sh        # add SD_NO_METAL=1 on discrete AMD GPUs
+
+# FLUX.1-schnell on CPU (12B model — high quality, slow, ~10 GB, ~16 GB RAM):
+./scripts/setup-flux-cpu.sh
+
+# then, with either:
+./scripts/make-image.sh "a red dragon" /tmp/dragon.png   # generate any time
+```
+
+Both write `local-image-gen.env`; run whichever setup matches your hardware
+(re-run the other to switch). On an Intel Mac the GPU path *can* be faster, but
+**ggml's Metal kernels are tuned for Apple Silicon**: on a discrete AMD Radeon
+Pro (e.g. Vega 20) sampling is often far slower than CPU and the VAE decode can
+hit the macOS GPU watchdog, producing a blank/white image. If that happens, use
+the CPU build (`SD_NO_METAL=1 ./scripts/setup-sdcpp-metal.sh`) or the sd-turbo
+CPU path. PyTorch's MPS backend is likewise unreliable on Intel+AMD.
+
+`make-image.sh` writes the image plus a base64 sidecar; the
+`generate-and-upload-image` skill then uploads it and sets it as an actor
+portrait, token, scene background, or journal image. For other backends (an
+Automatic1111/SD-Forge WebUI, or any image CLI) point `IMAGE_GEN_CMD` /
+`SD_WEBUI_URL` at `scripts/gen-image.mjs` directly — see the skill.
+
 ## Configuration
 
 The MCP server reads config in exactly one place (`packages/mcp-server/src/config.ts`):

@@ -10,6 +10,14 @@ coverage/
 dev.config.json
 !dev.config.example.json
 
+# Local image generation (scripts/setup-local-image-gen.sh / setup-sdcpp-metal.sh)
+.venv-image/
+.sdcpp/
+models/
+generated-images/
+local-image-gen.env
+*.b64
+
 # Editor / OS
 .DS_Store
 .idea/
