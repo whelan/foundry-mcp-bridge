@@ -60,7 +60,9 @@ The tier used per action is recorded in the actor's flags so a later re-sync
 Strategy: **vendor a curated fixture set** (~10 actors covering the axes:
 goblin = simple humanoid, ogre = brute, mage = spellcaster, adult red dragon =
 legendary actions + breath save + `system.resources.legact`, swarm, celestial
-with innate spellcasting) into `test/fixtures/dnd5e-srd/`, with a
+with innate spellcasting) into `test/fixtures/dnd5e-srd/` — drawn primarily
+from `actors24` (2024 is the default rules version, §3) with 2014
+counterparts from `monsters` for the legacy grammar path — with a
 `scripts/refresh-dnd5e-fixtures.ts` that re-pulls them from a dnd5e checkout.
 License is CC-BY-4.0 — include the attribution notice in the fixture dir.
 
@@ -110,10 +112,15 @@ statblock prose per activity. Where dnd5e's own description text exists
 (official items embed `[[/attack]]`/`[[/damage]]` enrichers), render from the
 activity data, not the enricher string, so output is uniform.
 
-**2014 vs 2024:** Fantasy Statblocks' layout uses 2014 grammar ("Melee Weapon
-Attack:") while 2024 uses "Melee Attack Roll:". Config flag
-`rulesVersion: "2014" | "2024"` selects the grammar and the compendium pair
-(`monsters`/`monsterfeatures` vs `actors24`/`monsterfeatures24`); default 2014.
+**2014 vs 2024:** 2014 statblocks use "Melee Weapon Attack: +4 to hit…" while
+2024 uses "Melee Attack Roll: +7, reach 5 ft. Hit: …" (verified in
+`actors24`). Config flag `rulesVersion: "2024" | "2014"` selects which grammar
+the renderer emits and which compendium pair Tier 1/2 searches first
+(`actors24`/`equipment24` vs `monsters`/`monsterfeatures`/`items`);
+**default 2024**. The parser accepts both grammars regardless of the flag, so
+pasted 2014-style homebrew still converts under the 2024 default. One caveat:
+`monsterfeatures24` is nearly empty (4 items at HEAD), so 2024 Tier 2 item
+matching falls back to the 2014 `monsterfeatures` pack on name match.
 
 ## 4. New protocol commands (via the `add-foundry-command` lockstep)
 
