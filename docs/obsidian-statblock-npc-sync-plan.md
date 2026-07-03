@@ -19,8 +19,8 @@ A Fantasy Statblocks block is **presentational** — actions are prose:
 ```yaml
 actions:
   - name: Scimitar
-    desc: "Melee Weapon Attack: +4 to hit, reach 5 ft., one target.
-           Hit: 5 (1d6 + 2) slashing damage."
+    desc: "Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Slashing
+           damage."
 ```
 
 A modern dnd5e NPC (dnd5e 4.x+, verified against `foundryvtt/dnd5e` HEAD,
@@ -30,8 +30,12 @@ resources) plus **embedded items** (`weapon` / `feat` / `equipment` / `spell`),
 and each item carries `system.activities` — typed activity objects
 (`attack`, `damage`, `save`, `utility`) with structured attack ability,
 damage parts, range, activation. That is what makes the sheet roll like an
-official monster (see the Scimitar item with its `attack` activity in
-`packs/_source/monsters/humanoid/goblin.yml` of the dnd5e repo).
+official monster (see the weapon items with their `attack` activities in
+`packs/_source/actors24/fey/goblin-warrior.yml` of the dnd5e repo — note 2024
+also reclassified the goblin's creature type from `humanoid` to `fey`,
+alongside splitting it into warrior/boss/minion variants; the item/activity
+structure itself is the same as the 2014 `packs/_source/monsters/humanoid/
+goblin.yml`, just with 2024 grammar in the description text).
 
 A naive text→field converter can never synthesize official-quality items
 reliably. So conversion to Foundry is **tiered**, preferring official data at
@@ -40,7 +44,7 @@ every level:
 | Tier | When | How | Fidelity |
 |------|------|-----|----------|
 | 1. Actor match | Statblock is an SRD/compendium monster (by name, or an explicit `foundryUuid`/`source` key) | Clone the official actor from the world's compendia (`dnd5e.monsters` 2014 / `dnd5e.actors24` 2024, plus any premium modules the user owns), then patch statblock deltas on top | Perfect |
-| 2. Item match | Homebrew monster, but individual traits/actions have official names ("Nimble Escape", "Pack Tactics", "Scimitar") | Clone matching items from `dnd5e.monsterfeatures` (252 entries) / `dnd5e.items` compendia; patch numbers (attack bonus, DC, damage) parsed from the desc text | Near-perfect |
+| 2. Item match | Homebrew monster, but individual traits/actions have official names ("Nimble Escape", "Pack Tactics", "Scimitar") | Clone matching items from `dnd5e.monsterfeatures24` (391 entries) / `dnd5e.equipment24` compendia, falling back to the 2014 `dnd5e.monsterfeatures` (252) / `dnd5e.items` on miss; patch numbers (attack bonus, DC, damage) parsed from the desc text | Near-perfect |
 | 3. Synthesis | Fully custom action text | Parse the rigid 5e statblock grammar (`Melee Weapon Attack: +X to hit, reach Y ft.` / `Hit: N (XdY+Z) <type> damage` / `DC X <Ability> saving throw`) and synthesize a weapon/feat item with real activities | Rolls correctly |
 | 4. Fallback | Unparseable text | `feat` item with description only, flagged `flags.foundry-mcp-bridge.needsReview: true` | Displays; doesn't roll |
 
@@ -51,11 +55,15 @@ The tier used per action is recorded in the actor's flags so a later re-sync
 
 `foundryvtt/dnd5e` ships every SRD monster as source YAML:
 
-- `packs/_source/monsters/**` — 2014 SRD actors (334 files, full actor JSON
-  incl. embedded items + activities, `_key: '!actors!<id>'`)
-- `packs/_source/actors24/**` — 2024 SRD actors
-- `packs/_source/monsterfeatures/**` — 252 reusable trait/action items
-- `packs/_source/spells/**`, `items/**` — for spellcasters and weapons
+- `packs/_source/actors24/**` — 2024 SRD actors (380 files, full actor JSON
+  incl. embedded items + activities, `_key: '!actors!<id>'`) — primary source
+- `packs/_source/monsters/**` — 2014 SRD actors (331 files) — legacy/fallback
+- `packs/_source/monsterfeatures24/**` — 391 reusable trait/action items —
+  primary source
+- `packs/_source/monsterfeatures/**` — 252 reusable trait/action items —
+  legacy/fallback
+- `packs/_source/spells24/**`, `equipment24/**` (falling back to `spells/**`,
+  `items/**`) — for spellcasters and weapons
 
 Strategy: **vendor a curated fixture set** (~10 actors covering the axes:
 goblin = simple humanoid, ogre = brute, mage = spellcaster, adult red dragon =
@@ -99,7 +107,7 @@ Fantasy Statblocks' basic 5e layout schema (verified against
 | `senses` | `system.attributes.senses` | "darkvision 60 ft., passive Perception 9" — passive is derived, never stored |
 | `languages` | `system.traits.languages` | |
 | `cr` ("1/4") | `system.details.cr` (0.25) | |
-| `traits` | `feat` items (passive) | Tier 2 match against monsterfeatures first |
+| `traits` | `feat` items (passive) | Tier 2 match against `monsterfeatures24` first, then `monsterfeatures` |
 | `actions`, `bonus_actions`, `reactions` | `weapon`/`feat` items with activities; activation type action/bonus/reaction | |
 | `legendary_actions`, `legendary_description` | `feat` items (activation `legendary`) + `system.resources.legact` | count parsed from description ("can take 3 legendary actions") |
 | `lair_actions`, `regional_effects` | `feat` items (activation `lair`) / description-only feats | |
@@ -118,9 +126,13 @@ activity data, not the enricher string, so output is uniform.
 the renderer emits and which compendium pair Tier 1/2 searches first
 (`actors24`/`equipment24` vs `monsters`/`monsterfeatures`/`items`);
 **default 2024**. The parser accepts both grammars regardless of the flag, so
-pasted 2014-style homebrew still converts under the 2024 default. One caveat:
-`monsterfeatures24` is nearly empty (4 items at HEAD), so 2024 Tier 2 item
-matching falls back to the 2014 `monsterfeatures` pack on name match.
+pasted 2014-style homebrew still converts under the 2024 default. 2024 has
+the richer packs at HEAD (380 `actors24` NPCs / 391 `monsterfeatures24` traits
+vs. 331 `monsters` / 252 `monsterfeatures`), so Tier 1/2 matching against
+2024 compendia is expected to have equal-or-better hit rate than 2014 — no
+2014 fallback needed for coverage. Where a 2024 trait/action has no
+2024-pack counterpart, Tier 2 still checks the 2014 packs as a secondary
+source before falling to Tier 3 synthesis.
 
 ## 4. New protocol commands (via the `add-foundry-command` lockstep)
 
@@ -221,6 +233,14 @@ test → selftest where the live path is touched).
 
 ## 8. Risks & open questions
 
+- **2024 isn't a text-only revision of 2014.** Some monsters were
+  reclassified (Goblin: `humanoid`→`fey`) or split into named variants
+  (Goblin → Goblin Warrior/Boss/Minion in `actors24/fey/`) with no 1:1
+  `monsters`↔`actors24` name match. Tier 1's name-match needs a
+  small curated alias table for known splits/renames (build it once from a
+  diff of the two packs by CR+role), and should present the 2024 variant
+  choice in the confirmation step (§8, premium-content matching) rather than
+  guessing which variant a bare "Goblin" statblock means.
 - **Grammar variance.** Homebrew desc text strays from SRD phrasing; the
   grammar must degrade to Tier 4 (never guess numbers). Recharge ("Recharge
   5–6"), multiattack (no mechanical form — stays a description-only feat,
