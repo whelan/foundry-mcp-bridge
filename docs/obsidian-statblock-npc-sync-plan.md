@@ -147,13 +147,15 @@ entirely today:
    has (SRD packs, premium modules — often better art/data than SRD).
 2. **`importFromCompendium`** — `{ uuid, patch?, folder? }` →
    `fromUuid(uuid)` → `doc.toObject()` → apply dot-notation patch (reuse
-   `shared/objects.ts` `applyUpdate`) → create as world document, return id.
-   Reliability category: standard create (dry-run capability check → write →
-   read-back verify name/type → rollback delete on mismatch).
+   `packages/shared/src/objects.ts` `applyUpdate`) → create as world document,
+   return id. Reliability category: standard create (dry-run capability
+   check → write → read-back verify name/type → rollback delete on
+   mismatch).
 
-Each lands across `shared/protocol.ts` → executor → `FoundryDocumentApi` →
-`foundry-runtime.ts` → `mock-foundry` (give the mock an in-memory compendium
-loaded from the vendored fixtures — this is what makes Tier 1/2 testable in
+Each lands across `packages/shared/src/protocol.ts` → executor →
+`FoundryDocumentApi` → `foundry-runtime.ts` → `mock-foundry` (give the mock an
+in-memory compendium loaded from the vendored fixtures — this is what makes
+Tier 1/2 testable in
 CI) → test doubles → MCP tools (`search_compendium`, `import_from_compendium`).
 
 ## 5. Package layout: `packages/statblock-sync`
