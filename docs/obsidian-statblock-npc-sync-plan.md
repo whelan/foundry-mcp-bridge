@@ -155,8 +155,8 @@ entirely today:
 Each lands across `packages/shared/src/protocol.ts` → executor →
 `FoundryDocumentApi` → `foundry-runtime.ts` → `mock-foundry` (give the mock an
 in-memory compendium loaded from the vendored fixtures — this is what makes
-Tier 1/2 testable in
-CI) → test doubles → MCP tools (`search_compendium`, `import_from_compendium`).
+Tier 1/2 testable in CI) → test doubles → MCP tools (`search_compendium`,
+`import_from_compendium`).
 
 ## 5. Package layout: `packages/statblock-sync`
 
@@ -193,8 +193,8 @@ Tier 1 as a single `import_from_compendium` + patch instead of a raw create.
     `_stats`. Mirrors campaign-sync's existing `MANAGED_KEYS` pattern.
   - *Item identity:* pushed items get
     `flags.foundry-mcp-bridge.statblockKey: "actions/scimitar"` so updates
-    diff item-by-item (update matched, create new, delete de-listed) via the
-    existing `createEmbedded`/`updateEmbedded`/`deleteEmbedded` commands,
+    diff item-by-item (update matched, create new, delete removed items) via
+    the existing `createEmbedded`/`updateEmbedded`/`deleteEmbedded` commands,
     instead of wiping items the GM added by hand.
 - **Change detection:** content hash of the *canonical statblock subset* (not
   raw YAML text), so key reordering or comment edits don't cause spurious
