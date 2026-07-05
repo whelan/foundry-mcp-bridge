@@ -102,7 +102,7 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     const actor = statblockToFoundryActor(statblock);
 
     const system = actor.system as Record<string, any>;
-    expect(system.traits.damageResistances.value).toContain("necrotic");
+    expect(system.traits_.damageResistances.value).toContain("necrotic");
     expect(system.traits.senses).toContain("darkvision");
   });
 

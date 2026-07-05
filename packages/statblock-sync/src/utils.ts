@@ -25,6 +25,29 @@ export const SKILL_TO_ABILITY_MAP: Record<string, string> = {
   survival: "wis",
 };
 
+/** D&D 5e skill name to dnd5e system abbreviation mapping */
+export const SKILL_TO_ABBREVIATION_MAP: Record<string, string> = {
+  acrobatics: "acr",
+  "animal handling": "ani",
+  arcana: "arc",
+  athletics: "ath",
+  deception: "dec",
+  history: "his",
+  insight: "ins",
+  intimidation: "itm",
+  investigation: "inv",
+  medicine: "med",
+  nature: "nat",
+  perception: "prc",
+  performance: "prf",
+  persuasion: "per",
+  religion: "rel",
+  sleight: "slt",
+  "sleight of hand": "slt",
+  stealth: "ste",
+  survival: "sur",
+};
+
 /** Damage types recognized in D&D 5e */
 export const DAMAGE_TYPES_STR =
   "slashing|piercing|bludgeoning|psychic|necrotic|fire|cold|lightning|radiant|acid|poison|thunder|force";

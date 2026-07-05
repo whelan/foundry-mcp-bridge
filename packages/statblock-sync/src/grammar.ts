@@ -60,16 +60,24 @@ export interface ParsedSave {
 
 /**
  * Try to parse an action as a melee weapon attack.
- * Looks for patterns like "Melee Weapon Attack: +5 to hit, reach 5 ft., one target."
+ * Supports both 2014 format ("Melee Weapon Attack: +5 to hit") and 2024 format ("Melee Attack Roll: +5").
  */
 export function parseAttackAction(description: string): ParsedAttack | undefined {
   // Strip markdown formatting (asterisks for italics/bold)
   const normalized = stripMarkdown(description);
 
-  // Look for attack header
-  const attackMatch = normalized.match(
+  // Try 2014 format: "Melee Weapon Attack: +5 to hit"
+  let attackMatch = normalized.match(
     /(?:melee|ranged)?\s*weapon\s*attack:\s*([+-]\d+)\s+to\s+hit/i
   );
+
+  // Try 2024 format: "Melee Attack Roll: +5" or "Ranged Attack Roll: +5"
+  if (!attackMatch || !attackMatch[1]) {
+    attackMatch = normalized.match(
+      /(?:melee|ranged)\s+attack\s+roll:\s*([+-]\d+)/i
+    );
+  }
+
   if (!attackMatch || !attackMatch[1]) return undefined;
 
   const bonus = parseInt(attackMatch[1], 10);
@@ -111,16 +119,27 @@ export function parseAttackAction(description: string): ParsedAttack | undefined
 
 /**
  * Try to parse an action as a saving throw.
- * Looks for patterns like "DC 13 Wisdom saving throw" or "make a DC 13 Intelligence saving throw"
+ * Supports both 2014 format ("make a DC 13 Wisdom saving throw") and 2024 format ("Wisdom Saving Throw: DC 12").
  */
 export function parseSaveAction(description: string): ParsedSave | undefined {
   // Strip markdown formatting
   const normalized = stripMarkdown(description);
 
-  // Look for save header
-  const saveMatch = normalized.match(
+  // Try 2014 format: "make a DC 13 Wisdom saving throw"
+  let saveMatch = normalized.match(
     /(?:must\s+)?make\s+a?\s*dc\s+(\d+)\s+(\w+)\s+saving\s+throw/i
   );
+
+  // Try 2024 format: "Wisdom Saving Throw: DC 12"
+  if (!saveMatch || !saveMatch[1] || !saveMatch[2]) {
+    saveMatch = normalized.match(
+      /(\w+)\s+saving\s+throw:\s*dc\s+(\d+)/i
+    );
+    if (saveMatch && saveMatch[1] && saveMatch[2]) {
+      saveMatch = [saveMatch[0], saveMatch[2], saveMatch[1]];
+    }
+  }
+
   if (!saveMatch || !saveMatch[1] || !saveMatch[2]) return undefined;
 
   const dc = parseInt(saveMatch[1], 10);
@@ -164,14 +183,25 @@ function extractActionName(fullText: string): string {
  */
 function parseDamage(description: string): DamagePart[] {
   const damages: DamagePart[] = [];
+  const seenRanges = new Set<string>(); // Track damage ranges we've already added to avoid duplicates
 
-  // Reset stateful RegExp before use
+  // Pattern for main damage: "N (XdY ± Z) type damage"
   DAMAGE_PATTERN.lastIndex = 0;
   let match;
   while ((match = DAMAGE_PATTERN.exec(description)) !== null) {
     const formula = match[2]; // The "XdY ± Z" part
     const type = match[3];
     if (!formula || !type) continue;
+
+    // Skip if this damage is preceded by "plus" (it will be handled by PLUS_PATTERN)
+    const beforeMatch = description.substring(Math.max(0, match.index - 10), match.index);
+    if (beforeMatch.match(/\bplus\s+\d+\s*\(\s*\w/)) {
+      continue;
+    }
+
+    const damageKey = `${formula}|${type}`;
+    if (seenRanges.has(damageKey)) continue;
+    seenRanges.add(damageKey);
 
     const isAlternative = description.substring(0, match.index).match(/\bor\s+\d+\s*\(/);
 
@@ -182,12 +212,16 @@ function parseDamage(description: string): DamagePart[] {
     });
   }
 
-  // Check for "plus" pattern: "plus N (XdY ± Z) type damage"
+  // Also check for "plus" pattern: "plus N (XdY ± Z) type damage"
   PLUS_PATTERN.lastIndex = 0;
   while ((match = PLUS_PATTERN.exec(description)) !== null) {
     const formula = match[2];
     const type = match[3];
     if (!formula || !type) continue;
+
+    const damageKey = `${formula}|${type}`;
+    if (seenRanges.has(damageKey)) continue;
+    seenRanges.add(damageKey);
 
     damages.push({
       formula,

@@ -160,9 +160,9 @@ function parseSkillsAndSaves(body: string): StatblockData["skills"] {
     const skillText = skillsMatch[1].trim();
     const skillPairs = skillText.split(",").map((s) => s.trim());
     for (const pair of skillPairs) {
-      const match = pair.match(/(\w+(?:\s+\w+)?)\s*([+-]\d+)/);
+      const match = pair.match(/([A-Za-z\s]+?)\s*([+-]\d+)/);
       if (match && match[1] && match[2]) {
-        const skillName = match[1];
+        const skillName = match[1].trim();
         const bonus = parseInt(match[2], 10);
         proficiencies.push({
           skill: skillName,
@@ -220,11 +220,20 @@ function parseChallenge(body: string, crFromFm?: number): StatblockData["challen
   if (typeof crFromFm === "number") {
     crValue = crFromFm;
   } else if (crMatch && crMatch[1]) {
-    crValue = parseFloat(crMatch[1]);
+    const crStr = crMatch[1];
+    if (crStr.includes("/")) {
+      const parts = crStr.split("/").map((s) => parseInt(s, 10));
+      if (parts[0] !== undefined && parts[1] !== undefined) {
+        crValue = parts[0] / parts[1];
+      } else {
+        crValue = parseFloat(crStr);
+      }
+    } else {
+      crValue = parseFloat(crStr);
+    }
   }
 
   // Compute XP from CR using standard D&D 5e table
-  // Index in array corresponds to CR: [0]=CR0(10XP), [1]=CR1/8(25XP), [2]=CR1/4(50XP), [3]=CR1/2(100XP), [4]=CR1(200XP), [5]=CR2(450XP), [6]=CR3(700XP), etc.
   const xpByCr: Record<number, number> = {
     0: 10,
     "0.125": 25,
@@ -250,15 +259,15 @@ function parseChallenge(body: string, crFromFm?: number): StatblockData["challen
     18: 33000,
     19: 41000,
     20: 50000,
-    21: 62000,
-    22: 75000,
-    23: 90000,
-    24: 105000,
-    25: 120000,
-    26: 135000,
-    27: 155000,
-    28: 155000,
-    29: 155000,
+    21: 33000,
+    22: 41000,
+    23: 50000,
+    24: 62000,
+    25: 75000,
+    26: 90000,
+    27: 105000,
+    28: 120000,
+    29: 135000,
     30: 155000,
   };
   const xp: number = xpByCr[crValue] ?? 155000;

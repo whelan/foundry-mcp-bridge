@@ -133,9 +133,9 @@ export const STATBLOCK_FIELD_MAP = {
   savingThrowProficiencies: "system.abilities.*.save",
 
   // Traits and senses
-  damageResistances: "system.traits.damageResistances.value",
-  damageImmunities: "system.traits.damageImmunities.value",
-  conditionImmunities: "system.traits.conditionImmunities.value",
+  damageResistances: "system.traits_.damageResistances.value",
+  damageImmunities: "system.traits_.damageImmunities.value",
+  conditionImmunities: "system.traits_.conditionImmunities.value",
   senses: "system.traits.senses",
 
   // CR and XP

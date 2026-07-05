@@ -7,3 +7,4 @@ export * from "./parse.js";
 export * from "./math.js";
 export * from "./grammar.js";
 export * from "./to-foundry.js";
+export * from "./utils.js";

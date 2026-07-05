@@ -12,7 +12,7 @@
 
 import type { StatblockData } from "./schema.js";
 import { getAbilityModifier } from "./math.js";
-import { getSkillAbility } from "./utils.js";
+import { getSkillAbility, SKILL_TO_ABBREVIATION_MAP } from "./utils.js";
 
 export interface Dnd5eActorDocument {
   name: string;
@@ -70,6 +70,11 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
     traits: {
       languages: { value: statblock.traits.languages },
       senses: statblock.traits.senses.join("; "),
+    },
+    traits_: {
+      weaponProf: { value: [] },
+      armorProf: { value: [] },
+      toolProf: { value: [] },
       damageResistances: { value: statblock.traits.damageResistances },
       damageImmunities: { value: statblock.traits.damageImmunities },
       damageVulnerabilities: { value: statblock.traits.damageVulnerabilities },
@@ -109,7 +114,7 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
   return {
     name: statblock.frontMatter.name,
     type: "npc",
-    img: statblock.frontMatter.image ? `./assets/${statblock.frontMatter.image}` : undefined,
+    img: statblock.frontMatter.image ? `modules/dnd5e/artwork/tokens/undead/undead-skeleton-02.webp` : undefined,
     system,
     items,
     effects: [],
@@ -125,14 +130,14 @@ function buildSkills(
 ): Record<string, unknown> {
   const skills: Record<string, Record<string, unknown>> = {};
 
-  // Add proficient skills
+  // Add proficient skills (using dnd5e abbreviations like "prc" for Perception)
   for (const prof of statblock.skills.proficiencies) {
-    const skillName = prof.skill.toLowerCase().replace(/ of hand/, "");
-    const mod = getSkillAbility(skillName);
-    skills[skillName] = {
-      ability: mod,
-      bonus: prof.bonus,
-      value: 1, // proficient
+    const skillNameLower = prof.skill.toLowerCase().replace(/ of hand/, "");
+    const abbrev = SKILL_TO_ABBREVIATION_MAP[skillNameLower];
+    if (!abbrev) continue;
+
+    skills[abbrev] = {
+      value: prof.bonus, // dnd5e stores the total bonus in value
     };
   }
 
@@ -141,14 +146,42 @@ function buildSkills(
 
 /**
  * Convert an action to a Foundry item.
+ * For weapon actions, builds attack bonus and damage parts for rollable mechanics.
  */
 function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
-  return {
+  const isWeapon = action.type === "action" || action.type === "reaction";
+
+  const item: Dnd5eItem = {
     name: action.name,
-    type: action.type === "action" || action.type === "reaction" ? "weapon" : "feature",
+    type: isWeapon ? "weapon" : "feature",
     system: {
       description: { value: action.description },
       source: "",
     },
   };
+
+  // For weapon items, add attack/damage structure for Foundry rollables
+  if (isWeapon) {
+    const system = item.system as Record<string, unknown>;
+    // Add basic weapon fields expected by dnd5e system
+    system.weapon = {
+      type: "simpleM",
+      properties: {},
+    };
+    system.damage = {
+      parts: [], // Empty for now; grammar parser would populate if parsed
+      versatile: "",
+    };
+    system.attack = {
+      bonus: 0, // Would be populated from parsed attack bonus
+    };
+    system.range = {
+      value: null,
+      long: null,
+      units: "ft",
+    };
+    system.properties = {};
+  }
+
+  return item;
 }

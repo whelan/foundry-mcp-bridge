@@ -75,13 +75,14 @@ function verifyImportedNpc(
     errors.push("Skills not converted to system");
   }
 
-  // Verify resistances
+  // Verify resistances (moved to system.traits_ in dnd5e structure)
   const resistancesMatch = statblock.traits.damageResistances.every((res) =>
-    (system.traits.damageResistances?.value || []).includes(res)
+    ((system.traits_ as Record<string, any>)?.damageResistances?.value || []).includes(res)
   );
   if (!resistancesMatch) {
+    const actual = ((system.traits_ as Record<string, any>)?.damageResistances?.value || []) as string[];
     errors.push(
-      `Resistances mismatch: ${statblock.traits.damageResistances.join(", ")} vs ${(system.traits.damageResistances?.value || []).join(", ")}`
+      `Resistances mismatch: ${statblock.traits.damageResistances.join(", ")} vs ${actual.join(", ")}`
     );
   }
 
