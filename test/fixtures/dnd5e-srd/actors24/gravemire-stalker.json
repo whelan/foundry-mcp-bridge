@@ -1,0 +1,181 @@
+{
+  "id": "gravemire-stalker",
+  "name": "Gravemire Stalker",
+  "type": "Actor",
+  "version": "2024",
+  "source": "homebrew",
+  "data": {
+    "name": "Gravemire Stalker",
+    "type": "npc",
+    "img": "modules/dnd5e/artwork/tokens/undead/undead-skeleton-02.webp",
+    "system": {
+      "attributes": {
+        "ac": {
+          "flat": 15,
+          "calc": "default"
+        },
+        "hp": {
+          "value": 52,
+          "max": 52,
+          "formula": "8d8 + 16"
+        }
+      },
+      "details": {
+        "biography": {
+          "value": ""
+        },
+        "alignment": "chaotic evil",
+        "race": {
+          "value": "undead"
+        },
+        "type": {
+          "value": "undead",
+          "subtype": ""
+        },
+        "size": "med",
+        "cr": 3,
+        "xp": 700
+      },
+      "traits": {
+        "languages": {
+          "value": []
+        },
+        "senses": "darkvision 60 ft."
+      },
+      "abilities": {
+        "str": {
+          "value": 16
+        },
+        "dex": {
+          "value": 14
+        },
+        "con": {
+          "value": 14
+        },
+        "int": {
+          "value": 9
+        },
+        "wis": {
+          "value": 11
+        },
+        "cha": {
+          "value": 8
+        }
+      },
+      "skills": {
+        "prc": {
+          "value": 2
+        },
+        "ste": {
+          "value": 4
+        }
+      },
+      "traits_": {
+        "weaponProf": {
+          "value": []
+        },
+        "armorProf": {
+          "value": []
+        },
+        "toolProf": {
+          "value": []
+        },
+        "damageResistances": {
+          "value": ["necrotic"]
+        },
+        "conditionImmunities": {
+          "value": []
+        }
+      },
+      "customResources": {
+        "legendaryActions": {
+          "value": 0,
+          "max": 0
+        }
+      }
+    },
+    "items": [
+      {
+        "name": "Undead Fortitude",
+        "type": "feature",
+        "system": {
+          "description": {
+            "value": "If damage reduces the stalker to 0 hit points, it must make a Constitution saving throw against a DC equal to the damage taken, unless the damage is radiant or from a critical hit. On a success, the stalker drops to 1 hit point instead."
+          },
+          "source": ""
+        }
+      },
+      {
+        "name": "Passive Trait",
+        "type": "feature",
+        "system": {
+          "description": {
+            "value": "The stalker has advantage on Wisdom (Perception) checks made in dim light or darkness."
+          },
+          "source": ""
+        }
+      },
+      {
+        "name": "Rotting Claw",
+        "type": "weapon",
+        "system": {
+          "description": {
+            "value": "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage plus 3 (1d6) necrotic damage."
+          },
+          "source": "",
+          "type": "meleeM",
+          "damage": {
+            "parts": [
+              ["2d6 + 3", "slashing"],
+              ["1d6", "necrotic"]
+            ]
+          },
+          "attack": {
+            "bonus": "+5"
+          },
+          "range": {
+            "value": 5,
+            "long": null,
+            "units": "ft"
+          }
+        }
+      },
+      {
+        "name": "Wailing Howl",
+        "type": "weapon",
+        "system": {
+          "description": {
+            "value": "The stalker emits a horrifying wail. Each creature within 30 feet that can hear it must make a DC 13 Wisdom saving throw, taking 22 (4d10) psychic damage on a failed save, or half as much on a successful one. Recharge 5-6."
+          },
+          "source": "",
+          "type": "spellcasting",
+          "damage": {
+            "parts": [
+              ["4d10", "psychic"]
+            ]
+          },
+          "range": {
+            "value": 30,
+            "long": null,
+            "units": "ft"
+          },
+          "recharge": {
+            "value": 6,
+            "charged": true
+          }
+        }
+      },
+      {
+        "name": "Multiattack",
+        "type": "feature",
+        "system": {
+          "description": {
+            "value": "The stalker makes two melee attacks."
+          },
+          "source": ""
+        }
+      }
+    ],
+    "effects": []
+  }
+}

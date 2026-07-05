@@ -1,0 +1,19 @@
+{
+  "name": "@foundry-mcp-bridge/statblock-sync",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Convert Obsidian Fantasy Statblocks to dnd5e Foundry NPCs with mechanical fidelity",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./schema": "./dist/schema.js",
+    "./parse": "./dist/parse.js",
+    "./to-foundry": "./dist/to-foundry.js"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": ["foundry", "dnd5e", "statblock", "obsidian"],
+  "author": "",
+  "license": "MIT"
+}
