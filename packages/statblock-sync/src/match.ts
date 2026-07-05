@@ -10,10 +10,8 @@
  * through to the existing Tier 3 synthesis path unchanged.
  */
 
-import type { CompendiumEntry, Json } from "@foundry-mcp-bridge/shared";
+import type { CompendiumEntry } from "@foundry-mcp-bridge/shared";
 import type { StatblockData } from "./schema.js";
-
-export type { CompendiumEntry };
 
 /**
  * `patch` is left unpopulated for now — this Tier 1 is "exact match, clone
@@ -22,7 +20,7 @@ export type { CompendiumEntry };
  * field exists so that later work can attach a computed patch without a
  * breaking change to this shape or to import-npc.ts's call site.
  */
-export type MatchPlan = { tier: 1; uuid: string; patch?: Json } | { tier: 3 };
+export type MatchPlan = { tier: 1; uuid: string; patch?: Record<string, unknown> } | { tier: 3 };
 
 /**
  * Tier 1: an exact (case-insensitive, trimmed) name match against the

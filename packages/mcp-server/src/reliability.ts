@@ -135,6 +135,20 @@ function idOf(data: unknown): string | undefined {
 }
 
 /**
+ * Resolves a clone-shaped mutation's (duplicate, import) read-back `expected`
+ * subset from an optional caller-supplied dot-notation object: expands it to
+ * nested form so `isSubset` compares against the actual nested document
+ * instead of a literal "a.b.c" key (which would never match and always
+ * roll back), or falls back to `nameOrTypeFallback` when the object is
+ * absent *or empty* — e.g. stripped down to `{}` by `filterUnsafePaths` —
+ * since an empty object would otherwise make `isSubset` vacuously pass,
+ * silently disabling the mismatch/rollback safety net.
+ */
+function expectedFromOverrides(overrides: Json | undefined): Json | ((written: unknown) => Json) {
+  return overrides && Object.keys(overrides).length > 0 ? expandObject(overrides) : nameOrTypeFallback;
+}
+
+/**
  * Fallback read-back check for clone-shaped mutations (duplicate, import) that
  * have no caller-supplied data to verify against: confirm the write's own
  * name (or, failing that, type) survived the read-back. An empty object would
@@ -370,10 +384,9 @@ export function duplicateDocumentReliable(
         overrides: input.overrides,
       },
       // The copy's _id comes from the write; read-back confirms it exists and
-      // that any requested overrides took effect. Without overrides there's
-      // nothing override-specific to check, so fall back to confirming the
-      // write's own name survived the read-back (catches a wrong/empty read).
-      expected: input.overrides ? expandObject(input.overrides) : nameOrTypeFallback,
+      // that any requested overrides took effect (or falls back to a name/type
+      // check when there's nothing override-specific to verify).
+      expected: expectedFromOverrides(input.overrides),
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "duplicated document did not match the requested overrides; rolled back",
     },
@@ -788,9 +801,10 @@ export function importFromCompendiumReliable(
         patch: input.patch,
         folderId: input.folderId,
       },
-      // A patch names concrete fields to verify; without one, fall back to
+      // A patch names concrete fields to verify (expanded from dot-notation
+      // to match the nested read-back document); without one, fall back to
       // confirming the write's own name/type survived the read-back.
-      expected: input.patch ?? nameOrTypeFallback,
+      expected: expectedFromOverrides(input.patch),
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "imported document did not match expected after read-back; rolled back",
     },

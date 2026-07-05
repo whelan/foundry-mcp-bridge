@@ -385,8 +385,16 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       let source;
       try {
         source = await fromUuid(uuid);
-      } catch {
-        throw new CommandExecutionError("NOT_FOUND", `compendium entry ${uuid} not found`);
+      } catch (e) {
+        // fromUuid can throw for reasons other than "doesn't exist" (a
+        // malformed uuid, an unindexed pack) -- keep NOT_FOUND as the code
+        // (still the most useful default) but preserve the real message
+        // instead of discarding it, so a genuine failure is diagnosable.
+        throw new CommandExecutionError(
+          "NOT_FOUND",
+          `compendium entry ${uuid} not found`,
+          { cause: (e as Error).message },
+        );
       }
       if (!source) {
         throw new CommandExecutionError("NOT_FOUND", `compendium entry ${uuid} not found`);

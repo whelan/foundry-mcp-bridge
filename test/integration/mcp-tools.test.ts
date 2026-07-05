@@ -751,6 +751,27 @@ describe("search_compendium / import_from_compendium pipeline", () => {
     expect((out.data as { name: string }).name).toBe("Patched Stalker");
   });
 
+  it("applies a dot-notation patch without a false READBACK_MISMATCH", async () => {
+    // Regression test: the read-back check must expand a dot-notation patch
+    // before comparing against the (nested) read-back document, or every
+    // multi-segment patch key spuriously fails and the import gets rolled back.
+    const { mock, transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: GRAVEMIRE_UUID,
+      patch: { "system.attributes.hp.value": 1 },
+      fields: ["_id"],
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write", "read-back"]);
+    if (!out.ok) return;
+    const id = (out.data as { _id: string })._id;
+    const doc = mock.documents("Actor").find((a) => (a as { _id: string })._id === id) as {
+      system: { attributes: { hp: { value: number } } };
+    };
+    expect(doc.system.attributes.hp.value).toBe(1);
+  });
+
   it("returns NOT_FOUND for an unknown uuid", async () => {
     const { transport } = setup();
     const out = await runImportFromCompendium(transport, {
