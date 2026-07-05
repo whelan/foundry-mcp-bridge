@@ -201,6 +201,28 @@ describe("update_document pipeline", () => {
     expect(actor.name).toBe("Renamed"); // safe key applied
     expect(({} as Record<string, unknown>).polluted).toBeUndefined(); // unsafe key never sent
   });
+
+  it("rejects a diff with no safe fields instead of silently no-op succeeding", async () => {
+    // Regression test: if every key is stripped as unsafe (or the diff was
+    // empty to begin with), the write is a no-op and read-back trivially
+    // "verifies" it -- reporting success while discarding the caller's
+    // actual intent. This must fail loudly instead.
+    const { mock, transport } = setup();
+    await seed(mock, {
+      action: "create",
+      documentType: "Actor",
+      data: { _id: "a1", name: "Bob" },
+      keepId: true,
+    });
+    const out = await runUpdateDocument(transport, {
+      documentType: "Actor",
+      id: "a1",
+      data: { "__proto__.polluted": "x" },
+    });
+    expectErr(out, "VALIDATION");
+    const actor = mock.documents("Actor")[0] as { name: string };
+    expect(actor.name).toBe("Bob"); // untouched
+  });
 });
 
 describe("find_documents projection", () => {
@@ -370,6 +392,23 @@ describe("update_embedded pipeline", () => {
     const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
     expect(scene.tokens[0]!.x).toBe(250); // safe key applied
     expect(({} as Record<string, unknown>).polluted).toBeUndefined(); // unsafe key never sent
+  });
+
+  it("rejects an entry with no safe fields beyond _id instead of silently no-op succeeding", async () => {
+    // Regression test: an entry stripped down to just {_id} is found by that
+    // same _id on read-back, so isSubset(actual, {_id}) trivially passes --
+    // reporting success while nothing was actually changed. Must fail loudly.
+    const { mock, transport } = setup();
+    await seedSceneWithToken(mock);
+    const out = await runUpdateEmbedded(transport, {
+      parentType: "Scene",
+      parentId: "s1",
+      embeddedName: "Token",
+      data: [{ _id: "t1", "__proto__.polluted": "x" }],
+    });
+    expectErr(out, "VALIDATION");
+    const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
+    expect(scene.tokens[0]!.x).toBe(0); // untouched
   });
 
   it("restores the prior embedded state when parent read-back fails", async () => {
@@ -755,21 +794,18 @@ describe("search_compendium / import_from_compendium pipeline", () => {
     // Regression test: the read-back check must expand a dot-notation patch
     // before comparing against the (nested) read-back document, or every
     // multi-segment patch key spuriously fails and the import gets rolled back.
-    const { mock, transport } = setup();
+    const { transport } = setup();
     const out = await runImportFromCompendium(transport, {
       documentType: "Actor",
       uuid: GRAVEMIRE_UUID,
       patch: { "system.attributes.hp.value": 1 },
-      fields: ["_id"],
+      fields: ["_id", "system.attributes.hp.value"],
     });
     expect(out.ok).toBe(true);
     expect(out.steps).toEqual(["dry-run", "write", "read-back"]);
     if (!out.ok) return;
-    const id = (out.data as { _id: string })._id;
-    const doc = mock.documents("Actor").find((a) => (a as { _id: string })._id === id) as {
-      system: { attributes: { hp: { value: number } } };
-    };
-    expect(doc.system.attributes.hp.value).toBe(1);
+    const data = out.data as { system: { attributes: { hp: { value: number } } } };
+    expect(data.system.attributes.hp.value).toBe(1);
   });
 
   it("returns NOT_FOUND for an unknown uuid", async () => {

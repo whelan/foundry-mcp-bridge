@@ -135,20 +135,6 @@ function idOf(data: unknown): string | undefined {
 }
 
 /**
- * Resolves a clone-shaped mutation's (duplicate, import) read-back `expected`
- * subset from an optional caller-supplied dot-notation object: expands it to
- * nested form so `isSubset` compares against the actual nested document
- * instead of a literal "a.b.c" key (which would never match and always
- * roll back), or falls back to `nameOrTypeFallback` when the object is
- * absent *or empty* — e.g. stripped down to `{}` by `filterUnsafePaths` —
- * since an empty object would otherwise make `isSubset` vacuously pass,
- * silently disabling the mismatch/rollback safety net.
- */
-function expectedFromOverrides(overrides: Json | undefined): Json | ((written: unknown) => Json) {
-  return overrides && Object.keys(overrides).length > 0 ? expandObject(overrides) : nameOrTypeFallback;
-}
-
-/**
  * Fallback read-back check for clone-shaped mutations (duplicate, import) that
  * have no caller-supplied data to verify against: confirm the write's own
  * name (or, failing that, type) survived the read-back. An empty object would
@@ -160,6 +146,17 @@ function nameOrTypeFallback(written: unknown): Json {
   if (typeof w?.name === "string") return { name: w.name };
   if (typeof w?.type === "string") return { type: w.type };
   return {};
+}
+
+/**
+ * Resolves a clone-shaped mutation's `expected`: expands a non-empty
+ * caller-supplied dot-notation object (so `isSubset` matches the nested
+ * read-back document instead of a literal "a.b.c" key), or falls back to
+ * `nameOrTypeFallback` when absent or empty — see its doc comment for why
+ * empty must never be used directly as `expected`.
+ */
+function expectedFromOverrides(overrides: Json | undefined): Json | ((written: unknown) => Json) {
+  return overrides && Object.keys(overrides).length > 0 ? expandObject(overrides) : nameOrTypeFallback;
 }
 
 /**

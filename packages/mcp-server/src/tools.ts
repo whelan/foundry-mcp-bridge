@@ -137,8 +137,22 @@ export async function runUpdateDocument(
   // Drop unsafe dot-path keys from the outgoing diff so the live runtime never
   // receives a prototype-pollution path (and stays consistent with the mock,
   // whose applyUpdate already drops them via expandObject).
-  const safe = { ...args, data: filterUnsafePaths(args.data) };
-  return projectEcho(await updateDocumentReliable(transport, safe, opts), args.fields, args.full);
+  const data = filterUnsafePaths(args.data);
+  if (Object.keys(data).length === 0) {
+    // An empty diff (originally empty, or every key stripped as unsafe) is a
+    // no-op write that would read back as "unchanged" and report success,
+    // silently discarding whatever the caller actually intended to change.
+    return {
+      ok: false,
+      error: { code: "VALIDATION", message: "update data has no safe fields to apply" },
+      steps: [],
+    };
+  }
+  return projectEcho(
+    await updateDocumentReliable(transport, { ...args, data }, opts),
+    args.fields,
+    args.full,
+  );
 }
 
 // --- delete_document --------------------------------------------------------
@@ -373,6 +387,21 @@ export async function runUpdateEmbedded(
   const data = args.data.map(
     (d) => filterUnsafePaths(d) as typeof d,
   );
+  // An entry left with only `_id` (every other key stripped as unsafe, or
+  // none supplied) is a no-op write: the parent read-back would trivially
+  // "verify" against it (the entry is found by that same _id), silently
+  // discarding whatever the caller actually intended to change.
+  const empty = data.find((d) => Object.keys(d).length <= 1);
+  if (empty) {
+    return {
+      ok: false,
+      error: {
+        code: "VALIDATION",
+        message: `update data for _id=${empty._id} has no safe fields to apply`,
+      },
+      steps: [],
+    };
+  }
   return projectEcho(await updateEmbeddedReliable(transport, { ...args, data }, opts), args.fields, args.full);
 }
 
