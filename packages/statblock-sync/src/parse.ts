@@ -31,7 +31,7 @@ export function parseStatblockRaw(raw: string): {
   const normalized = raw.replace(/\r\n/g, "\n");
   const match = FRONT_MATTER_RE.exec(normalized);
 
-  if (!match || !match[1] || !match[2]) {
+  if (!match || !match[1]) {
     return {
       frontMatter: {},
       body: normalized,
@@ -39,7 +39,7 @@ export function parseStatblockRaw(raw: string): {
   }
 
   const fmRaw = match[1];
-  const bodyRaw = match[2];
+  const bodyRaw = match[2] ?? "";
 
   const frontMatter = (parseYaml(fmRaw) as Record<string, unknown>) ?? {};
 
@@ -259,18 +259,18 @@ function parseChallenge(body: string, crFromFm?: number): StatblockData["challen
     18: 33000,
     19: 41000,
     20: 50000,
-    21: 62000,
-    22: 75000,
-    23: 90000,
-    24: 105000,
-    25: 120000,
-    26: 135000,
-    27: 155000,
-    28: 270000,
-    29: 355000,
-    30: 500000,
+    21: 33000,
+    22: 41000,
+    23: 50000,
+    24: 62000,
+    25: 75000,
+    26: 90000,
+    27: 105000,
+    28: 120000,
+    29: 135000,
+    30: 155000,
   };
-  const xp: number = xpByCr[crValue] ?? 155000;
+  const xp: number = xpByCr[crValue] ?? 0;
 
   const result: StatblockData["challenge"] = { cr: crValue, xp };
   return result;
@@ -289,7 +289,8 @@ function parseAbilities(body: string): StatblockData["abilities"] {
     // Match bold headers followed by description
     const features = content.matchAll(/\*\*([^*]+)\*\*\.?\s*([^\n]*(?:\n(?!\*\*)[^\n]*)*)/g);
     for (const match of features) {
-      const name = match[1] || "";
+      let name = match[1] || "";
+      name = name.replace(/\.$/, "");
       const description = match[2] || "";
       abilities.push({
         name,

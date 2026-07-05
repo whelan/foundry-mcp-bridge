@@ -9,7 +9,6 @@
  */
 
 import type { StatblockData } from "./schema.js";
-import { parseDamageFormula } from "./math.js";
 import { DAMAGE_TYPES_STR, stripMarkdown } from "./utils.js";
 
 /** Regex pattern for main damage: "N (XdY ± Z) type damage" */

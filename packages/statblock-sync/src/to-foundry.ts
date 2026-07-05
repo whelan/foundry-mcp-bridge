@@ -13,11 +13,13 @@
 import type { StatblockData } from "./schema.js";
 import { getAbilityModifier } from "./math.js";
 import { getSkillAbility, SKILL_TO_ABBREVIATION_MAP } from "./utils.js";
+import { parseAttackAction, parseSaveAction } from "./grammar.js";
 
 export interface Dnd5eActorDocument {
   name: string;
   type: "npc" | "character";
   img?: string;
+  prototypeToken?: { texture?: { src?: string } };
   system: Record<string, unknown>;
   items: Dnd5eItem[];
   effects: unknown[];
@@ -62,7 +64,7 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
       biography: { value: "" },
       alignment: statblock.frontMatter.alignment ?? "",
       race: { value: statblock.frontMatter.race ?? "" },
-      type: { value: "undead" }, // TODO: derive from type
+      type: { value: statblock.frontMatter.type ?? "humanoid" },
       size: "med",
       cr: statblock.challenge.cr,
       xp: statblock.challenge.xp,
@@ -111,13 +113,15 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
     items.push(actionToItem(action));
   }
 
+  const actorImg = statblock.frontMatter.image ?? undefined;
   return {
     name: statblock.frontMatter.name,
     type: "npc",
-    img: statblock.frontMatter.image ?? undefined,
+    img: actorImg,
     system,
     items,
     effects: [],
+    prototypeToken: actorImg ? { texture: { src: actorImg } } : undefined,
   };
 }
 
@@ -146,7 +150,7 @@ function buildSkills(
 
 /**
  * Convert an action to a Foundry item.
- * For weapon actions, builds attack bonus and damage parts for rollable mechanics.
+ * For weapon actions, uses grammar parsing to extract attack bonus, damage, and range.
  */
 function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
   const isWeapon = action.type === "action" || action.type === "reaction";
@@ -160,22 +164,43 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
     },
   };
 
-  // For weapon items, add attack/damage structure for Foundry rollables
+  // For weapon items, parse and populate attack/damage structure
   if (isWeapon) {
     const system = item.system as Record<string, unknown>;
-    // Add fields expected by dnd5e 2024 system
-    system.type = "meleeM"; // Would be refined to "meleeM", "rangedW", or "spellcasting" by grammar parser
-    system.damage = {
-      parts: [], // Grammar parser populates with [formula, damageType] pairs
-    };
-    system.attack = {
-      bonus: "", // Would be populated as "+X" from parsed attack bonus
-    };
-    system.range = {
-      value: null,
-      long: null,
-      units: "ft",
-    };
+    system.type = "meleeM";
+    system.damage = { parts: [] };
+    system.attack = { bonus: "" };
+    system.range = { value: null, long: null, units: "ft" };
+
+    // Try to parse as attack action
+    const attackParsed = parseAttackAction(action.description);
+    if (attackParsed) {
+      system.type = attackParsed.type === "ranged" ? "rangedW" : "meleeM";
+      system.attack = { bonus: `+${attackParsed.bonus}` };
+      system.damage = {
+        parts: attackParsed.damage.map((d) => [d.formula, d.type]),
+      };
+      if (attackParsed.reach) {
+        (system.range as Record<string, unknown>).value = attackParsed.reach;
+      } else if (attackParsed.range) {
+        (system.range as Record<string, unknown>).value = attackParsed.range.normal;
+        (system.range as Record<string, unknown>).long = attackParsed.range.long ?? null;
+      }
+    }
+
+    // Try to parse as save action
+    const saveParsed = parseSaveAction(action.description);
+    if (saveParsed) {
+      system.type = "spellcasting";
+      system.damage = {
+        parts: saveParsed.damage.map((d) => [d.formula, d.type]),
+      };
+    }
+
+    // Parse recharge if present
+    if (action.recharge) {
+      (system as Record<string, unknown>).recharge = action.recharge;
+    }
   }
 
   return item;
