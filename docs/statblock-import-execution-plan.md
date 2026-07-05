@@ -1,5 +1,18 @@
 # Execution plan: import an Obsidian statblock NPC into Foundry, verified
 
+> **Who runs what.** M0–M5 touch only the mock and the source tree — a cloud
+> Claude Code session (this kind of session, no access to your machine or
+> your Foundry) executes and gates all of them, fully automated, no live
+> world involved. M6 needs a real WebSocket to a real relay, which this kind
+> of session cannot reach; it must run from **your local Claude Code
+> session** (see `docs/local-test-quickstart.md`) — for the local-world pass
+> directly, and for the Forge pass too, since your local machine can reach a
+> `wss://` relay just as well as the GM's Forge browser can (see
+> `docs/setup-foundry-forge.md` §5). Each of the two M6 passes has an
+> **automated half** (AI-run, structured pass/fail, no eyeballing) that must
+> go green before the **manual half** (you, in the browser) — never the
+> other order.
+
 This is the **executable companion** to
 `docs/obsidian-statblock-npc-sync-plan.md` (the design doc). Where the design
 doc explains *what and why*, this doc is the ordered checklist to *do it*:
@@ -266,49 +279,96 @@ be printed by the CLI and returned by the MCP flow.
   referenced by tests; the CLAUDE.md warning about esbuild-only `npm test`
   applies doubly here).
 
-## M6 — Live world verification (the real gate)
+## M6 — Live world verification (two passes, each automated-gate-then-manual)
 
-**Build:** extend `npm run selftest` with an NPC leg: it pushes the
-acceptance NPC — including the test portrait upload — through the real
-server → relay → module → live Foundry world, runs `verifyImportedNpc`
-(tokenizer-mode checks included when the live world has vtta-tokenizer
-enabled) against the real read-back, prints the report, then deletes the
-actor and the uploaded test assets (selftest must stay non-destructive).
+**Build (once, reused for both passes):** extend `npm run selftest` with an
+NPC leg — pushes the acceptance NPC, including the test portrait upload,
+through the real server → relay → module → live Foundry world, runs
+`verifyImportedNpc` (tokenizer-mode checks included when the live world has
+vtta-tokenizer enabled) against the real read-back, **prints the structured
+report**, then deletes the actor and the uploaded test assets (selftest must
+stay non-destructive — it can run repeatedly against a world you're actively
+using).
 
-**Verify (gate):**
-- `npm run selftest` green against a live world (local or Forge), NPC leg
-  all-pass.
-- **Manual sheet checklist** (one-time per dnd5e major version, ~3 minutes,
-  this is the definition of "works like official"):
-  1. Open the Gravemire Stalker sheet: header shows AC 14, HP 45/45,
-     speed 30 ft / swim 20 ft, CR 3, senses incl. passive Perception 13.
-  2. Skills tab: Stealth +4, Perception +3, WIS save +3 shown proficient.
-  3. Click **Claw** → attack roll appears in chat at **+5**; click damage →
-     **1d10+3 slashing + 1d6 necrotic**.
-  4. Click **Grave Breath** → chat card offers a **DC 12 CON** save;
-     recharge die appears on the item.
-  5. Sheet portrait shows the uploaded Gravemire Stalker artwork (not the
-     default mystery-man icon).
-  6. Drag the actor to a scene → the token renders the artwork,
-     vision/darkvision works. With vtta-tokenizer enabled: the token shows
-     the **framed** `.Token.webp` (circular border), visibly different from
-     the sheet portrait; without it, token art equals the portrait.
-  7. `needsReview` check: Multiattack shows as a feature with clean text.
-- Record the tested dnd5e system version in `statblock-sync/src/compat.ts`.
+This leg requires zero human judgment calls: every check in
+`verifyImportedNpc` is a programmatic equality, so "green" here is a real,
+trustworthy gate — not a proxy for "looks right".
+
+### M6a — Local world, automated gate
+
+Run from **your local Claude Code session** (this cloud session cannot reach
+`ws://localhost:8787`):
+
+```bash
+npm run install:foundry   # builds + symlinks the module into your Foundry
+npm run selftest          # NPC leg included; prints the verifyImportedNpc report
+```
+
+**Gate:** `verifyImportedNpc` report is all-pass. Do not proceed to M6b until
+it is — a failing automated check means something in M0–M5 doesn't actually
+hold against real Foundry (the mock disagreed with reality somewhere), which
+is a bug to fix and re-run through M0–M5's gates first, not a manual
+workaround.
+
+### M6b — Local world, manual verification (you, after M6a is green)
+
+Same checklist either way (local or Forge), ~3 minutes, the definition of
+"works like official":
+
+1. Open the Gravemire Stalker sheet: header shows AC 14, HP 45/45,
+   speed 30 ft / swim 20 ft, CR 3, senses incl. passive Perception 13.
+2. Skills tab: Stealth +4, Perception +3, WIS save +3 shown proficient.
+3. Click **Claw** → attack roll appears in chat at **+5**; click damage →
+   **1d10+3 slashing + 1d6 necrotic**.
+4. Click **Grave Breath** → chat card offers a **DC 12 CON** save;
+   recharge die appears on the item.
+5. Sheet portrait shows the uploaded Gravemire Stalker artwork (not the
+   default mystery-man icon).
+6. Drag the actor to a scene → the token renders the artwork,
+   vision/darkvision works. With vtta-tokenizer enabled: the token shows
+   the **framed** `.Token.webp` (circular border), visibly different from
+   the sheet portrait; without it, token art equals the portrait.
+7. `needsReview` check: Multiattack shows as a feature with clean text.
+
+Record the tested dnd5e system version in `statblock-sync/src/compat.ts`.
+
+### M6c — Forge, automated gate
+
+Same script, pointed at Forge: set `relayUrl` to a reachable `wss://` (per
+`setup-foundry-forge.md` §5 — your local machine's relay is fine, the
+Forge browser just needs TLS to reach it) in the module's Settings on your
+Forge world, then from the same local Claude Code session:
+
+```bash
+npm run selftest    # against the Forge world this time
+```
+
+**Gate:** same all-pass `verifyImportedNpc` report. Anything that passed
+locally but fails here (asset upload path is the likely culprit — Forge
+uploads go through `FilePicker.upload("forgevtt", …)` instead of `"data"`,
+per the design doc's forge-asset-manager notes) is a real Forge-specific bug,
+not skippable.
+
+### M6d — Forge, manual verification (you, after M6c is green)
+
+Same checklist as M6b, run against the Forge world.
 
 ## M7 — Acceptance run (what "done" means)
 
-From a clean checkout, in order, all green:
+From a clean checkout, the cloud-automatable part:
 
 ```bash
 npm install && npm run build && npm run typecheck && npm test
 node packages/campaign-sync/dist/cli.js import-npc \
   --note vault/npcs/gravemire-stalker.md --live live.json   # all checks pass
-npm run selftest                                            # NPC leg passes
 ```
 
-…followed by the M6 manual checklist on the live sheet. When those pass, an
-NPC written with Obsidian Fantasy Statblocks imports into Foundry and works.
+…then, handed off to your local Claude Code session, M6a (automated) → M6b
+(manual) → M6c (automated) → M6d (manual), in that exact order — each
+automated gate must be green before its manual step, and the local pass
+completes fully before Forge starts. When all four finish, an NPC written
+with Obsidian Fantasy Statblocks imports into Foundry and works, on both
+your local world and Forge.
 
 ---
 
