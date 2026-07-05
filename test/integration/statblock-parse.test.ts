@@ -68,6 +68,11 @@ describe("M1: Statblock Parsing", () => {
     expect(statblock.challenge.cr).toBe(3);
     expect(statblock.challenge.xp).toBe(700);
 
+    // Verify creature type descriptor line ("*Medium undead, chaotic evil*")
+    expect(statblock.creatureType.size).toBe("med");
+    expect(statblock.creatureType.type).toBe("undead");
+    expect(statblock.creatureType.alignment).toBe("chaotic evil");
+
     // Verify abilities (traits)
     expect(statblock.abilities.length).toBeGreaterThan(0);
     const undeadFortitude = statblock.abilities.find(
@@ -168,5 +173,38 @@ type: npc
       a.name.toLowerCase().includes("breath")
     );
     expect(breath?.recharge?.value).toBe(6);
+  });
+
+  it("parses creature type with a subtype in parentheses", () => {
+    const markdown = `---
+name: Test
+type: npc
+---
+
+*Large humanoid (goblinoid), lawful evil*
+
+**Armor Class** 14
+`;
+
+    const statblock = parseStatblock(markdown);
+    expect(statblock.creatureType.size).toBe("lg");
+    expect(statblock.creatureType.type).toBe("humanoid");
+    expect(statblock.creatureType.subtype).toBe("goblinoid");
+    expect(statblock.creatureType.alignment).toBe("lawful evil");
+  });
+
+  it("defaults creature type when no descriptor line is present", () => {
+    const markdown = `---
+name: Test
+type: npc
+---
+
+**Armor Class** 10
+`;
+
+    const statblock = parseStatblock(markdown);
+    expect(statblock.creatureType.size).toBe("med");
+    expect(statblock.creatureType.type).toBe("humanoid");
+    expect(statblock.creatureType.alignment).toBe("");
   });
 });

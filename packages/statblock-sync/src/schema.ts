@@ -61,6 +61,14 @@ export interface StatblockData {
     };
   };
 
+  /** Parsed from the descriptor line under the name heading, e.g. "Medium undead, chaotic evil" */
+  creatureType: {
+    size: string; // dnd5e size code: tiny, sm, med, lg, huge, grg
+    type: string; // "undead", "humanoid", etc.
+    subtype?: string; // e.g. "goblinoid" from "humanoid (goblinoid)"
+    alignment: string;
+  };
+
   /** Parsed ability scores */
   abilities_: {
     str: number;

@@ -12,6 +12,7 @@ import {
   extractRegexInt,
   extractRegexGroup,
   parseTraitList,
+  SIZE_TO_ABBREVIATION_MAP,
 } from "./utils.js";
 
 /**
@@ -72,6 +73,7 @@ export function parseStatblock(raw: string): StatblockData {
   const skills = parseSkillsAndSaves(body);
   const traits = parseTraits(body);
   const challenge = parseChallenge(body, fm.cr);
+  const creatureType = parseCreatureType(body);
   const abilityFeatures = parseAbilities(body);
   const actions = parseActions(body);
 
@@ -83,8 +85,32 @@ export function parseStatblock(raw: string): StatblockData {
     skills,
     traits,
     challenge,
+    creatureType,
     abilities: abilityFeatures,
     actions,
+  };
+}
+
+/**
+ * Parse the size/type/alignment descriptor line that follows the name heading.
+ * Example: "*Medium undead, chaotic evil*" or "*Large humanoid (goblinoid), chaotic evil*"
+ */
+function parseCreatureType(body: string): StatblockData["creatureType"] {
+  const match = body.match(
+    /\*([A-Za-z]+)\s+([A-Za-z]+)(?:\s*\(([^)]+)\))?,\s*([^*\n]+)\*/
+  );
+
+  if (!match || !match[1] || !match[2] || !match[4]) {
+    return { size: "med", type: "humanoid", alignment: "" };
+  }
+
+  const size = SIZE_TO_ABBREVIATION_MAP[match[1].toLowerCase()] ?? "med";
+
+  return {
+    size,
+    type: match[2].toLowerCase(),
+    subtype: match[3]?.trim(),
+    alignment: match[4].trim(),
   };
 }
 

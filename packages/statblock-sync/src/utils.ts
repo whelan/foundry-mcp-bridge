@@ -52,6 +52,16 @@ export const SKILL_TO_ABBREVIATION_MAP: Record<string, string> = {
 export const DAMAGE_TYPES_STR =
   "slashing|piercing|bludgeoning|psychic|necrotic|fire|cold|lightning|radiant|acid|poison|thunder|force";
 
+/** D&D 5e size name to dnd5e system size code mapping */
+export const SIZE_TO_ABBREVIATION_MAP: Record<string, string> = {
+  tiny: "tiny",
+  small: "sm",
+  medium: "med",
+  large: "lg",
+  huge: "huge",
+  gargantuan: "grg",
+};
+
 /** Helper to extract a regex group with fallback */
 export function extractRegexGroup(
   text: string,

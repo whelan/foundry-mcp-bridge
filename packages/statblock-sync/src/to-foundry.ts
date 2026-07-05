@@ -28,8 +28,22 @@ export interface Dnd5eActorDocument {
 export interface Dnd5eItem {
   name: string;
   type: string;
+  img?: string;
   system?: Record<string, unknown>;
 }
+
+/**
+ * Generic Foundry-core icons used as sensible defaults per item type.
+ * These are bundled with Foundry itself (not the dnd5e system), so they're
+ * always available regardless of which systems/modules are installed.
+ * They are placeholders, not the artwork used by the official monster
+ * compendium — matching that requires compendium item lookup (a later tier
+ * of this feature, not part of grammar-only conversion).
+ */
+const DEFAULT_ITEM_ICONS: Record<string, string> = {
+  feature: "icons/svg/book.svg",
+  weapon: "icons/svg/sword.svg",
+};
 
 /**
  * Convert a parsed statblock to a Foundry dnd5e actor document.
@@ -62,10 +76,13 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
     },
     details: {
       biography: { value: "" },
-      alignment: statblock.frontMatter.alignment ?? "",
+      alignment: statblock.frontMatter.alignment ?? statblock.creatureType.alignment,
       race: { value: statblock.frontMatter.race ?? "" },
-      type: { value: statblock.frontMatter.type ?? "humanoid" },
-      size: "med",
+      type: {
+        value: statblock.creatureType.type,
+        subtype: statblock.creatureType.subtype ?? "",
+      },
+      size: statblock.creatureType.size,
       cr: statblock.challenge.cr,
       xp: statblock.challenge.xp,
     },
@@ -101,6 +118,7 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
     items.push({
       name: ability.name,
       type: "feature",
+      img: DEFAULT_ITEM_ICONS.feature,
       system: {
         description: { value: ability.description },
         source: "",
@@ -150,57 +168,57 @@ function buildSkills(
 
 /**
  * Convert an action to a Foundry item.
- * For weapon actions, uses grammar parsing to extract attack bonus, damage, and range.
+ *
+ * Whether an action becomes a rollable "weapon" item or a plain "feature"
+ * item is decided by whether the grammar parser actually found an attack
+ * roll or saving throw in its description — not by which section it came
+ * from. Purely descriptive actions/reactions (e.g. "Multiattack", "Sudden
+ * Lurch") have no mechanical roll and belong in the official compendium as
+ * "feature" items even though they're under the Actions/Reactions headers.
  */
 function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
-  const isWeapon = action.type === "action" || action.type === "reaction";
+  const attackParsed = parseAttackAction(action.description);
+  const saveParsed = parseSaveAction(action.description);
+  const isMechanical = !!attackParsed || !!saveParsed;
 
   const item: Dnd5eItem = {
     name: action.name,
-    type: isWeapon ? "weapon" : "feature",
+    type: isMechanical ? "weapon" : "feature",
+    img: isMechanical ? DEFAULT_ITEM_ICONS.weapon : DEFAULT_ITEM_ICONS.feature,
     system: {
       description: { value: action.description },
       source: "",
     },
   };
 
-  // For weapon items, parse and populate attack/damage structure
-  if (isWeapon) {
-    const system = item.system as Record<string, unknown>;
-    system.type = "meleeM";
-    system.damage = { parts: [] };
-    system.attack = { bonus: "" };
-    system.range = { value: null, long: null, units: "ft" };
+  if (!isMechanical) return item;
 
-    // Try to parse as attack action
-    const attackParsed = parseAttackAction(action.description);
-    if (attackParsed) {
-      system.type = attackParsed.type === "ranged" ? "rangedW" : "meleeM";
-      system.attack = { bonus: `+${attackParsed.bonus}` };
-      system.damage = {
-        parts: attackParsed.damage.map((d) => [d.formula, d.type]),
-      };
-      if (attackParsed.reach) {
-        (system.range as Record<string, unknown>).value = attackParsed.reach;
-      } else if (attackParsed.range) {
-        (system.range as Record<string, unknown>).value = attackParsed.range.normal;
-        (system.range as Record<string, unknown>).long = attackParsed.range.long ?? null;
-      }
-    }
+  const system = item.system as Record<string, unknown>;
+  system.damage = { parts: [] };
+  system.attack = { bonus: "" };
+  system.range = { value: null, long: null, units: "ft" };
 
-    // Try to parse as save action
-    const saveParsed = parseSaveAction(action.description);
-    if (saveParsed) {
-      system.type = "spellcasting";
-      system.damage = {
-        parts: saveParsed.damage.map((d) => [d.formula, d.type]),
-      };
+  if (attackParsed) {
+    system.type = attackParsed.type === "ranged" ? "rangedW" : "meleeM";
+    system.attack = { bonus: `+${attackParsed.bonus}` };
+    system.damage = {
+      parts: attackParsed.damage.map((d) => [d.formula, d.type]),
+    };
+    if (attackParsed.reach) {
+      (system.range as Record<string, unknown>).value = attackParsed.reach;
+    } else if (attackParsed.range) {
+      (system.range as Record<string, unknown>).value = attackParsed.range.normal;
+      (system.range as Record<string, unknown>).long = attackParsed.range.long ?? null;
     }
+  } else if (saveParsed) {
+    system.type = "spellcasting";
+    system.damage = {
+      parts: saveParsed.damage.map((d) => [d.formula, d.type]),
+    };
+  }
 
-    // Parse recharge if present
-    if (action.recharge) {
-      (system as Record<string, unknown>).recharge = action.recharge;
-    }
+  if (action.recharge) {
+    system.recharge = action.recharge;
   }
 
   return item;
