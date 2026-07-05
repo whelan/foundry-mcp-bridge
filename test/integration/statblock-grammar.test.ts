@@ -55,6 +55,22 @@ describe("M3: Action Text Grammar Parsing", () => {
 
       expect(attack).toBeUndefined();
     });
+
+    it("defaults targets to 'one target' when there is no explicit target clause", () => {
+      const description =
+        "Melee Attack Roll: +5, reach 5 ft. Hit: 8 (1d10 + 3) Slashing damage.";
+      const attack = parseAttackAction(description);
+
+      expect(attack?.targets).toBe("one target");
+    });
+
+    it("parses a negative attack bonus", () => {
+      const description =
+        "Melee Attack Roll: -1, reach 5 ft. Hit: 2 (1d4) bludgeoning damage.";
+      const attack = parseAttackAction(description);
+
+      expect(attack?.bonus).toBe(-1);
+    });
   });
 
   describe("Save action parsing", () => {

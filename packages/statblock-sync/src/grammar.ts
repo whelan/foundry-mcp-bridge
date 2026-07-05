@@ -85,9 +85,15 @@ export function parseAttackAction(description: string): ParsedAttack | undefined
       }
     : undefined;
 
-  // Extract target specification - look for "one target" or similar after reach/range
-  const targetsMatch = normalized.match(/(?:reach|range).*?(\w+(?:\s+\w+)*?)\s*\.\s*(?:hit|Hit|hit:)/i);
-  const targets = targetsMatch && targetsMatch[1] ? targetsMatch[1].trim() : "one target";
+  // Extract target specification: the clause right before ". Hit:", but only
+  // if it actually names a target (e.g. "one target", "up to three targets") -
+  // descriptions with no explicit target clause (just "reach 5 ft. Hit: ...")
+  // must fall back to the default rather than capturing "ft" or similar.
+  const targetsMatch = normalized.match(/,?\s*([^,.]*)\.\s*hit:/i);
+  const targets =
+    targetsMatch && targetsMatch[1] && /target/i.test(targetsMatch[1])
+      ? targetsMatch[1].trim()
+      : "one target";
 
   // Determine attack type
   let type: "melee" | "ranged" | "melee_ranged" = "melee";
@@ -150,9 +156,10 @@ export function parseSaveAction(description: string): ParsedSave | undefined {
  * Looks for the bolded name that precedes the description text.
  */
 function extractActionName(fullText: string): string {
-  // This will be called after bold text is already stripped
-  // Just get the first word/phrase before the parenthesis or period
-  const nameMatch = fullText.match(/^([A-Za-z\s]+?)(?:\s*\(|\.)/);
+  // Get the first word/phrase before a parenthesis, period, or colon - the
+  // last of which covers the common "Melee Attack Roll: ..." / "Constitution
+  // Saving Throw: ..." grammar phrasing.
+  const nameMatch = fullText.match(/^([A-Za-z\s]+?)(?:\s*\(|\.|:)/);
   return nameMatch && nameMatch[1] ? nameMatch[1].trim() : "Unknown";
 }
 

@@ -44,7 +44,7 @@ is verified together with the mechanics, not as an afterthought.
 ````markdown
 ```statblock
 name: Gravemire Stalker
-image: assets/npcs/gravemire-stalker.png
+image: gravemire-stalker.png
 size: Medium
 type: undead
 alignment: Neutral Evil

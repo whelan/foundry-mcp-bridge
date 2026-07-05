@@ -184,6 +184,29 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     // Claw and Grave Breath have parsed mechanics - they're weapons.
     expect(byName("Claw")?.type).toBe("weapon");
     expect(byName("Grave Breath")?.type).toBe("weapon");
+
+    // Claw's attack bonus is positive (+5), formatted with a leading "+"
+    const claw = byName("Claw");
+    expect((claw?.system as Record<string, any>)?.attack?.bonus).toBe("+5");
+  });
+
+  it("formats a negative attack bonus without a doubled sign", () => {
+    const markdown = `\`\`\`statblock
+name: Weakling
+cr: 0
+ac: 10
+hp: 4
+stats: [6, 10, 10, 10, 10, 10]
+actions:
+  - name: Feeble Jab
+    desc: "Melee Attack Roll: -1, reach 5 ft. Hit: 1 bludgeoning damage."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const jab = actor.items.find((i) => i.name === "Feeble Jab");
+
+    expect((jab?.system as Record<string, any>)?.attack?.bonus).toBe("-1");
   });
 
   it("assigns default icons per item type", () => {

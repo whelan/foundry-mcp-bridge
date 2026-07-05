@@ -200,7 +200,7 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
 
   if (attackParsed) {
     system.type = attackParsed.type === "ranged" ? "rangedW" : "meleeM";
-    system.attack = { bonus: `+${attackParsed.bonus}` };
+    system.attack = { bonus: attackParsed.bonus >= 0 ? `+${attackParsed.bonus}` : `${attackParsed.bonus}` };
     system.damage = {
       parts: attackParsed.damage.map((d) => [d.formula, d.type]),
     };
