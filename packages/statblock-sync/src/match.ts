@@ -10,18 +10,19 @@
  * through to the existing Tier 3 synthesis path unchanged.
  */
 
+import type { CompendiumEntry, Json } from "@foundry-mcp-bridge/shared";
 import type { StatblockData } from "./schema.js";
 
-/** A compendium index entry, as returned by the bridge's `search_compendium`. */
-export interface CompendiumIndexEntry {
-  uuid: string;
-  pack: string;
-  name: string;
-  type: string;
-  cr?: number;
-}
+export type { CompendiumEntry };
 
-export type MatchPlan = { tier: 1; uuid: string } | { tier: 3 };
+/**
+ * `patch` is left unpopulated for now — this Tier 1 is "exact match, clone
+ * as-is"; it does not yet diff the statblock against the compendium actor
+ * and compute deltas (the design doc's fuller Tier 1 description, §1). The
+ * field exists so that later work can attach a computed patch without a
+ * breaking change to this shape or to import-npc.ts's call site.
+ */
+export type MatchPlan = { tier: 1; uuid: string; patch?: Json } | { tier: 3 };
 
 /**
  * Tier 1: an exact (case-insensitive, trimmed) name match against the
@@ -29,7 +30,7 @@ export type MatchPlan = { tier: 1; uuid: string } | { tier: 3 };
  * partial matches risk silently cloning the wrong monster, so anything short
  * of an exact match falls through to Tier 3 synthesis instead of guessing.
  */
-export function matchStatblock(statblock: StatblockData, index: CompendiumIndexEntry[]): MatchPlan {
+export function matchStatblock(statblock: StatblockData, index: CompendiumEntry[]): MatchPlan {
   const name = statblock.data.name.trim().toLowerCase();
   const match = index.find((entry) => entry.name.trim().toLowerCase() === name);
   return match ? { tier: 1, uuid: match.uuid } : { tier: 3 };

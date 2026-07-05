@@ -12,10 +12,16 @@ import {
   type CommandResult,
   type DocumentType,
   type ErrorCode,
+  type CompendiumEntry,
   checkEnvelopeGuards,
   ok,
   err,
 } from "@foundry-mcp-bridge/shared";
+
+// Re-exported for existing importers of this module; the shape now lives in
+// packages/shared so foundry-module, mcp-server, and standalone consumers
+// (e.g. statblock-sync) all reference the same definition.
+export type { CompendiumEntry };
 
 export type DocData = Record<string, unknown>;
 
@@ -75,15 +81,6 @@ export interface BatchUploadAssetsParams {
   target: string;
   files: Array<{ filename: string; contentBase64: string; mimeType?: string }>;
   skipExisting?: boolean;
-}
-
-/** A compendium index entry returned by a search (§4 of the statblock-sync plan). */
-export interface CompendiumEntry {
-  uuid: string;
-  pack: string;
-  name: string;
-  type: string;
-  cr?: number;
 }
 
 /**

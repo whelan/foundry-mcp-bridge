@@ -15,9 +15,10 @@
  * mechanical actor, just without statblock-specific overrides applied.
  */
 
+import type { CompendiumEntry, Json } from "@foundry-mcp-bridge/shared";
 import type { StatblockData } from "./schema.js";
 import { statblockToFoundryActor, type Dnd5eActorDocument } from "./to-foundry.js";
-import { matchStatblock, type CompendiumIndexEntry } from "./match.js";
+import { matchStatblock } from "./match.js";
 
 export interface ImportNpcResult {
   actorId: string;
@@ -28,9 +29,9 @@ export interface ImportNpcResult {
 
 export interface ImportNpcDeps {
   /** Search the world's compendia for actors matching `nameQuery`. */
-  searchCompendium(nameQuery: string): Promise<CompendiumIndexEntry[]>;
-  /** Clone a compendium entry into the world. */
-  importFromCompendium(uuid: string): Promise<{ _id: string }>;
+  searchCompendium(nameQuery: string): Promise<CompendiumEntry[]>;
+  /** Clone a compendium entry into the world, applying an optional patch. */
+  importFromCompendium(uuid: string, patch?: Json): Promise<{ _id: string }>;
   /** Create a synthesized document from scratch (Tier 3 fallback). */
   createDocument(data: Dnd5eActorDocument): Promise<{ _id: string }>;
 }
@@ -46,7 +47,7 @@ export async function importNpc(statblock: StatblockData, deps: ImportNpcDeps): 
   const plan = matchStatblock(statblock, index);
 
   if (plan.tier === 1) {
-    const doc = await deps.importFromCompendium(plan.uuid);
+    const doc = await deps.importFromCompendium(plan.uuid, plan.patch);
     return { actorId: doc._id, tier: 1, matchedUuid: plan.uuid };
   }
 

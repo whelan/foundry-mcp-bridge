@@ -236,6 +236,20 @@ export const SearchCompendiumCommand = z.object({
 });
 export type SearchCompendiumCommand = z.infer<typeof SearchCompendiumCommand>;
 
+/**
+ * A compendium index entry, as returned by `searchCompendium`. Shared so the
+ * module (protocol-executor.ts's `FoundryDocumentApi`), the mcp-server, and
+ * any standalone consumer (e.g. statblock-sync's tier matching) agree on the
+ * same shape instead of each re-declaring it independently.
+ */
+export interface CompendiumEntry {
+  uuid: string;
+  pack: string;
+  name: string;
+  type: string;
+  cr?: number;
+}
+
 export const ImportFromCompendiumCommand = z.object({
   action: z.literal("importFromCompendium"),
   /** Document type to import (e.g. "Actor", "Item"). */
