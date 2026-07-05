@@ -232,6 +232,10 @@ test → selftest where the live path is touched).
   via Tier 1 into the live world, push a homebrew statblock via Tier 3, read
   back and assert activities exist and reference resolvable damage formulas.
   Manual: open the sheet, click the attack, watch it roll.
+- **Phase 6 — token framing (optional, independent).** `tokenizeActor`
+  command (§9) + sync-layer wiring for Tier 3/4 actors. Doesn't block phases
+  0–5; can land whenever, and only matters to worlds with Tokenizer
+  installed.
 
 ## 8. Risks & open questions
 
@@ -258,4 +262,56 @@ test → selftest where the live path is touched).
   enhancement (resolve against the vendored SRD bestiary).
 - **Images/tokens.** `image` maps to `img`; token art upload rides the
   existing asset pipeline (`uploadAsset`) — Tier 1 clones official tokens,
-  which is usually what "works like official" means visually too.
+  which is usually what "works like official" means visually too. Tier 3/4
+  homebrew NPCs need a separate token-framing step — see §9.
+
+## 9. Token art for synthesized/homebrew NPCs (Tokenizer)
+
+Tier 1 imports already get official token art for free (cloned straight from
+the compendium actor). Tier 3/4 — a fully homebrew statblock, or one where
+only a portrait exists (e.g. produced by the existing
+`generate-and-upload-image` skill) — has no framed token, just a raw
+rectangular image. [`MrPrimate/tokenizer`](https://github.com/MrPrimate/tokenizer)
+(module id `vtta-tokenizer`) is the standard Foundry tool for turning that
+into a proper circular/bordered token, so it's the natural last step for
+those tiers.
+
+**Why it fits this architecture specifically:** Tokenizer is a browser-side
+Foundry module exposing a JS API
+(`game.modules.get("vtta-tokenizer").api`) — it cannot be driven headlessly
+from Node, only from inside a live, logged-in Foundry client. That's exactly
+where `packages/foundry-module` already runs (per this repo's architecture,
+`foundry-runtime.ts` already calls real Foundry/document APIs from that same
+browser context), so wiring it in is a natural extension rather than a new
+integration surface:
+
+- `autoToken(actor, options)` applies the default frame **without an
+  interactive dialog** and updates the actor's image — the one function of
+  the four (`launch`, `autoToken`, `tokenizeActor`, `tokenizeSceneToken`)
+  that's actually automatable, since the others open an editor UI.
+
+**Proposed integration — a new optional protocol command:**
+
+- `tokenizeActor` — `{ actorId }` → in `foundry-runtime.ts`, check
+  `game.modules.get("vtta-tokenizer")?.active`; if absent, return a clear
+  `ok: false` result naming the missing module (never a hard failure — token
+  framing is cosmetic, not blocking); if present, call
+  `api.autoToken(game.actors.get(actorId))` and await it.
+- Runs through the same `add-foundry-command` lockstep as any other command,
+  but the mock side is trivial: `mock-foundry-api.ts` just records that
+  tokenize-was-called (or errors if a test wants to simulate "module not
+  installed") — there's no real frame/mask logic to fake, since actual
+  compositing only ever happens in a live Foundry browser.
+- Reliability category: fire-and-forget, no read-back (like quest pushes) —
+  a mis-framed token isn't a correctness problem the read-back/rollback
+  machinery needs to guard, unlike actor mechanical data.
+- Sync integration: `to-foundry.ts`'s Tier 3/4 path emits `needsToken: true`
+  on the match plan; the sync layer calls `tokenizeActor` as the final step
+  right after the actor create/update, only for actors that came in below
+  Tier 1.
+
+**Without any bridge changes**, the same result is reachable today via a
+GM-run Foundry macro that loops actors flagged `needsReview` (or any
+selection) and calls `autoToken` on each — useful for validating the UX
+before investing in the protocol command.
+
