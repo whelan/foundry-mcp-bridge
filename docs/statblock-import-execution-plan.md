@@ -140,7 +140,14 @@ warrior, ogre) as the oracle.
 `schema.ts` (zod schema of the Fantasy Statblocks basic-5e fields, design doc
 §3 table, tolerant of both `saves: [{wisdom: 3}]` and object forms);
 `parse.ts` (extract/replace the ```` ```statblock ```` fence in a note,
-preserving surrounding prose byte-for-byte).
+preserving surrounding prose byte-for-byte). Also commit the acceptance
+fixture itself — real files, not just the copy in this doc — at
+`test/fixtures/statblock-import/gravemire-stalker.md` (the exact note from
+§"The acceptance NPC" above, `image:` pointing at the sibling file below) and
+`test/fixtures/statblock-import/gravemire-stalker.png` (any small real PNG;
+content doesn't matter, only that it's a valid image the upload pipeline can
+handle). Every later milestone and the M7/M6 commands reference this one
+path — nothing downstream invents its own copy.
 
 **Verify (gate):**
 - Unit test: the acceptance NPC above parses with zero unknown-key warnings;
@@ -355,20 +362,68 @@ Same checklist as M6b, run against the Forge world.
 
 ## M7 — Acceptance run (what "done" means)
 
-From a clean checkout, the cloud-automatable part:
+From a clean checkout, the cloud-automatable part — no live world involved,
+`npm test` includes M5's mock-end-to-end suite driving
+`test/fixtures/statblock-import/gravemire-stalker.md` through
+`verifyImportedNpc` against `mock-foundry`:
 
 ```bash
 npm install && npm run build && npm run typecheck && npm test
-node packages/campaign-sync/dist/cli.js import-npc \
-  --note vault/npcs/gravemire-stalker.md --live live.json   # all checks pass
 ```
 
-…then, handed off to your local Claude Code session, M6a (automated) → M6b
-(manual) → M6c (automated) → M6d (manual), in that exact order — each
-automated gate must be green before its manual step, and the local pass
-completes fully before Forge starts. When all four finish, an NPC written
-with Obsidian Fantasy Statblocks imports into Foundry and works, on both
-your local world and Forge.
+…then, handed off to your local Claude Code session (see the handoff prompt
+below), M6a (automated) → M6b (manual) → M6c (automated) → M6d (manual), in
+that exact order — each automated gate must be green before its manual step,
+and the local pass completes fully before Forge starts. When all four
+finish, an NPC written with Obsidian Fantasy Statblocks imports into Foundry
+and works, on both your local world and Forge.
+
+---
+
+## Handoff prompt for your local Claude Code session
+
+M0–M5 happen in a cloud session (here) and land as ordinary commits/PRs on
+`claude/obsidian-foundry-npc-sync-sq6hu6` (or wherever they merge to). Your
+local Claude Code session has no memory of this conversation, so give it
+this doc and this prompt — it's self-contained:
+
+```
+Pull the latest foundry-mcp-bridge branch (or main once merged) and read
+docs/statblock-import-execution-plan.md end to end for context.
+
+First, confirm M0-M5 actually landed and are green in this checkout:
+  npm install && npm run build && npm run typecheck && npm test
+All tests must pass, including anything under packages/statblock-sync and
+the mock-end-to-end suite that drives
+test/fixtures/statblock-import/gravemire-stalker.md through
+verifyImportedNpc against mock-foundry. If anything is missing or red,
+STOP and report — do not attempt to patch it yourself; that's cloud-session
+work, come back to me instead.
+
+If that's all green, continue with M6 exactly as written in the doc:
+
+1. M6a (local world, automated): run
+     npm run install:foundry
+     npm run selftest
+   and report the full verifyImportedNpc structured report verbatim. If
+   any check fails, STOP here and report the failure — do not proceed to
+   the manual step and do not attempt to work around it.
+
+2. If M6a is all-pass: STOP and tell me explicitly "M6a is green, ready
+   for your manual check (M6b)." Do not run M6c until I tell you I've
+   completed M6b.
+
+3. Once I confirm M6b, run M6c (same as M6a, but against my Forge world —
+   ask me for the wss:// relay URL if it isn't already in Module Settings
+   on that world) and report the result the same way.
+
+4. If M6c is all-pass: STOP and tell me "M6c is green, ready for your
+   manual check (M6d)." Do not mark anything done until I confirm M6d.
+
+Do not skip the STOP points even if a step looks obviously fine — the
+automated-gate-before-manual-check ordering in the doc is a hard rule, not
+a suggestion.
+```
 
 ---
 
