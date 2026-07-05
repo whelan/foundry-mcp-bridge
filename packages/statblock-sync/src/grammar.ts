@@ -1,12 +1,11 @@
 /**
  * M3: Action text grammar parser
  *
- * Parses attack, save, and other mechanics from action descriptions.
- * Handles both 2024 and 2014 grammar forms for compatibility.
+ * Parses attack, save, and other mechanics from 2024 D&D statblock descriptions.
  *
  * Example inputs:
- * - "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage plus 3 (1d6) necrotic damage."
- * - "Each creature within 30 feet that can hear it must make a DC 13 Wisdom saving throw, taking 22 (4d10) psychic damage on a failed save, or half as much on a successful one."
+ * - "Melee Attack Roll: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage plus 3 (1d6) necrotic damage."
+ * - "Wisdom Saving Throw: DC 13. Each creature that can hear it and fails the save takes 22 (4d10) psychic damage, or half as much on a successful one."
  */
 
 import type { StatblockData } from "./schema.js";
@@ -59,24 +58,17 @@ export interface ParsedSave {
 }
 
 /**
- * Try to parse an action as a melee weapon attack.
- * Supports both 2014 format ("Melee Weapon Attack: +5 to hit") and 2024 format ("Melee Attack Roll: +5").
+ * Try to parse an action as a melee weapon attack (2024 format).
+ * Looks for patterns like "Melee Attack Roll: +5" or "Ranged Attack Roll: +5"
  */
 export function parseAttackAction(description: string): ParsedAttack | undefined {
   // Strip markdown formatting (asterisks for italics/bold)
   const normalized = stripMarkdown(description);
 
-  // Try 2014 format: "Melee Weapon Attack: +5 to hit"
-  let attackMatch = normalized.match(
-    /(?:melee|ranged)?\s*weapon\s*attack:\s*([+-]\d+)\s+to\s+hit/i
+  // 2024 format: "Melee Attack Roll: +5" or "Ranged Attack Roll: +5"
+  const attackMatch = normalized.match(
+    /(?:melee|ranged)\s+attack\s+roll:\s*([+-]\d+)/i
   );
-
-  // Try 2024 format: "Melee Attack Roll: +5" or "Ranged Attack Roll: +5"
-  if (!attackMatch || !attackMatch[1]) {
-    attackMatch = normalized.match(
-      /(?:melee|ranged)\s+attack\s+roll:\s*([+-]\d+)/i
-    );
-  }
 
   if (!attackMatch || !attackMatch[1]) return undefined;
 
@@ -118,32 +110,22 @@ export function parseAttackAction(description: string): ParsedAttack | undefined
 }
 
 /**
- * Try to parse an action as a saving throw.
- * Supports both 2014 format ("make a DC 13 Wisdom saving throw") and 2024 format ("Wisdom Saving Throw: DC 12").
+ * Try to parse an action as a saving throw (2024 format).
+ * Looks for patterns like "Wisdom Saving Throw: DC 12"
  */
 export function parseSaveAction(description: string): ParsedSave | undefined {
   // Strip markdown formatting
   const normalized = stripMarkdown(description);
 
-  // Try 2014 format: "make a DC 13 Wisdom saving throw"
-  let saveMatch = normalized.match(
-    /(?:must\s+)?make\s+a?\s*dc\s+(\d+)\s+(\w+)\s+saving\s+throw/i
+  // 2024 format: "Wisdom Saving Throw: DC 12"
+  const saveMatch = normalized.match(
+    /(\w+)\s+saving\s+throw:\s*dc\s+(\d+)/i
   );
-
-  // Try 2024 format: "Wisdom Saving Throw: DC 12"
-  if (!saveMatch || !saveMatch[1] || !saveMatch[2]) {
-    saveMatch = normalized.match(
-      /(\w+)\s+saving\s+throw:\s*dc\s+(\d+)/i
-    );
-    if (saveMatch && saveMatch[1] && saveMatch[2]) {
-      saveMatch = [saveMatch[0], saveMatch[2], saveMatch[1]];
-    }
-  }
 
   if (!saveMatch || !saveMatch[1] || !saveMatch[2]) return undefined;
 
-  const dc = parseInt(saveMatch[1], 10);
-  const ability = saveMatch[2];
+  const ability = saveMatch[1];
+  const dc = parseInt(saveMatch[2], 10);
 
   // Extract damage
   const damage = parseDamage(description);

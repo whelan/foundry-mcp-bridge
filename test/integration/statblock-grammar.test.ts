@@ -14,7 +14,7 @@ describe("M3: Action Text Grammar Parsing", () => {
   describe("Attack action parsing", () => {
     it("parses melee weapon attack", () => {
       const description =
-        "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage.";
+        "Melee Attack Roll: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage.";
       const attack = parseAttackAction(description);
 
       expect(attack).not.toBeNull();
@@ -27,7 +27,7 @@ describe("M3: Action Text Grammar Parsing", () => {
 
     it("parses attack with multiple damage types", () => {
       const description =
-        "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage plus 3 (1d6) necrotic damage.";
+        "Melee Attack Roll: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage plus 3 (1d6) necrotic damage.";
       const attack = parseAttackAction(description);
 
       expect(attack).not.toBeNull();
@@ -40,7 +40,7 @@ describe("M3: Action Text Grammar Parsing", () => {
 
     it("parses ranged attack", () => {
       const description =
-        "Ranged Weapon Attack: +4 to hit, range 60/240 ft., one target. Hit: 7 (2d6) piercing damage.";
+        "Ranged Attack Roll: +4 to hit, range 60/240 ft., one target. Hit: 7 (2d6) piercing damage.";
       const attack = parseAttackAction(description);
 
       expect(attack).not.toBeNull();
@@ -60,7 +60,7 @@ describe("M3: Action Text Grammar Parsing", () => {
   describe("Save action parsing", () => {
     it("parses DC save with damage", () => {
       const description =
-        "Each creature within 30 feet that can hear it must make a DC 13 Wisdom saving throw, taking 22 (4d10) psychic damage on a failed save, or half as much on a successful one.";
+        "Wisdom Saving Throw: DC 13. Each creature that can hear it and fails the save takes 22 (4d10) psychic damage, or half as much on a successful one.";
       const save = parseSaveAction(description);
 
       expect(save).not.toBeNull();
@@ -71,7 +71,7 @@ describe("M3: Action Text Grammar Parsing", () => {
 
     it("parses DC with different ability", () => {
       const description =
-        "Each creature in the area must make a DC 14 Dexterity saving throw or take 33 (6d10) fire damage.";
+        "Dexterity Saving Throw: DC 14. Each creature in the area that fails the save takes 33 (6d10) fire damage.";
       const save = parseSaveAction(description);
 
       expect(save).not.toBeNull();
@@ -124,7 +124,7 @@ describe("M3: Action Text Grammar Parsing", () => {
 
   describe("Damage parsing within actions", () => {
     it("extracts damage from save actions", () => {
-      const description = "Each creature must make a DC 15 Dexterity saving throw, taking 44 (8d10) fire damage on a failed save, or half as much on a successful one.";
+      const description = "Dexterity Saving Throw: DC 15. Each creature that fails the save takes 44 (8d10) fire damage, or half as much on a successful one.";
       const save = parseSaveAction(description);
 
       expect(save).not.toBeUndefined();
@@ -134,7 +134,7 @@ describe("M3: Action Text Grammar Parsing", () => {
 
     it("handles alternative damage (half on save)", () => {
       const description =
-        "Each creature must make a DC 15 Dexterity saving throw, taking 44 (8d10) fire damage on a failed save, or half as much on a successful one.";
+        "Dexterity Saving Throw: DC 15. Each creature that fails the save takes 44 (8d10) fire damage, or half as much on a successful one.";
       const save = parseSaveAction(description);
 
       expect(save?.successEffect).toMatch(/half/i);
