@@ -8,3 +8,5 @@ export * from "./math.js";
 export * from "./grammar.js";
 export * from "./to-foundry.js";
 export * from "./utils.js";
+export * from "./match.js";
+export * from "./import-npc.js";
