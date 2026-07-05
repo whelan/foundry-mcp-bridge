@@ -468,7 +468,7 @@ export function runSearchCompendium(
 export const ImportFromCompendiumShape = {
   documentType: DocumentType,
   uuid: z.string().min(1),
-  patch: z.record(z.string(), z.unknown()).optional(),
+  patch: documentData.optional(),
   folderId: z.string().optional(),
   fields: fieldsParam,
   full: fullParam,
@@ -481,8 +481,11 @@ export async function runImportFromCompendium(
   args: ImportFromCompendiumArgs,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // Drop unsafe dot-path keys from the outgoing patch, consistent with
+  // update_document's data and duplicate_document's overrides.
+  const safe = { ...args, patch: args.patch ? filterUnsafePaths(args.patch) : args.patch };
   return projectEcho(
-    await importFromCompendiumReliable(transport, args, opts),
+    await importFromCompendiumReliable(transport, safe, opts),
     args.fields,
     args.full,
   );

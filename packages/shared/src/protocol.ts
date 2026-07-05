@@ -243,7 +243,7 @@ export const ImportFromCompendiumCommand = z.object({
   /** UUID of the compendium entry to import (e.g. "Compendium.dnd5e.actors24.Item.xyz"). */
   uuid: z.string().min(1),
   /** Optional dot-notation patch to apply to the imported document. */
-  patch: z.record(z.string(), z.unknown()).optional(),
+  patch: DocumentData.optional(),
   /** Optional folder id to place the imported document in. */
   folderId: z.string().optional(),
 });

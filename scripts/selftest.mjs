@@ -121,9 +121,11 @@ function handle(env) {
       // Return a dummy result for testing (real implementation loads from fixtures)
       return ok([{ uuid: "Compendium.dnd5e.actors24.dummy", pack: "dnd5e.actors24", name: "Dummy", type: "Actor" }]);
     case "importFromCompendium": {
-      // Simulate importing from compendium
+      // Simulate importing from compendium, honoring an optional patch so the
+      // reliability pipeline's read-back verification is meaningfully exercised.
       const _id = rid();
-      const doc = { _id, name: "Imported Document", type: c.documentType };
+      const base = { name: "Imported Document", type: c.documentType };
+      const doc = { ...(c.patch ? applyUpdate(base, c.patch) : base), _id };
       if (!env.dryRun) store.set(`${c.documentType}:${_id}`, doc);
       return ok(doc);
     }
@@ -175,6 +177,7 @@ show("create_quest", await runCreateQuest(server, { data: { name: "Find the Amul
 show("delete_document", await runDeleteDocument(server, { documentType: "Actor", id: newId }, opts));
 show("search_compendium (Goblin)", await runSearchCompendium(server, { documentType: "Actor", nameQuery: "Goblin" }, opts));
 show("import_from_compendium (Tier 1)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy" }, opts));
+show("import_from_compendium (Tier 1, with patch)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy", patch: { name: "Patched Goblin" } }, opts));
 
 ws.close();
 server.close();

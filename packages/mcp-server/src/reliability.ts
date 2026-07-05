@@ -135,6 +135,20 @@ function idOf(data: unknown): string | undefined {
 }
 
 /**
+ * Fallback read-back check for clone-shaped mutations (duplicate, import) that
+ * have no caller-supplied data to verify against: confirm the write's own
+ * name (or, failing that, type) survived the read-back. An empty object would
+ * make `isSubset` vacuously pass, silently disabling the mismatch/rollback
+ * safety net, so this only degrades to `{}` when neither field is present.
+ */
+function nameOrTypeFallback(written: unknown): Json {
+  const w = written as { name?: unknown; type?: unknown } | null;
+  if (typeof w?.name === "string") return { name: w.name };
+  if (typeof w?.type === "string") return { type: w.type };
+  return {};
+}
+
+/**
  * The dry-run → write phase shared by every mutating tool: dry-runs the command
  * (push "dry-run"), then writes it (push "write"), short-circuiting on either
  * failure. Returns the write payload on success, or a ready-made failure outcome.
@@ -356,8 +370,10 @@ export function duplicateDocumentReliable(
         overrides: input.overrides,
       },
       // The copy's _id comes from the write; read-back confirms it exists and
-      // that any requested overrides took effect.
-      expected: input.overrides ? expandObject(input.overrides) : {},
+      // that any requested overrides took effect. Without overrides there's
+      // nothing override-specific to check, so fall back to confirming the
+      // write's own name survived the read-back (catches a wrong/empty read).
+      expected: input.overrides ? expandObject(input.overrides) : nameOrTypeFallback,
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "duplicated document did not match the requested overrides; rolled back",
     },
@@ -772,15 +788,9 @@ export function importFromCompendiumReliable(
         patch: input.patch,
         folderId: input.folderId,
       },
-      // A patch names concrete fields to verify. Without one there's nothing
-      // patch-specific to check, so fall back to confirming the write's own
-      // name survived the read-back (catches a read-back of the wrong/empty doc).
-      expected:
-        input.patch ??
-        ((written) => {
-          const name = (written as { name?: unknown } | null)?.name;
-          return typeof name === "string" ? { name } : {};
-        }),
+      // A patch names concrete fields to verify; without one, fall back to
+      // confirming the write's own name/type survived the read-back.
+      expected: input.patch ?? nameOrTypeFallback,
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "imported document did not match expected after read-back; rolled back",
     },

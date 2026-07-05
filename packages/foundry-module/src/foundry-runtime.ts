@@ -352,28 +352,33 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
 
     async searchCompendium(packScope, documentType, nameQuery) {
       // Search in world and compendium packs (default to dnd5e if not specified).
+      // `pack.metadata.name` is the pack's own short slug (e.g. "actors24"); the
+      // fully-qualified `<package>.<name>` id used for scoping is `pack.collection`.
       const scope = packScope ?? "dnd5e";
       const query = nameQuery.toLowerCase();
-      const matchingPacks = [...game.packs].filter(
-        (pack: any) => pack.metadata.name.startsWith(`${scope}.`) && pack.metadata.type === documentType,
+      const matchingPacks = game.packs.filter(
+        (pack: any) => pack.collection.startsWith(`${scope}.`) && pack.metadata.type === documentType,
       );
       // Each pack's index fetch is an independent I/O call; run them concurrently.
-      const indices = await Promise.all(matchingPacks.map((pack: any) => pack.getIndex()));
-      const results: CompendiumEntry[] = [];
-      matchingPacks.forEach((pack: any, i: number) => {
-        for (const entry of indices[i]) {
-          if (String(entry.name ?? "").toLowerCase().includes(query)) {
-            results.push({
-              uuid: entry.uuid ?? `${pack.collection}.${entry._id}`,
-              pack: pack.metadata.name,
-              name: String(entry.name ?? ""),
-              type: String(entry.type ?? documentType),
-              cr: typeof entry.cr === "number" ? entry.cr : undefined,
-            });
+      const results = await Promise.all(
+        matchingPacks.map(async (pack: any) => {
+          const index = await pack.getIndex();
+          const entries: CompendiumEntry[] = [];
+          for (const entry of index) {
+            if (String(entry.name ?? "").toLowerCase().includes(query)) {
+              entries.push({
+                uuid: entry.uuid ?? `${pack.collection}.${entry._id}`,
+                pack: pack.collection,
+                name: String(entry.name ?? ""),
+                type: String(entry.type ?? documentType),
+                cr: typeof entry.cr === "number" ? entry.cr : undefined,
+              });
+            }
           }
-        }
-      });
-      return results;
+          return entries;
+        }),
+      );
+      return results.flat();
     },
 
     async importFromCompendium(documentType, uuid, patch, folderId, opts) {
@@ -390,11 +395,11 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       if (folderId) {
         data.folder = folderId;
       }
+      const cls = getDocumentClass(documentType);
       if (opts.dryRun) {
-        const cls = getDocumentClass(documentType);
         return new cls(data).toObject();
       }
-      const doc = await collection(documentType).create(data);
+      const doc = await cls.create(data);
       return doc.toObject();
     },
   } satisfies FoundryDocumentApi;

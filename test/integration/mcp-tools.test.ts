@@ -23,6 +23,8 @@ import {
   runDeleteEmbedded,
   runCreateQuest,
   runUpdateQuest,
+  runSearchCompendium,
+  runImportFromCompendium,
 } from "../../packages/mcp-server/src/tools.js";
 
 /** Transport that drives the mock-foundry, with hooks to exercise the pipeline. */
@@ -732,6 +734,112 @@ describe("duplicate_document pipeline", () => {
     expect(out.steps).toContain("rollback");
     // Only the original survives; the rolled-back copy is gone.
     expect(mock.documents("Actor").length).toBe(1);
+  });
+});
+
+describe("search_compendium / import_from_compendium pipeline", () => {
+  const GRAVEMIRE_UUID = "Compendium.dnd5e.actors24.gravemire-stalker";
+
+  it("finds a fixture by name and document type", async () => {
+    const { transport } = setup();
+    const out = await runSearchCompendium(transport, { documentType: "Actor", nameQuery: "Gravemire" });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const results = out.data as Array<{ uuid: string; pack: string; name: string; type: string }>;
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      uuid: GRAVEMIRE_UUID,
+      pack: "dnd5e.actors24",
+      name: "Gravemire Stalker",
+      // The result's `type` is the fixture's real game-system subtype, not the
+      // top-level DocumentType ("Actor") — guards against the two being conflated.
+      type: "npc",
+    });
+  });
+
+  it("excludes matches of the wrong document type", async () => {
+    const { transport } = setup();
+    const out = await runSearchCompendium(transport, { documentType: "Item", nameQuery: "Gravemire" });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.data).toEqual([]);
+  });
+
+  it("excludes matches outside the requested pack scope", async () => {
+    const { transport } = setup();
+    const out = await runSearchCompendium(transport, {
+      documentType: "Actor",
+      nameQuery: "Gravemire",
+      packScope: "pf2e",
+    });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.data).toEqual([]);
+  });
+
+  it("imports a compendium fixture into the world with a fresh id", async () => {
+    const { mock, transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: GRAVEMIRE_UUID,
+      fields: ["_id", "name", "type"],
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write", "read-back"]);
+    if (!out.ok) return;
+    const imported = out.data as { _id: string; name: string; type: string };
+    expect(imported.name).toBe("Gravemire Stalker");
+    expect(imported.type).toBe("npc");
+    expect(imported._id).not.toBe("gravemire-stalker");
+    expect(mock.documents("Actor").some((a) => (a as { _id: string })._id === imported._id)).toBe(true);
+  });
+
+  it("applies a patch and verifies it survives read-back", async () => {
+    const { transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: GRAVEMIRE_UUID,
+      patch: { name: "Patched Stalker" },
+    });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect((out.data as { name: string }).name).toBe("Patched Stalker");
+  });
+
+  it("returns NOT_FOUND for an unknown uuid", async () => {
+    const { transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: "Compendium.dnd5e.actors24.does-not-exist",
+    });
+    expectErr(out, "NOT_FOUND");
+  });
+
+  it("does not leak embedded-item mutations back into the compendium fixture", async () => {
+    const { mock, transport } = setup();
+    const first = await runImportFromCompendium(transport, { documentType: "Actor", uuid: GRAVEMIRE_UUID });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const firstId = (first.data as { _id: string })._id;
+
+    const embed = await runCreateEmbedded(transport, {
+      parentType: "Actor",
+      parentId: firstId,
+      embeddedName: "Item",
+      data: [{ name: "Phantom Item", type: "weapon" }],
+    });
+    expect(embed.ok).toBe(true);
+
+    // A second, independent import from the same fixture must be unaffected
+    // by the first import's later mutation.
+    const second = await runImportFromCompendium(transport, { documentType: "Actor", uuid: GRAVEMIRE_UUID });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    const secondId = (second.data as { _id: string })._id;
+    const secondDoc = mock.documents("Actor").find((a) => (a as { _id: string })._id === secondId) as {
+      items?: unknown[];
+    };
+    expect(secondDoc.items).toHaveLength(5);
   });
 });
 

@@ -23,6 +23,20 @@ export interface SrdFixture {
   data: Record<string, unknown>;
 }
 
+/**
+ * The dnd5e compendium pack (short slug, e.g. "actors24") each entity type's
+ * fixtures are sourced from / addressed under. Single source of truth for both
+ * the on-disk fixture directory and the `Compendium.dnd5e.<pack>.<id>` uuid
+ * consumers (e.g. the mock) construct.
+ */
+export const PACK_NAME_BY_TYPE: Record<EntityType, string> = {
+  Actor: "actors24",
+  Item: "monsterfeatures24",
+  JournalEntry: "journals",
+  Scene: "scenes",
+  Quest: "quests",
+};
+
 let cached: Map<EntityType, Map<string, SrdFixture>> | undefined;
 
 /**
@@ -30,6 +44,11 @@ let cached: Map<EntityType, Map<string, SrdFixture>> | undefined;
  * entity type, with each entry a map of {id -> fixture}. The fixture set is
  * static for the process lifetime (tests construct many MockFoundry
  * instances), so the disk read + JSON parse is memoized after the first call.
+ *
+ * A single malformed fixture file is skipped (with a warning) rather than
+ * failing the whole load — MockFoundry's constructor calls this, so an
+ * uncaught parse error here would otherwise crash every test in the suite,
+ * not just the ones exercising the one bad fixture.
  */
 export function loadSrdFixtures(): Map<EntityType, Map<string, SrdFixture>> {
   if (cached) return cached;
@@ -45,9 +64,13 @@ export function loadSrdFixtures(): Map<EntityType, Map<string, SrdFixture>> {
       const files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
       for (const file of files) {
         const filePath = path.join(dir, file);
-        const raw = fs.readFileSync(filePath, "utf-8");
-        const fixture = JSON.parse(raw) as SrdFixture;
-        fixturesByType.set(fixture.id, fixture);
+        try {
+          const raw = fs.readFileSync(filePath, "utf-8");
+          const fixture = JSON.parse(raw) as SrdFixture;
+          fixturesByType.set(fixture.id, fixture);
+        } catch (e) {
+          console.warn(`[dnd5e-srd fixtures] skipping unreadable fixture ${filePath}: ${(e as Error).message}`);
+        }
       }
     }
 
@@ -78,14 +101,7 @@ export function loadFixture(type: EntityType, id: string): SrdFixture {
  * Get the fixture directory for a given entity type.
  */
 function getFixtureDirForType(type: EntityType): string {
-  const dirMap: Record<EntityType, string> = {
-    Actor: path.join(__dirname, "actors24"),
-    Item: path.join(__dirname, "monsterfeatures24"),
-    JournalEntry: path.join(__dirname, "journals"),
-    Scene: path.join(__dirname, "scenes"),
-    Quest: path.join(__dirname, "quests"),
-  };
-  return dirMap[type] || path.join(__dirname, "actors24");
+  return path.join(__dirname, PACK_NAME_BY_TYPE[type] ?? PACK_NAME_BY_TYPE.Actor);
 }
 
 /**
