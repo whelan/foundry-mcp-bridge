@@ -121,7 +121,7 @@ export function parseStatblock(raw: string): StatblockData {
  * Derive AC/HP/speed from the flat `ac`, `hp`, `hit_dice`, and `speed` fields.
  */
 function buildAttributes(sb: Statblock): StatblockData["attributes"] {
-  const speed: StatblockData["attributes"]["speed"] = { walk: 30 };
+  const speed: StatblockData["attributes"]["speed"] = {};
 
   if (sb.speed) {
     const walkMatch = sb.speed.match(/(\d+)\s*ft\.?/i);

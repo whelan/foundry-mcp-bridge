@@ -136,6 +136,20 @@ Just some prose, no fenced statblock here.
     expect(() => parseStatblock(markdown)).toThrow();
   });
 
+  it("does not assume a walk speed when the speed field is omitted", () => {
+    const markdown = `\`\`\`statblock
+name: Test
+cr: 1
+ac: 10
+hp: 10
+stats: [10, 10, 10, 10, 10, 10]
+\`\`\`
+`;
+
+    const statblock = parseStatblock(markdown);
+    expect(statblock.attributes.speed.walk).toBeUndefined();
+  });
+
   it("parses ability scores from the stats tuple", () => {
     const markdown = `\`\`\`statblock
 name: Test

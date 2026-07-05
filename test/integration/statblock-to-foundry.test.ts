@@ -72,6 +72,40 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     expect(system.attributes.hp.formula).toBe("7d8+14");
   });
 
+  it("sets movement from the parsed speed", () => {
+    const filePath = path.join(
+      __dirname,
+      "..",
+      "fixtures",
+      "statblock-import",
+      "gravemire-stalker.md"
+    );
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const statblock = parseStatblock(raw);
+    const actor = statblockToFoundryActor(statblock);
+
+    const system = actor.system as Record<string, any>;
+    expect(system.attributes.movement.walk).toBe(30);
+    expect(system.attributes.movement.swim).toBe(20);
+    expect(system.attributes.movement.units).toBe("ft");
+  });
+
+  it("does not assume a 30ft walk speed when speed is omitted", () => {
+    const markdown = `\`\`\`statblock
+name: Immobile Test
+cr: 1
+ac: 10
+hp: 10
+stats: [10, 10, 10, 10, 10, 10]
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+
+    const system = actor.system as Record<string, any>;
+    expect(system.attributes.movement.walk).toBe(0);
+  });
+
   it("sets CR and XP", () => {
     const filePath = path.join(
       __dirname,
@@ -188,6 +222,13 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     // Claw's attack bonus is positive (+5), formatted with a leading "+"
     const claw = byName("Claw");
     expect((claw?.system as Record<string, any>)?.attack?.bonus).toBe("+5");
+
+    // Grave Breath's save DC and ability are persisted so the sheet can
+    // prompt the correct saving throw
+    const graveBreath = byName("Grave Breath");
+    const graveBreathSystem = graveBreath?.system as Record<string, any>;
+    expect(graveBreathSystem?.save?.ability).toBe("con");
+    expect(graveBreathSystem?.save?.dc?.value).toBe(12);
   });
 
   it("formats a negative attack bonus without a doubled sign", () => {

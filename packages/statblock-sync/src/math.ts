@@ -18,7 +18,9 @@ export function getAbilityModifier(score: number): number {
 
 /**
  * Get proficiency bonus for a given CR.
- * Standard D&D 5e progression: proficiency = 2 + (CR / 4), rounded down.
+ * Standard D&D 5e Monster Manual progression: +2 for CR 0-4, +3 for CR 5-8,
+ * +4 for CR 9-12, +5 for CR 13-16, +6 for CR 17-20, +7 for CR 21-24,
+ * +8 for CR 25-28, +9 for CR 29+.
  */
 export function getProficiencyBonus(cr: number): number {
   if (cr < 1) return 2;

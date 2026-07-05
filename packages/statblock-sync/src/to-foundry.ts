@@ -11,7 +11,6 @@
  */
 
 import type { StatblockData } from "./schema.js";
-import { getAbilityModifier } from "./math.js";
 import { SKILL_TO_ABBREVIATION_MAP } from "./utils.js";
 import { parseAttackAction, parseSaveAction } from "./grammar.js";
 
@@ -51,16 +50,6 @@ const DEFAULT_ITEM_ICONS: Record<string, string> = {
 export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDocument {
   const abilities_ = statblock.abilities_;
 
-  // Compute ability modifiers
-  const abilityMods = {
-    str: getAbilityModifier(abilities_.str),
-    dex: getAbilityModifier(abilities_.dex),
-    con: getAbilityModifier(abilities_.con),
-    int: getAbilityModifier(abilities_.int),
-    wis: getAbilityModifier(abilities_.wis),
-    cha: getAbilityModifier(abilities_.cha),
-  };
-
   // Build system object
   const system: Record<string, unknown> = {
     attributes: {
@@ -72,6 +61,15 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
         value: statblock.attributes.hitPoints.value,
         max: statblock.attributes.hitPoints.value,
         formula: statblock.attributes.hitPoints.formula,
+      },
+      movement: {
+        walk: statblock.attributes.speed.walk ?? 0,
+        fly: statblock.attributes.speed.fly ?? 0,
+        swim: statblock.attributes.speed.swim ?? 0,
+        burrow: statblock.attributes.speed.burrow ?? 0,
+        climb: statblock.attributes.speed.climb ?? 0,
+        units: "ft",
+        hover: false,
       },
     },
     details: {
@@ -107,7 +105,7 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
       wis: { value: abilities_.wis },
       cha: { value: abilities_.cha },
     },
-    skills: buildSkills(statblock, abilityMods),
+    skills: buildSkills(statblock),
   };
 
   // Create embedded items from abilities and actions
@@ -146,10 +144,7 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
 /**
  * Build skills object for the dnd5e system.
  */
-function buildSkills(
-  statblock: StatblockData,
-  abilityMods: Record<string, number>
-): Record<string, unknown> {
+function buildSkills(statblock: StatblockData): Record<string, unknown> {
   const skills: Record<string, Record<string, unknown>> = {};
 
   // Add proficient skills (using dnd5e abbreviations like "prc" for Perception)
@@ -212,6 +207,10 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
     }
   } else if (saveParsed) {
     system.type = "spellcasting";
+    system.save = {
+      ability: saveParsed.ability.toLowerCase().substring(0, 3),
+      dc: { value: saveParsed.dc, scaling: "flat" },
+    };
     system.damage = {
       parts: saveParsed.damage.map((d) => [d.formula, d.type]),
     };
