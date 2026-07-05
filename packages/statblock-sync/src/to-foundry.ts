@@ -12,7 +12,7 @@
 
 import type { StatblockData } from "./schema.js";
 import { getAbilityModifier } from "./math.js";
-import { getSkillAbility, SKILL_TO_ABBREVIATION_MAP } from "./utils.js";
+import { SKILL_TO_ABBREVIATION_MAP } from "./utils.js";
 import { parseAttackAction, parseSaveAction } from "./grammar.js";
 
 export interface Dnd5eActorDocument {

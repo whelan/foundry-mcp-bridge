@@ -259,7 +259,7 @@ function parseChallenge(body: string, crFromFm?: number): StatblockData["challen
     }
   }
 
-  // Compute XP from CR using standard D&D 5e table
+  // Compute XP from CR using the standard D&D 5e Monster Manual table
   const xpByCr: Record<number, number> = {
     0: 10,
     "0.125": 25,
@@ -273,18 +273,18 @@ function parseChallenge(body: string, crFromFm?: number): StatblockData["challen
     6: 2300,
     7: 2900,
     8: 3900,
-    9: 5900,
-    10: 8400,
-    11: 11500,
-    12: 13000,
-    13: 15000,
-    14: 18000,
-    15: 20000,
-    16: 22000,
-    17: 25000,
-    18: 33000,
-    19: 41000,
-    20: 50000,
+    9: 5000,
+    10: 5900,
+    11: 7200,
+    12: 8400,
+    13: 10000,
+    14: 11500,
+    15: 13000,
+    16: 15000,
+    17: 18000,
+    18: 20000,
+    19: 22000,
+    20: 25000,
     21: 33000,
     22: 41000,
     23: 50000,

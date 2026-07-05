@@ -4,9 +4,9 @@ This directory contains fixtures for the D&D 5e System Reference Document (SRD),
 
 ## License
 
-All fixtures are sourced from the official **D&D 5e SRD** and are licensed under **CC-BY-4.0**. See the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/) for details.
+Fixtures sourced from the official **D&D 5e SRD** are licensed under **CC-BY-4.0**. See the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/) for details. Fixtures marked `"source": "homebrew"` (e.g. `actors24/gravemire-stalker.json`) are original test content created for this repo and are not SRD material.
 
-**Attribution:** Content from the SRD is the property of Wizards of the Coast and is used here under CC-BY-4.0.
+**Attribution:** SRD content is the property of Wizards of the Coast and is used here under CC-BY-4.0.
 
 ## Directory Structure
 
