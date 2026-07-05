@@ -24,11 +24,14 @@ This statblock is the thread through every milestone. It deliberately
 exercises: abilities, natural AC, HP formula, mixed movement, skills, a save
 proficiency, damage resistance, darkvision + passive perception, a passive
 trait, a multiattack, a weapon attack, a save-based ability with recharge,
-and a reaction.
+a reaction — and a **portrait image** (`image:` is a vault-relative path;
+a test PNG lives next to the note), so the image → portrait → token pipeline
+is verified together with the mechanics, not as an afterthought.
 
 ````markdown
 ```statblock
 name: Gravemire Stalker
+image: assets/npcs/gravemire-stalker.png
 size: Medium
 type: undead
 alignment: Neutral Evil
@@ -73,7 +76,32 @@ The final acceptance test (M7) is: this note, pushed through the sync, opens
 in Foundry as an NPC whose sheet **rolls** — Claw makes an attack roll at +5
 and damage of 1d10+3 slashing + 1d6 necrotic; Grave Breath prompts a DC 12
 CON save; the numbers on the sheet header (AC 14, HP 45, speed, senses,
-passive Perception 13) match the block.
+passive Perception 13) match the block — **and** the sheet shows the
+uploaded portrait while a dragged-out token shows token art (the framed
+`.Token.webp` when Tokenizer is installed, the portrait otherwise).
+
+### The image → portrait → token pipeline
+
+The `image:` field flows through three stages, each independently verifiable:
+
+1. **Upload** — the vault-relative file is uploaded via the existing asset
+   pipeline (`uploadAsset`, content-hash tracked in the manifest exactly like
+   scene assets today) to a remote path under the world's data dir.
+2. **Portrait + baseline token** — the actor is created with `img` *and*
+   `prototypeToken.texture.src` both pointing at the uploaded path (the
+   `create` command's free-form data already carries `prototypeToken`).
+   Without any extra module, that is the complete, working baseline: sheet
+   portrait and scene token both show the artwork.
+3. **Framed token (optional upgrade)** — in a world with `vtta-tokenizer`
+   enabled, the `tokenizeActor` step (design doc §9) runs `autoToken` after
+   creation; the actor ends with `img` → `<name>.Avatar.webp` and
+   `prototypeToken.texture.src` → `<name>.Token.webp`. Worlds without the
+   module keep the stage-2 baseline — the import never fails over cosmetics.
+
+Verification is therefore **two-mode** everywhere below: *baseline* checks
+(img and token texture set, equal, and pointing at the uploaded asset) always
+run; *Tokenizer* checks (distinct `.Avatar.webp` / `.Token.webp` paths) run
+only when the world reports the module active.
 
 ---
 
@@ -104,6 +132,10 @@ preserving surrounding prose byte-for-byte).
 **Verify (gate):**
 - Unit test: the acceptance NPC above parses with zero unknown-key warnings;
   every field lands typed.
+- Unit test: `image:` resolves against the vault root (both plain relative
+  paths and Obsidian `[[wikilink]]` embeds); a referenced-but-missing file is
+  a named error at parse/scan time — before anything is written to Foundry —
+  matching the repo's fail-loudly config convention.
 - Unit test: fence replacement on a note with prose above/below leaves prose
   identical; `replace(parse(note)) === note` when nothing changed.
 - Property: parse rejects (with a named-field error, not a crash) a block
@@ -157,7 +189,10 @@ came from, recharge → `uses.recovery`), `prof`-correct attack ability chosen
 so mod + prof reproduces the stated bonus (flat bonus fallback when no
 ability fits), Tier 4 fallback items flagged
 `flags.foundry-mcp-bridge.needsReview`, every item flagged
-`flags.foundry-mcp-bridge.statblockKey`.
+`flags.foundry-mcp-bridge.statblockKey`. `to-foundry` takes the image's
+**already-resolved remote path** as an input (upload happens in the sync
+layer, M5) and sets both `img` and `prototypeToken.texture.src` to it; no
+image → both omitted so Foundry's defaults apply.
 
 **Verify (gate):**
 - **The mechanical-subset oracle:** `to-foundry(golden goblin statblock)`
@@ -168,7 +203,8 @@ ability fits), Tier 4 fallback items flagged
 - Acceptance NPC test: produces exactly 5 items (1 feat trait, 1 multiattack
   feat, 1 claw weapon, 1 breath feat with save activity, 1 reaction feat);
   claw activity resolves to STR-based (+3 mod +2 prof = +5); breath has
-  `recovery: recharge 5`.
+  `recovery: recharge 5`; `img` and `prototypeToken.texture.src` both equal
+  the supplied remote path.
 - Round-trip: `from-foundry` is Phase-1 work in the design doc and **not**
   required here — but add the one-way invariant now: converting the output
   actor's items' activities back through the M3 *renderer* reproduces the
@@ -178,19 +214,31 @@ ability fits), Tier 4 fallback items flagged
 ## M5 — Import path through the bridge (mock end-to-end)
 
 **Build:** an `import-npc` entry point (in `statblock-sync`, callable from
-the campaign-sync CLI and as an MCP flow): note file in → parse → to-foundry
-→ existing `create_document` (Actor, with `items` in data) through the
-reliability pipeline → **post-import verification** read-back that goes
-beyond the pipeline's subset check:
+the campaign-sync CLI and as an MCP flow): note file in → parse →
+**upload the referenced image** (existing `uploadAsset`, content-hash
+recorded in the manifest like scene assets) → to-foundry with the returned
+remote path → existing `create_document` (Actor, with `items` and
+`prototypeToken` in data) through the reliability pipeline → *(once the
+post-acceptance `tokenizeActor` upgrade has landed:)* token framing when the
+world reports vtta-tokenizer active → **post-import verification** read-back
+that goes beyond the pipeline's subset check:
 
 ```
 verifyImportedNpc(transport, actorId, expected):
+  # mechanics
   - actor exists, type "npc", name matches
   - item count and names match the match-plan
   - every non-Tier-4 action item has ≥1 activity
   - every attack activity's (ability mod + prof + bonus) === statblock to-hit
   - every save activity's DC === statblock DC
   - hp.max, ac, cr, passive perception match
+  # image + token (baseline — always when the statblock has image:)
+  - actor.img is set and points at the uploaded asset path
+  - prototypeToken.texture.src is set (== img in baseline mode)
+  # image + token (tokenizer mode — only when vtta-tokenizer is active
+  #                 AND the tokenizeActor upgrade has landed)
+  - actor.img ends with .Avatar.webp
+  - prototypeToken.texture.src ends with .Token.webp and differs from img
   → returns a structured report { ok, checks: [{name, pass, got, want}] }
 ```
 
@@ -198,9 +246,17 @@ This report is the machine-readable version of "the NPC works", and it must
 be printed by the CLI and returned by the MCP flow.
 
 **Verify (gate):**
-- Integration test against `mock-foundry`: import the acceptance NPC note →
-  `verifyImportedNpc` returns all-pass; assert the mock world contains the
-  actor with 5 embedded items.
+- Integration test against `mock-foundry`: import the acceptance NPC note
+  (with a real 1×1 test PNG beside it) → `verifyImportedNpc` returns
+  all-pass; assert the mock world contains the actor with 5 embedded items,
+  the mock FilePicker contains the uploaded portrait, and the actor's `img`
+  / `prototypeToken.texture.src` point at it.
+- Tokenizer-mode test: mock reports vtta-tokenizer active and fakes
+  `autoToken` by rewriting the two paths to `.Avatar.webp`/`.Token.webp` —
+  the tokenizer-mode checks pass; with the module absent, the import
+  succeeds with baseline checks only (framing must never fail an import).
+- Missing-image test: statblock references a file that isn't in the vault →
+  structured error naming the path, nothing written to Foundry.
 - Failure-path tests (mock injected faults, same style as existing
   reliability tests): read-back mismatch → rollback deletes the actor and the
   report says so; hang → timeout error is structured, world unchanged.
@@ -213,9 +269,11 @@ be printed by the CLI and returned by the MCP flow.
 ## M6 — Live world verification (the real gate)
 
 **Build:** extend `npm run selftest` with an NPC leg: it pushes the
-acceptance NPC through the real server → relay → module → live Foundry
-world, runs `verifyImportedNpc` against the real read-back, prints the
-report, then deletes the actor (selftest must stay non-destructive).
+acceptance NPC — including the test portrait upload — through the real
+server → relay → module → live Foundry world, runs `verifyImportedNpc`
+(tokenizer-mode checks included when the live world has vtta-tokenizer
+enabled) against the real read-back, prints the report, then deletes the
+actor and the uploaded test assets (selftest must stay non-destructive).
 
 **Verify (gate):**
 - `npm run selftest` green against a live world (local or Forge), NPC leg
@@ -229,8 +287,13 @@ report, then deletes the actor (selftest must stay non-destructive).
      **1d10+3 slashing + 1d6 necrotic**.
   4. Click **Grave Breath** → chat card offers a **DC 12 CON** save;
      recharge die appears on the item.
-  5. Drag the actor to a scene → token renders, vision/darkvision works.
-  6. `needsReview` check: Multiattack shows as a feature with clean text.
+  5. Sheet portrait shows the uploaded Gravemire Stalker artwork (not the
+     default mystery-man icon).
+  6. Drag the actor to a scene → the token renders the artwork,
+     vision/darkvision works. With vtta-tokenizer enabled: the token shows
+     the **framed** `.Token.webp` (circular border), visibly different from
+     the sheet portrait; without it, token art equals the portrait.
+  7. `needsReview` check: Multiattack shows as a feature with clean text.
 - Record the tested dnd5e system version in `statblock-sync/src/compat.ts`.
 
 ## M7 — Acceptance run (what "done" means)
@@ -260,6 +323,8 @@ NPC written with Obsidian Fantasy Statblocks imports into Foundry and works.
   M2/M3 renderers already exist, so this is mostly `from-foundry.ts` plus
   `world-export` wiring, with the golden texts from M0 as the oracle.
 - **Token framing** (design doc §9/Phase 6): `tokenizeActor` command calling
-  Tokenizer's `autoToken` for Tier 3/4 imports. Verification: actor `img`
-  and token texture point at `*.Token.webp` after import in a world with
-  vtta-tokenizer enabled; clean no-op report in a world without it.
+  Tokenizer's `autoToken` for Tier 3/4 imports. The verification for it is
+  **already specified** above — landing this upgrade activates the
+  tokenizer-mode checks in `verifyImportedNpc` (M5), the tokenizer-mode
+  selftest leg, and manual checklist item 6's framed-token branch (M6);
+  worlds without the module keep passing on baseline checks alone.
