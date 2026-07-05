@@ -6,6 +6,10 @@ NPC actors in a running Foundry world — where the Foundry side **works like th
 official compendium monsters** (rollable attacks, saves, damage, legendary
 actions), not like a text dump that merely looks right on the sheet.
 
+> **Executing this?** Follow `docs/statblock-import-execution-plan.md` — the
+> ordered milestone checklist with per-step verification gates for the
+> import direction.
+
 This builds on the existing `packages/campaign-sync` Obsidian↔Foundry sync
 (manifest, hashing, planner, world export), which today syncs actors only
 shallowly (`cr`, `hp`, biography in `world-export.ts:141`). The plan replaces
