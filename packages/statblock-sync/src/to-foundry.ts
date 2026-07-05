@@ -114,7 +114,7 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
   return {
     name: statblock.frontMatter.name,
     type: "npc",
-    img: statblock.frontMatter.image ? `modules/dnd5e/artwork/tokens/undead/undead-skeleton-02.webp` : undefined,
+    img: statblock.frontMatter.image ?? undefined,
     system,
     items,
     effects: [],
@@ -163,24 +163,19 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
   // For weapon items, add attack/damage structure for Foundry rollables
   if (isWeapon) {
     const system = item.system as Record<string, unknown>;
-    // Add basic weapon fields expected by dnd5e system
-    system.weapon = {
-      type: "simpleM",
-      properties: {},
-    };
+    // Add fields expected by dnd5e 2024 system
+    system.type = "meleeM"; // Would be refined to "meleeM", "rangedW", or "spellcasting" by grammar parser
     system.damage = {
-      parts: [], // Empty for now; grammar parser would populate if parsed
-      versatile: "",
+      parts: [], // Grammar parser populates with [formula, damageType] pairs
     };
     system.attack = {
-      bonus: 0, // Would be populated from parsed attack bonus
+      bonus: "", // Would be populated as "+X" from parsed attack bonus
     };
     system.range = {
       value: null,
       long: null,
       units: "ft",
     };
-    system.properties = {};
   }
 
   return item;
