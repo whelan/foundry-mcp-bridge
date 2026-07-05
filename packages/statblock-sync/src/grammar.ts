@@ -11,6 +11,7 @@
 
 import type { StatblockData } from "./schema.js";
 import { parseDamageFormula } from "./math.js";
+import { DAMAGE_TYPES_STR, stripMarkdown } from "./utils.js";
 
 /**
  * Parsed attack action details.
@@ -51,7 +52,7 @@ export interface ParsedSave {
  */
 export function parseAttackAction(description: string): ParsedAttack | undefined {
   // Strip markdown formatting (asterisks for italics/bold)
-  const normalized = description.replace(/\*+/g, "");
+  const normalized = stripMarkdown(description);
 
   // Look for attack header
   const attackMatch = normalized.match(
@@ -102,7 +103,7 @@ export function parseAttackAction(description: string): ParsedAttack | undefined
  */
 export function parseSaveAction(description: string): ParsedSave | undefined {
   // Strip markdown formatting
-  const normalized = description.replace(/\*+/g, "");
+  const normalized = stripMarkdown(description);
 
   // Look for save header
   const saveMatch = normalized.match(
@@ -153,7 +154,10 @@ function parseDamage(description: string): DamagePart[] {
   const damages: DamagePart[] = [];
 
   // Pattern for main damage: "N (XdY ± Z) type damage"
-  const damagePattern = /(\d+)\s*\(([^)]+)\)\s*(slashing|piercing|bludgeoning|psychic|necrotic|fire|cold|lightning|radiant|acid|poison|thunder|force)/gi;
+  const damagePattern = new RegExp(
+    `(\\d+)\\s*\\(([^)]+)\\)\\s*(${DAMAGE_TYPES_STR})`,
+    "gi"
+  );
 
   let match;
   while ((match = damagePattern.exec(description)) !== null) {
@@ -171,7 +175,10 @@ function parseDamage(description: string): DamagePart[] {
   }
 
   // Also check for "plus" pattern: "plus N (XdY ± Z) type damage"
-  const plusPattern = /plus\s+(\d+)\s*\(([^)]+)\)\s*(slashing|piercing|bludgeoning|psychic|necrotic|fire|cold|lightning|radiant|acid|poison|thunder|force)/gi;
+  const plusPattern = new RegExp(
+    `plus\\s+(\\d+)\\s*\\(([^)]+)\\)\\s*(${DAMAGE_TYPES_STR})`,
+    "gi"
+  );
   while ((match = plusPattern.exec(description)) !== null) {
     const formula = match[2];
     const type = match[3];

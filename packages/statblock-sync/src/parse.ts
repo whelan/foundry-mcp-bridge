@@ -8,6 +8,11 @@
 import { parse as parseYaml } from "yaml";
 import type { StatblockFrontMatter, StatblockData } from "./schema.js";
 import { StatblockFrontMatterSchema } from "./schema.js";
+import {
+  extractRegexInt,
+  extractRegexGroup,
+  parseTraitList,
+} from "./utils.js";
 
 /**
  * Regex to match YAML front-matter block at the start of a markdown file.
@@ -90,13 +95,10 @@ export function parseStatblock(raw: string): StatblockData {
  * **Speed** 30 ft.
  */
 function parseAttributes(body: string): StatblockData["attributes"] {
-  const armorClassMatch = body.match(/\*\*Armor Class\*\*\s+(\d+)/);
-  const hitPointsMatch = body.match(/\*\*Hit Points\*\*\s+(\d+)\s*\(([^)]+)\)/);
+  const acValue = extractRegexInt(body, /\*\*Armor Class\*\*\s+(\d+)/, 1, 10);
+  const hpValue = extractRegexInt(body, /\*\*Hit Points\*\*\s+(\d+)/, 1, 1);
+  const hpFormula = extractRegexGroup(body, /\*\*Hit Points\*\*\s+\d+\s*\(([^)]+)\)/, 1, "1d8") || "1d8";
   const speedMatch = body.match(/\*\*Speed\*\*\s+([^\n]+)/);
-
-  const acValue = armorClassMatch && armorClassMatch[1] ? parseInt(armorClassMatch[1], 10) : 10;
-  const hpValue = hitPointsMatch && hitPointsMatch[1] ? parseInt(hitPointsMatch[1], 10) : 1;
-  const hpFormula = hitPointsMatch && hitPointsMatch[2] ? hitPointsMatch[2] : "1d8";
 
   const speed: StatblockData["attributes"]["speed"] = { walk: 30 };
   if (speedMatch && speedMatch[1]) {
@@ -158,7 +160,7 @@ function parseSkillsAndSaves(body: string): StatblockData["skills"] {
     const skillText = skillsMatch[1].trim();
     const skillPairs = skillText.split(",").map((s) => s.trim());
     for (const pair of skillPairs) {
-      const match = pair.match(/(\w+)\s*([+-]\d+)/);
+      const match = pair.match(/(\w+(?:\s+\w+)?)\s*([+-]\d+)/);
       if (match && match[1] && match[2]) {
         const skillName = match[1];
         const bonus = parseInt(match[2], 10);
@@ -198,20 +200,13 @@ function parseSkillsAndSaves(body: string): StatblockData["skills"] {
  * **Senses** darkvision 60 ft., passive Perception 12
  */
 function parseTraits(body: string): StatblockData["traits"] {
-  const resistMatch = body.match(/\*\*Damage Resistances\*\*\s+([^\n]+)/i);
-  const immuneMatch = body.match(/\*\*Damage Immunities\*\*\s+([^\n]+)/i);
-  const vulnMatch = body.match(/\*\*Damage Vulnerabilities\*\*\s+([^\n]+)/i);
-  const condMatch = body.match(/\*\*Condition Immunities\*\*\s+([^\n]+)/i);
-  const sensesMatch = body.match(/\*\*Senses\*\*\s+([^\n]+)/i);
-  const langMatch = body.match(/\*\*Languages\*\*\s+([^\n]+)/i);
-
   return {
-    damageResistances: resistMatch && resistMatch[1] ? resistMatch[1].trim().split(",").map((s) => s.trim()) : [],
-    damageImmunities: immuneMatch && immuneMatch[1] ? immuneMatch[1].trim().split(",").map((s) => s.trim()) : [],
-    damageVulnerabilities: vulnMatch && vulnMatch[1] ? vulnMatch[1].trim().split(",").map((s) => s.trim()) : [],
-    conditionImmunities: condMatch && condMatch[1] ? condMatch[1].trim().split(",").map((s) => s.trim()) : [],
-    senses: sensesMatch && sensesMatch[1] ? [sensesMatch[1].trim()] : [],
-    languages: langMatch && langMatch[1] ? langMatch[1].trim().split(",").map((s) => s.trim()) : [],
+    damageResistances: parseTraitList(body, "Damage Resistances"),
+    damageImmunities: parseTraitList(body, "Damage Immunities"),
+    damageVulnerabilities: parseTraitList(body, "Damage Vulnerabilities"),
+    conditionImmunities: parseTraitList(body, "Condition Immunities"),
+    senses: parseTraitList(body, "Senses"),
+    languages: parseTraitList(body, "Languages"),
   };
 }
 

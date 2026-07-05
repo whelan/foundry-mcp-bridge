@@ -12,6 +12,7 @@
 
 import type { StatblockData } from "./schema.js";
 import { getAbilityModifier } from "./math.js";
+import { SKILL_TO_ABILITY_MAP } from "./utils.js";
 
 export interface Dnd5eActorDocument {
   name: string;
@@ -124,32 +125,10 @@ function buildSkills(
 ): Record<string, unknown> {
   const skills: Record<string, Record<string, unknown>> = {};
 
-  // Initialize all skills with ability modifiers
-  const skillMap: Record<string, string> = {
-    acrobatics: "dex",
-    "animal handling": "wis",
-    arcana: "int",
-    athletics: "str",
-    deception: "cha",
-    history: "int",
-    insight: "wis",
-    intimidation: "cha",
-    investigation: "int",
-    medicine: "wis",
-    nature: "int",
-    perception: "wis",
-    performance: "cha",
-    persuasion: "cha",
-    religion: "int",
-    sleight: "dex",
-    stealth: "dex",
-    survival: "wis",
-  };
-
   // Add proficient skills
   for (const prof of statblock.skills.proficiencies) {
     const skillName = prof.skill.toLowerCase().replace(/ of hand/, "");
-    const mod = skillMap[skillName] || "str";
+    const mod = SKILL_TO_ABILITY_MAP[skillName] || "str";
     skills[skillName] = {
       ability: mod,
       bonus: prof.bonus,

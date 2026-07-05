@@ -6,6 +6,7 @@
  */
 
 import type { StatblockData } from "./schema.js";
+import { SKILL_TO_ABILITY_MAP } from "./utils.js";
 
 /**
  * Compute ability modifier from ability score.
@@ -164,27 +165,5 @@ export function derivePlainStatblockStats(statblock: StatblockData): DerivedStat
  * Used for automatic skill bonus calculation.
  */
 function skillToAbility(skill: string): string {
-  const skillMap: Record<string, string> = {
-    acrobatics: "dex",
-    "animal handling": "wis",
-    arcana: "int",
-    athletics: "str",
-    deception: "cha",
-    history: "int",
-    insight: "wis",
-    intimidation: "cha",
-    investigation: "int",
-    medicine: "wis",
-    nature: "int",
-    perception: "wis",
-    performance: "cha",
-    persuasion: "cha",
-    religion: "int",
-    sleight: "dex",
-    "sleight of hand": "dex",
-    stealth: "dex",
-    survival: "wis",
-  };
-
-  return skillMap[skill.toLowerCase()] || "str";
+  return SKILL_TO_ABILITY_MAP[skill.toLowerCase()] || "str";
 }
