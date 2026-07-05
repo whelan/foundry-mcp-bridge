@@ -13,6 +13,18 @@ import type { StatblockData } from "./schema.js";
 import { parseDamageFormula } from "./math.js";
 import { DAMAGE_TYPES_STR, stripMarkdown } from "./utils.js";
 
+/** Regex pattern for main damage: "N (XdY ± Z) type damage" */
+const DAMAGE_PATTERN = new RegExp(
+  `(\\d+)\\s*\\(([^)]+)\\)\\s*(${DAMAGE_TYPES_STR})`,
+  "gi"
+);
+
+/** Regex pattern for plus damage: "plus N (XdY ± Z) type damage" */
+const PLUS_PATTERN = new RegExp(
+  `plus\\s+(\\d+)\\s*\\(([^)]+)\\)\\s*(${DAMAGE_TYPES_STR})`,
+  "gi"
+);
+
 /**
  * Parsed attack action details.
  */
@@ -153,14 +165,10 @@ function extractActionName(fullText: string): string {
 function parseDamage(description: string): DamagePart[] {
   const damages: DamagePart[] = [];
 
-  // Pattern for main damage: "N (XdY ± Z) type damage"
-  const damagePattern = new RegExp(
-    `(\\d+)\\s*\\(([^)]+)\\)\\s*(${DAMAGE_TYPES_STR})`,
-    "gi"
-  );
-
+  // Reset stateful RegExp before use
+  DAMAGE_PATTERN.lastIndex = 0;
   let match;
-  while ((match = damagePattern.exec(description)) !== null) {
+  while ((match = DAMAGE_PATTERN.exec(description)) !== null) {
     const formula = match[2]; // The "XdY ± Z" part
     const type = match[3];
     if (!formula || !type) continue;
@@ -174,12 +182,9 @@ function parseDamage(description: string): DamagePart[] {
     });
   }
 
-  // Also check for "plus" pattern: "plus N (XdY ± Z) type damage"
-  const plusPattern = new RegExp(
-    `plus\\s+(\\d+)\\s*\\(([^)]+)\\)\\s*(${DAMAGE_TYPES_STR})`,
-    "gi"
-  );
-  while ((match = plusPattern.exec(description)) !== null) {
+  // Check for "plus" pattern: "plus N (XdY ± Z) type damage"
+  PLUS_PATTERN.lastIndex = 0;
+  while ((match = PLUS_PATTERN.exec(description)) !== null) {
     const formula = match[2];
     const type = match[3];
     if (!formula || !type) continue;

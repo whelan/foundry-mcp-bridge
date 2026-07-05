@@ -6,7 +6,7 @@
  */
 
 import type { StatblockData } from "./schema.js";
-import { SKILL_TO_ABILITY_MAP } from "./utils.js";
+import { getSkillAbility } from "./utils.js";
 
 /**
  * Compute ability modifier from ability score.
@@ -165,5 +165,5 @@ export function derivePlainStatblockStats(statblock: StatblockData): DerivedStat
  * Used for automatic skill bonus calculation.
  */
 function skillToAbility(skill: string): string {
-  return SKILL_TO_ABILITY_MAP[skill.toLowerCase()] || "str";
+  return getSkillAbility(skill);
 }

@@ -12,7 +12,7 @@
 
 import type { StatblockData } from "./schema.js";
 import { getAbilityModifier } from "./math.js";
-import { SKILL_TO_ABILITY_MAP } from "./utils.js";
+import { getSkillAbility } from "./utils.js";
 
 export interface Dnd5eActorDocument {
   name: string;
@@ -128,7 +128,7 @@ function buildSkills(
   // Add proficient skills
   for (const prof of statblock.skills.proficiencies) {
     const skillName = prof.skill.toLowerCase().replace(/ of hand/, "");
-    const mod = SKILL_TO_ABILITY_MAP[skillName] || "str";
+    const mod = getSkillAbility(skillName);
     skills[skillName] = {
       ability: mod,
       bonus: prof.bonus,

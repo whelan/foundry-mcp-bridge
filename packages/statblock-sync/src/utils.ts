@@ -50,23 +50,20 @@ export function extractRegexInt(
   return val ? parseInt(val, 10) : defaultValue;
 }
 
-/** Parse a comma-separated list from a markdown section */
-export function parseCommaList(
-  body: string,
-  label: string,
-  parserFn?: (item: string) => unknown
-): (string | unknown)[] {
-  const pattern = new RegExp(`\\*\\*${label}\\*\\*\\s+([^\\n]+)`, "i");
-  const match = body.match(pattern);
-  if (!match || !match[1]) return [];
+/** Cache for markdown section patterns to avoid RegExp recreation */
+const traitPatternCache = new Map<string, RegExp>();
 
-  const items = match[1].trim().split(",").map((s) => s.trim());
-  return parserFn ? items.map(parserFn).filter(Boolean) : items;
+/** Get or create cached regex pattern for a markdown section label */
+function getTraitPattern(label: string): RegExp {
+  if (!traitPatternCache.has(label)) {
+    traitPatternCache.set(label, new RegExp(`\\*\\*${label}\\*\\*\\s+([^\\n]+)`, "i"));
+  }
+  return traitPatternCache.get(label)!;
 }
 
 /** Parse a trait list (resistances, immunities, etc.) */
 export function parseTraitList(body: string, label: string): string[] {
-  const pattern = new RegExp(`\\*\\*${label}\\*\\*\\s+([^\\n]+)`, "i");
+  const pattern = getTraitPattern(label);
   const match = body.match(pattern);
   return match && match[1] ? match[1].trim().split(",").map((s) => s.trim()) : [];
 }
@@ -74,4 +71,9 @@ export function parseTraitList(body: string, label: string): string[] {
 /** Normalize markdown formatting */
 export function stripMarkdown(text: string): string {
   return text.replace(/\*+/g, "");
+}
+
+/** Get ability modifier for a skill name (encapsulates lowercase normalization) */
+export function getSkillAbility(skill: string): string {
+  return SKILL_TO_ABILITY_MAP[skill.toLowerCase()] || "str";
 }
