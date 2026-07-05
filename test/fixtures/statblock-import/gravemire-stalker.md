@@ -33,9 +33,9 @@ image: gravemire-stalker.png
 
 **Multiattack.** The stalker makes two melee attacks.
 
-**Rotting Claw.** *Melee Weapon Attack:* +5 to hit, reach 5 ft., one target. *Hit:* 10 (2d6 + 3) slashing damage plus 3 (1d6) necrotic damage.
+**Rotting Claw.** *Melee Attack Roll:* +5 to hit, reach 5 ft., one target. *Hit:* 10 (2d6 + 3) slashing damage plus 3 (1d6) necrotic damage.
 
-**Wailing Howl** (Recharge 5-6). The stalker emits a horrifying wail. Each creature within 30 feet that can hear it must make a DC 13 Wisdom saving throw, taking 22 (4d10) psychic damage on a failed save, or half as much on a successful one.
+**Wailing Howl** (Recharge 5-6). Wisdom Saving Throw: DC 13. The stalker emits a horrifying wail. Each creature within 30 feet that can hear it and fails the save takes 22 (4d10) psychic damage, or half as much on a successful one.
 
 ## Reactions
 
