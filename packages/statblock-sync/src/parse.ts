@@ -1,389 +1,273 @@
 /**
- * Parse Obsidian Fantasy Statblocks from markdown into structured data.
+ * Parse Obsidian Fantasy Statblocks notes into structured data.
  *
- * Statblocks are markdown files with a YAML front-matter (metadata) followed by
- * the body. This module extracts and parses both, yielding a StatblockData object.
+ * A Fantasy Statblocks note is an ordinary Obsidian note with a single
+ * ```statblock fenced code block somewhere in its body; the fence contains
+ * one YAML document with the creature's mechanical fields (ac, hp, stats,
+ * actions, ...). Prose above and below the fence is the author's own notes
+ * and is preserved untouched — this module only reads/replaces the fence.
  */
 
 import { parse as parseYaml } from "yaml";
-import type { StatblockFrontMatter, StatblockData } from "./schema.js";
-import { StatblockFrontMatterSchema } from "./schema.js";
-import {
-  extractRegexInt,
-  extractRegexGroup,
-  parseTraitList,
-  SIZE_TO_ABBREVIATION_MAP,
-} from "./utils.js";
+import type { Statblock, StatblockData } from "./schema.js";
+import { StatblockSchema } from "./schema.js";
+import { SIZE_TO_ABBREVIATION_MAP } from "./utils.js";
 
 /**
- * Regex to match YAML front-matter block at the start of a markdown file.
- * Matches: ---\n...content...\n---\n
+ * Regex to match a ```statblock fenced code block anywhere in a note,
+ * capturing the prose before it, the YAML content inside it, and the prose
+ * after it.
  */
-const FRONT_MATTER_RE = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/;
+const STATBLOCK_FENCE_RE = /^([\s\S]*?)```statblock\n([\s\S]*?)\n```\s*\n?([\s\S]*)$/;
+
+/** Standard D&D 5e Monster Manual CR-to-XP table. */
+const XP_BY_CR: Record<number, number> = {
+  0: 10,
+  "0.125": 25,
+  "0.25": 50,
+  "0.5": 100,
+  1: 200,
+  2: 450,
+  3: 700,
+  4: 1100,
+  5: 1800,
+  6: 2300,
+  7: 2900,
+  8: 3900,
+  9: 5000,
+  10: 5900,
+  11: 7200,
+  12: 8400,
+  13: 10000,
+  14: 11500,
+  15: 13000,
+  16: 15000,
+  17: 18000,
+  18: 20000,
+  19: 22000,
+  20: 25000,
+  21: 33000,
+  22: 41000,
+  23: 50000,
+  24: 62000,
+  25: 75000,
+  26: 90000,
+  27: 105000,
+  28: 120000,
+  29: 135000,
+  30: 155000,
+};
 
 /**
- * Parse a statblock markdown string into front-matter and body components.
+ * Extract the ```statblock fence's YAML content from a note, along with the
+ * surrounding prose (for round-tripping). If no fence is found, the whole
+ * note is treated as prose and `data` is empty.
  */
 export function parseStatblockRaw(raw: string): {
-  frontMatter: Record<string, unknown>;
-  body: string;
+  data: Record<string, unknown>;
+  prose: { before: string; after: string };
 } {
   // Normalize CRLF → LF for consistent parsing
   const normalized = raw.replace(/\r\n/g, "\n");
-  const match = FRONT_MATTER_RE.exec(normalized);
+  const match = STATBLOCK_FENCE_RE.exec(normalized);
 
-  if (!match || !match[1]) {
+  if (!match || match[2] === undefined) {
     return {
-      frontMatter: {},
-      body: normalized,
+      data: {},
+      prose: { before: normalized, after: "" },
     };
   }
 
-  const fmRaw = match[1];
-  const bodyRaw = match[2] ?? "";
+  const before = match[1] ?? "";
+  const yamlContent = match[2];
+  const after = match[3] ?? "";
 
-  const frontMatter = (parseYaml(fmRaw) as Record<string, unknown>) ?? {};
+  const data = (parseYaml(yamlContent) as Record<string, unknown>) ?? {};
 
   return {
-    frontMatter,
-    body: bodyRaw,
+    data,
+    prose: { before, after },
   };
 }
 
 /**
- * Parse a complete statblock markdown file.
+ * Parse a complete Fantasy Statblocks note.
  *
- * Returns a StatblockData object with:
- * - frontMatter: validated metadata
- * - body: raw markdown body
- * - attributes: AC, HP, speed (parsed from lines like "**Armor Class** 15")
- * - abilities: AC, STR, etc. parsed from the ability score table
- * - skills, traits, challenge: parsed from sections
- * - abilities: trait/ability features (extracted from headers like "## Abilities")
- * - actions: actions and reactions (extracted from headers like "## Actions")
+ * Returns a StatblockData object with the validated fenced fields (`data`),
+ * the surrounding prose, and mechanics derived from both: attributes (AC,
+ * HP, speed), ability scores, skills/saves, traits, challenge/XP, creature
+ * type, and abilities/actions.
  */
 export function parseStatblock(raw: string): StatblockData {
-  const { frontMatter, body } = parseStatblockRaw(raw);
+  const { data, prose } = parseStatblockRaw(raw);
 
-  // Validate front-matter
-  const fm = StatblockFrontMatterSchema.parse(frontMatter);
-
-  const attributes = parseAttributes(body);
-  const abilities = parseAbilityScores(body);
-  const skills = parseSkillsAndSaves(body);
-  const traits = parseTraits(body);
-  const challenge = parseChallenge(body, fm.cr);
-  const creatureType = parseCreatureType(body);
-  const abilityFeatures = parseAbilities(body);
-  const actions = parseActions(body);
+  const sb = StatblockSchema.parse(data);
 
   return {
-    frontMatter: fm,
-    body,
-    attributes,
-    abilities_: abilities,
-    skills,
-    traits,
-    challenge,
-    creatureType,
-    abilities: abilityFeatures,
-    actions,
+    data: sb,
+    prose,
+    attributes: buildAttributes(sb),
+    abilities_: buildAbilityScores(sb),
+    skills: buildSkillsAndSaves(sb),
+    traits: buildTraits(sb),
+    challenge: buildChallenge(sb),
+    creatureType: buildCreatureType(sb),
+    abilities: buildAbilities(sb),
+    actions: buildActions(sb),
   };
 }
 
 /**
- * Parse the size/type/alignment descriptor line that follows the name heading.
- * Example: "*Medium undead, chaotic evil*" or "*Large humanoid (goblinoid), chaotic evil*"
+ * Derive AC/HP/speed from the flat `ac`, `hp`, `hit_dice`, and `speed` fields.
  */
-function parseCreatureType(body: string): StatblockData["creatureType"] {
-  const match = body.match(
-    /\*([A-Za-z]+)\s+([A-Za-z]+)(?:\s*\(([^)]+)\))?,\s*([^*\n]+)\*/
-  );
-
-  if (!match || !match[1] || !match[2] || !match[4]) {
-    return { size: "med", type: "humanoid", alignment: "" };
-  }
-
-  const size = SIZE_TO_ABBREVIATION_MAP[match[1].toLowerCase()] ?? "med";
-
-  return {
-    size,
-    type: match[2].toLowerCase(),
-    subtype: match[3]?.trim(),
-    alignment: match[4].trim(),
-  };
-}
-
-/**
- * Parse attributes from lines like:
- * **Armor Class** 15 (natural armor)
- * **Hit Points** 52 (8d8 + 16)
- * **Speed** 30 ft.
- */
-function parseAttributes(body: string): StatblockData["attributes"] {
-  const acValue = extractRegexInt(body, /\*\*Armor Class\*\*\s+(\d+)/, 1, 10);
-  const hpValue = extractRegexInt(body, /\*\*Hit Points\*\*\s+(\d+)/, 1, 1);
-  const hpFormula = extractRegexGroup(body, /\*\*Hit Points\*\*\s+\d+\s*\(([^)]+)\)/, 1, "1d8") || "1d8";
-  const speedMatch = body.match(/\*\*Speed\*\*\s+([^\n]+)/);
-
+function buildAttributes(sb: Statblock): StatblockData["attributes"] {
   const speed: StatblockData["attributes"]["speed"] = { walk: 30 };
-  if (speedMatch && speedMatch[1]) {
-    const speedText = speedMatch[1];
-    const walkMatch = speedText.match(/(\d+)\s+ft\.(?!\w)/);
-    if (walkMatch && walkMatch[1]) speed.walk = parseInt(walkMatch[1], 10);
 
-    const flyMatch = speedText.match(/fly\s+(\d+)\s+ft/i);
-    if (flyMatch && flyMatch[1]) speed.fly = parseInt(flyMatch[1], 10);
+  if (sb.speed) {
+    const walkMatch = sb.speed.match(/(\d+)\s*ft\.?/i);
+    if (walkMatch?.[1]) speed.walk = parseInt(walkMatch[1], 10);
 
-    const swimMatch = speedText.match(/swim\s+(\d+)\s+ft/i);
-    if (swimMatch && swimMatch[1]) speed.swim = parseInt(swimMatch[1], 10);
+    const flyMatch = sb.speed.match(/fly\s+(\d+)\s*ft/i);
+    if (flyMatch?.[1]) speed.fly = parseInt(flyMatch[1], 10);
+
+    const swimMatch = sb.speed.match(/swim\s+(\d+)\s*ft/i);
+    if (swimMatch?.[1]) speed.swim = parseInt(swimMatch[1], 10);
+
+    const burrowMatch = sb.speed.match(/burrow\s+(\d+)\s*ft/i);
+    if (burrowMatch?.[1]) speed.burrow = parseInt(burrowMatch[1], 10);
+
+    const climbMatch = sb.speed.match(/climb\s+(\d+)\s*ft/i);
+    if (climbMatch?.[1]) speed.climb = parseInt(climbMatch[1], 10);
   }
 
   return {
-    armorClass: acValue,
-    hitPoints: { value: hpValue, formula: hpFormula },
+    armorClass: sb.ac,
+    hitPoints: { value: sb.hp, formula: sb.hit_dice ?? "" },
     speed,
   };
 }
 
-/**
- * Parse ability scores from the standard ability score table.
- * Example:
- * | STR | DEX | CON | INT | WIS | CHA |
- * |:---:|:---:|:---:|:---:|:---:|:---:|
- * | 16 (+3) | 14 (+2) | 14 (+2) | 9 (-1) | 11 (+0) | 8 (-1) |
- */
-function parseAbilityScores(body: string): StatblockData["abilities_"] {
-  const abilityLineMatch = body.match(
-    /\|\s*(\d+)\s*\([^)]+\)\s*\|\s*(\d+)\s*\([^)]+\)\s*\|\s*(\d+)\s*\([^)]+\)\s*\|\s*(\d+)\s*\([^)]+\)\s*\|\s*(\d+)\s*\([^)]+\)\s*\|\s*(\d+)\s*\([^)]+\)\s*\|/
-  );
-
-  if (!abilityLineMatch || !abilityLineMatch[1] || !abilityLineMatch[2] || !abilityLineMatch[3] || !abilityLineMatch[4] || !abilityLineMatch[5] || !abilityLineMatch[6]) {
-    return { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 };
-  }
-
-  return {
-    str: parseInt(abilityLineMatch[1], 10),
-    dex: parseInt(abilityLineMatch[2], 10),
-    con: parseInt(abilityLineMatch[3], 10),
-    int: parseInt(abilityLineMatch[4], 10),
-    wis: parseInt(abilityLineMatch[5], 10),
-    cha: parseInt(abilityLineMatch[6], 10),
-  };
+/** Ability scores come directly from the `stats: [str, dex, con, int, wis, cha]` tuple. */
+function buildAbilityScores(sb: Statblock): StatblockData["abilities_"] {
+  const [str, dex, con, int, wis, cha] = sb.stats;
+  return { str, dex, con, int, wis, cha };
 }
 
 /**
- * Parse skills and saving throws from lines like:
- * **Skills** Perception +2, Stealth +4
- * **Saving Throws** Wis +2, Cha +1
+ * `saves`/`skillsaves` are lists of single-key maps, e.g.
+ * `saves: [{ wisdom: 3 }]` and `skillsaves: [{ stealth: 4 }, { perception: 3 }]`.
+ * Both already store the creature's total bonus, so no ability-mod math is
+ * needed here.
  */
-function parseSkillsAndSaves(body: string): StatblockData["skills"] {
-  const proficiencies = [] as StatblockData["skills"]["proficiencies"];
-  const savingThrows = [] as StatblockData["skills"]["savingThrows"];
+function buildSkillsAndSaves(sb: Statblock): StatblockData["skills"] {
+  const proficiencies = (sb.skillsaves ?? []).flatMap((entry) =>
+    Object.entries(entry).map(([skill, bonus]) => ({ skill, bonus, proficient: true }))
+  );
 
-  const skillsMatch = body.match(/\*\*Skills\*\*\s+([^\n]+)/i);
-  if (skillsMatch && skillsMatch[1]) {
-    const skillText = skillsMatch[1].trim();
-    const skillPairs = skillText.split(",").map((s) => s.trim());
-    for (const pair of skillPairs) {
-      const match = pair.match(/([A-Za-z\s]+?)\s*([+-]\d+)/);
-      if (match && match[1] && match[2]) {
-        const skillName = match[1].trim();
-        const bonus = parseInt(match[2], 10);
-        proficiencies.push({
-          skill: skillName,
-          bonus,
-          proficient: true,
-        });
-      }
-    }
-  }
-
-  const savesMatch = body.match(/\*\*Saving Throws\*\*\s+([^\n]+)/i);
-  if (savesMatch && savesMatch[1]) {
-    const savesText = savesMatch[1].trim();
-    const savePairs = savesText.split(",").map((s) => s.trim());
-    for (const pair of savePairs) {
-      const match = pair.match(/(\w+)\s*([+-]\d+)/);
-      if (match && match[1] && match[2]) {
-        const ability = match[1];
-        const bonus = parseInt(match[2], 10);
-        savingThrows.push({
-          ability,
-          bonus,
-          proficient: true,
-        });
-      }
-    }
-  }
+  const savingThrows = (sb.saves ?? []).flatMap((entry) =>
+    Object.entries(entry).map(([ability, bonus]) => ({ ability, bonus, proficient: true }))
+  );
 
   return { proficiencies, savingThrows };
 }
 
-/**
- * Parse traits (damage resistances, immunities, senses, etc.) from lines like:
- * **Damage Resistances** necrotic
- * **Senses** darkvision 60 ft., passive Perception 12
- */
-function parseTraits(body: string): StatblockData["traits"] {
+/** Split a comma-separated trait string (e.g. "necrotic, cold") into a list. */
+function splitTraitList(value?: string): string[] {
+  return value
+    ? value
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+}
+
+function buildTraits(sb: Statblock): StatblockData["traits"] {
   return {
-    damageResistances: parseTraitList(body, "Damage Resistances"),
-    damageImmunities: parseTraitList(body, "Damage Immunities"),
-    damageVulnerabilities: parseTraitList(body, "Damage Vulnerabilities"),
-    conditionImmunities: parseTraitList(body, "Condition Immunities"),
-    senses: parseTraitList(body, "Senses"),
-    languages: parseTraitList(body, "Languages"),
+    damageResistances: splitTraitList(sb.damage_resistances),
+    damageImmunities: splitTraitList(sb.damage_immunities),
+    damageVulnerabilities: splitTraitList(sb.damage_vulnerabilities),
+    conditionImmunities: splitTraitList(sb.condition_immunities),
+    senses: splitTraitList(sb.senses),
+    languages: splitTraitList(sb.languages),
   };
 }
 
-/**
- * Parse challenge rating and compute XP.
- */
-function parseChallenge(body: string, crFromFm?: number): StatblockData["challenge"] {
-  const crMatch = body.match(/\*\*Challenge\*\*\s+([\d./]+)/i);
-  let crValue: number = 0;
+/** Parse challenge rating (number, or a "1/4"-style fraction string) and compute XP. */
+function buildChallenge(sb: Statblock): StatblockData["challenge"] {
+  let crValue: number;
 
-  if (typeof crFromFm === "number") {
-    crValue = crFromFm;
-  } else if (crMatch && crMatch[1]) {
-    const crStr = crMatch[1];
-    if (crStr.includes("/")) {
-      const parts = crStr.split("/").map((s) => parseInt(s, 10));
-      if (parts[0] !== undefined && parts[1] !== undefined) {
-        crValue = parts[0] / parts[1];
-      } else {
-        crValue = parseFloat(crStr);
-      }
-    } else {
-      crValue = parseFloat(crStr);
-    }
+  if (typeof sb.cr === "number") {
+    crValue = sb.cr;
+  } else if (sb.cr.includes("/")) {
+    const [num, denom] = sb.cr.split("/").map((s) => parseInt(s, 10));
+    crValue = num !== undefined && denom !== undefined ? num / denom : parseFloat(sb.cr);
+  } else {
+    crValue = parseFloat(sb.cr);
   }
 
-  // Compute XP from CR using the standard D&D 5e Monster Manual table
-  const xpByCr: Record<number, number> = {
-    0: 10,
-    "0.125": 25,
-    "0.25": 50,
-    "0.5": 100,
-    1: 200,
-    2: 450,
-    3: 700,
-    4: 1100,
-    5: 1800,
-    6: 2300,
-    7: 2900,
-    8: 3900,
-    9: 5000,
-    10: 5900,
-    11: 7200,
-    12: 8400,
-    13: 10000,
-    14: 11500,
-    15: 13000,
-    16: 15000,
-    17: 18000,
-    18: 20000,
-    19: 22000,
-    20: 25000,
-    21: 33000,
-    22: 41000,
-    23: 50000,
-    24: 62000,
-    25: 75000,
-    26: 90000,
-    27: 105000,
-    28: 120000,
-    29: 135000,
-    30: 155000,
-  };
-  const xp: number = xpByCr[crValue] ?? 0;
+  const xp = XP_BY_CR[crValue] ?? 0;
 
-  const result: StatblockData["challenge"] = { cr: crValue, xp };
-  return result;
+  return { cr: crValue, xp };
 }
 
-/**
- * Parse ability features (e.g., "## Abilities" section) that describe passive traits.
- */
-function parseAbilities(body: string): StatblockData["abilities"] {
-  const abilities: StatblockData["abilities"] = [];
+/** Derive size/type/subtype/alignment from the `size`, `type`, and `alignment` fields. */
+function buildCreatureType(sb: Statblock): StatblockData["creatureType"] {
+  const size = SIZE_TO_ABBREVIATION_MAP[(sb.size ?? "Medium").toLowerCase()] ?? "med";
 
-  // Match headers like "## Abilities" or "## Features"
-  const abilitySection = body.match(/##\s*(?:Abilities|Features)([\s\S]*?)(?=##|$)/i);
-  if (abilitySection && abilitySection[1]) {
-    const content = abilitySection[1];
-    // Match bold headers followed by description
-    const features = content.matchAll(/\*\*([^*]+)\*\*\.?\s*([^\n]*(?:\n(?!\*\*)[^\n]*)*)/g);
-    for (const match of features) {
-      let name = match[1] || "";
-      name = name.replace(/\.$/, "");
-      const description = match[2] || "";
-      abilities.push({
+  // `type` may carry a subtype in parens, e.g. "humanoid (goblinoid)"
+  const typeMatch = (sb.type ?? "humanoid").match(/^([a-zA-Z]+)(?:\s*\(([^)]+)\))?/);
+
+  return {
+    size,
+    type: (typeMatch?.[1] ?? "humanoid").toLowerCase(),
+    subtype: typeMatch?.[2]?.trim(),
+    alignment: sb.alignment ?? "",
+  };
+}
+
+/** The `traits` list becomes passive ability/feature entries. */
+function buildAbilities(sb: Statblock): StatblockData["abilities"] {
+  return (sb.traits ?? []).map((t) => ({
+    name: t.name,
+    description: t.desc,
+    passive: true,
+  }));
+}
+
+/** Extract a "(Recharge X-Y)" suffix from an action name, returning the clean name and recharge info. */
+function extractRecharge(name: string): {
+  name: string;
+  recharge?: { value: number; charged: boolean };
+} {
+  const rechargeMatch = name.match(/\s*\(Recharge\s+(\d)(?:-\d)?\)/i);
+  if (!rechargeMatch?.[1]) return { name };
+
+  return {
+    name: name.replace(rechargeMatch[0], "").trim(),
+    recharge: { value: parseInt(rechargeMatch[1], 10), charged: true },
+  };
+}
+
+/** The `actions`/`reactions`/`legendary_actions` lists become the actions array. */
+function buildActions(sb: Statblock): StatblockData["actions"] {
+  const fromList = (
+    list: Array<{ name: string; desc: string }> | undefined,
+    type: "action" | "reaction" | "legendary"
+  ): StatblockData["actions"] =>
+    (list ?? []).map((entry) => {
+      const { name, recharge } = extractRecharge(entry.name);
+      return {
         name,
-        description: description.trim(),
-        passive: true,
-      });
-    }
-  }
-
-  return abilities;
-}
-
-/**
- * Parse actions and reactions from body, detecting multiattack, recharge, etc.
- */
-function parseActions(body: string): StatblockData["actions"] {
-  const actions: StatblockData["actions"] = [];
-
-  // Match "## Actions" and "## Reactions" sections
-  const actionsSection = body.match(/##\s*Actions([\s\S]*?)(?=##|$)/i);
-  const reactionsSection = body.match(/##\s*Reactions([\s\S]*?)(?=##|$)/i);
-
-  if (actionsSection) {
-    parseActionBlock(actionsSection[1] || undefined, "action", actions);
-  }
-  if (reactionsSection) {
-    parseActionBlock(reactionsSection[1] || undefined, "reaction", actions);
-  }
-
-  return actions;
-}
-
-/**
- * Helper to parse a single action block.
- */
-function parseActionBlock(
-  content: string | undefined,
-  type: "action" | "reaction" | "legendary" | "lair",
-  actions: StatblockData["actions"]
-) {
-  if (!content) return;
-
-  // Match bold action headers
-  const actionMatches = content.matchAll(/\*\*([^*]+)\*\*\.?\s*([^\n]*(?:\n(?!\*\*)[^\n]*)*)/g);
-
-  for (const match of actionMatches) {
-    let name = match[1] || "";
-    // Strip trailing period from name if present
-    name = name.replace(/\.$/, "");
-    const description = match[2] || "";
-
-    const action: StatblockData["actions"][0] = {
-      name,
-      type,
-      description: description.trim(),
-      multiattack: name.toLowerCase().includes("multiattack"),
-    };
-
-    // Check for recharge
-    const rechargeMatch = description.match(/[Rr]echarge\s+(\d)/);
-    if (rechargeMatch && rechargeMatch[1]) {
-      action.recharge = {
-        value: parseInt(rechargeMatch[1], 10),
-        charged: true,
+        type,
+        description: entry.desc,
+        multiattack: name.toLowerCase().includes("multiattack"),
+        recharge,
       };
-    }
+    });
 
-    actions.push(action);
-  }
+  return [
+    ...fromList(sb.actions, "action"),
+    ...fromList(sb.reactions, "reaction"),
+    ...fromList(sb.legendary_actions, "legendary"),
+  ];
 }

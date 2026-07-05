@@ -47,9 +47,9 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     const system = actor.system as Record<string, any>;
     expect(system.abilities.str.value).toBe(16);
     expect(system.abilities.dex.value).toBe(14);
-    expect(system.abilities.con.value).toBe(14);
-    expect(system.abilities.int.value).toBe(9);
-    expect(system.abilities.wis.value).toBe(11);
+    expect(system.abilities.con.value).toBe(15);
+    expect(system.abilities.int.value).toBe(6);
+    expect(system.abilities.wis.value).toBe(12);
     expect(system.abilities.cha.value).toBe(8);
   });
 
@@ -66,10 +66,10 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     const actor = statblockToFoundryActor(statblock);
 
     const system = actor.system as Record<string, any>;
-    expect(system.attributes.ac.flat).toBe(15);
-    expect(system.attributes.hp.value).toBe(52);
-    expect(system.attributes.hp.max).toBe(52);
-    expect(system.attributes.hp.formula).toBe("8d8 + 16");
+    expect(system.attributes.ac.flat).toBe(14);
+    expect(system.attributes.hp.value).toBe(45);
+    expect(system.attributes.hp.max).toBe(45);
+    expect(system.attributes.hp.formula).toBe("7d8+14");
   });
 
   it("sets CR and XP", () => {
@@ -121,7 +121,7 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     const system = actor.system as Record<string, any>;
     expect(system.details.type.value).toBe("undead");
     expect(system.details.size).toBe("med");
-    expect(system.details.alignment).toBe("chaotic evil");
+    expect(system.details.alignment).toBe("Neutral Evil");
   });
 
   it("sets prototypeToken texture to match the actor image", () => {
@@ -155,11 +155,11 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     // Should have items for abilities and actions
     expect(actor.items.length).toBeGreaterThan(0);
 
-    // Look for expected items (names may have periods from parsing)
-    const itemNames = actor.items.map((i) => i.name.replace(/\.$/, ""));
-    expect(itemNames).toContain("Undead Fortitude");
+    // Look for expected items
+    const itemNames = actor.items.map((i) => i.name);
+    expect(itemNames).toContain("Stench of the Grave");
     expect(itemNames).toContain("Multiattack");
-    expect(itemNames).toContain("Rotting Claw");
+    expect(itemNames).toContain("Claw");
   });
 
   it("only types actions with a parsed attack/save roll as weapon items", () => {
@@ -174,17 +174,16 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     const statblock = parseStatblock(raw);
     const actor = statblockToFoundryActor(statblock);
 
-    const byName = (name: string) =>
-      actor.items.find((i) => i.name.replace(/\.$/, "") === name);
+    const byName = (name: string) => actor.items.find((i) => i.name === name);
 
-    // Multiattack and Sudden Lurch have no attack roll/save - they're
+    // Multiattack and Grasp of the Mire have no attack roll/save - they're
     // descriptive features, matching the official compendium structure.
     expect(byName("Multiattack")?.type).toBe("feature");
-    expect(byName("Sudden Lurch")?.type).toBe("feature");
+    expect(byName("Grasp of the Mire")?.type).toBe("feature");
 
-    // Rotting Claw and Wailing Howl have parsed mechanics - they're weapons.
-    expect(byName("Rotting Claw")?.type).toBe("weapon");
-    expect(byName("Wailing Howl")?.type).toBe("weapon");
+    // Claw and Grave Breath have parsed mechanics - they're weapons.
+    expect(byName("Claw")?.type).toBe("weapon");
+    expect(byName("Grave Breath")?.type).toBe("weapon");
   });
 
   it("assigns default icons per item type", () => {

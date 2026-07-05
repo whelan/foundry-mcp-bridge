@@ -76,8 +76,8 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
     },
     details: {
       biography: { value: "" },
-      alignment: statblock.frontMatter.alignment ?? statblock.creatureType.alignment,
-      race: { value: statblock.frontMatter.race ?? "" },
+      alignment: statblock.creatureType.alignment,
+      race: { value: "" },
       type: {
         value: statblock.creatureType.type,
         subtype: statblock.creatureType.subtype ?? "",
@@ -131,9 +131,9 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
     items.push(actionToItem(action));
   }
 
-  const actorImg = statblock.frontMatter.image ?? undefined;
+  const actorImg = statblock.data.image ?? undefined;
   return {
-    name: statblock.frontMatter.name,
+    name: statblock.data.name,
     type: "npc",
     img: actorImg,
     system,

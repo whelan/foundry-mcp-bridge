@@ -133,24 +133,23 @@ describe("M2: 5e Math Derivation", () => {
 
       const derived = derivePlainStatblockStats(statblock);
 
-      // Verify ability modifiers
+      // Verify ability modifiers (stats: [16, 14, 15, 6, 12, 8])
       expect(derived.abilityModifiers.str).toBe(3); // 16
       expect(derived.abilityModifiers.dex).toBe(2); // 14
-      expect(derived.abilityModifiers.con).toBe(2); // 14
-      expect(derived.abilityModifiers.int).toBe(-1); // 9
-      expect(derived.abilityModifiers.wis).toBe(0); // 11
+      expect(derived.abilityModifiers.con).toBe(2); // 15
+      expect(derived.abilityModifiers.int).toBe(-2); // 6
+      expect(derived.abilityModifiers.wis).toBe(1); // 12
       expect(derived.abilityModifiers.cha).toBe(-1); // 8
 
       // Proficiency bonus for CR 3 is 2
       expect(derived.proficiencyBonus).toBe(2);
 
-      // Skill bonuses (from parsed skills)
-      expect(derived.skillBonuses["Perception"]).toBe(2); // Wis mod (0) + proficiency (2)
-      expect(derived.skillBonuses["Stealth"]).toBe(4); // Dex mod (2) + proficiency (2)
+      // Skill bonuses (skillsaves keys are the raw YAML skill names)
+      expect(derived.skillBonuses["perception"]).toBe(3); // Wis mod (1) + proficiency (2)
+      expect(derived.skillBonuses["stealth"]).toBe(4); // Dex mod (2) + proficiency (2)
 
-      // Saving throws
-      expect(derived.saveBonuses["Wis"]).toBe(2); // Wis mod (0) + proficiency (2)
-      expect(derived.saveBonuses["Cha"]).toBe(1); // Cha mod (-1) + proficiency (2)
+      // Saving throws (saves keys are the raw YAML ability names)
+      expect(derived.saveBonuses["wisdom"]).toBe(3); // Wis mod (1) + proficiency (2)
     });
   });
 
@@ -170,7 +169,7 @@ describe("M2: 5e Math Derivation", () => {
       // Ability scores
       expect(statblock.abilities_.str).toBe(16);
       expect(statblock.abilities_.dex).toBe(14);
-      expect(statblock.abilities_.con).toBe(14);
+      expect(statblock.abilities_.con).toBe(15);
 
       // Modifiers from those scores
       expect(derived.abilityModifiers.str).toBe(3);
@@ -182,11 +181,11 @@ describe("M2: 5e Math Derivation", () => {
       expect(derived.proficiencyBonus).toBe(2);
 
       // AC and HP
-      expect(statblock.attributes.armorClass).toBe(15);
-      expect(statblock.attributes.hitPoints.value).toBe(52);
+      expect(statblock.attributes.armorClass).toBe(14);
+      expect(statblock.attributes.hitPoints.value).toBe(45);
 
       // Hit dice formula
-      expect(statblock.attributes.hitPoints.formula).toMatch(/8d8/);
+      expect(statblock.attributes.hitPoints.formula).toBe("7d8+14");
     });
   });
 });

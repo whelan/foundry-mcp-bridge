@@ -129,10 +129,11 @@ export function parseSaveAction(description: string): ParsedSave | undefined {
   // Extract damage
   const damage = parseDamage(description);
 
-  // Check for success effect
-  const successMatch = description.match(
-    /,\s*or\s+([^.]+)\s+on\s+a\s+(?:successful|success)/i
-  );
+  // Check for success effect: "... or half as much on a successful one" or
+  // the labeled "Success: Half damage." form
+  const successMatch =
+    description.match(/,\s*or\s+([^.]+)\s+on\s+a\s+(?:successful|success)/i) ??
+    description.match(/\bSuccess:\s*([^.\n]+)/i);
   const successEffect = successMatch ? successMatch[1] : undefined;
 
   return {

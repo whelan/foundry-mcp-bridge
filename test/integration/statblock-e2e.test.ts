@@ -113,7 +113,7 @@ describe("M5: End-to-End Mock Pipeline", () => {
 
     // Step 1: Parse (M1)
     const statblock = parseStatblock(raw);
-    expect(statblock.frontMatter.name).toBe("Gravemire Stalker");
+    expect(statblock.data.name).toBe("Gravemire Stalker");
 
     // Step 2: Derive math (M2) - verify modifiers
     const strMod = getAbilityModifier(statblock.abilities_.str);
@@ -175,12 +175,12 @@ describe("M5: End-to-End Mock Pipeline", () => {
     // Verify ability scores
     expect(statblock.abilities_.str).toBe(16);
     expect(statblock.abilities_.dex).toBe(14);
-    expect(statblock.abilities_.con).toBe(14);
+    expect(statblock.abilities_.con).toBe(15);
 
     // Verify derived modifiers
     expect(getAbilityModifier(16)).toBe(3);
     expect(getAbilityModifier(14)).toBe(2);
-    expect(getAbilityModifier(9)).toBe(-1);
+    expect(getAbilityModifier(6)).toBe(-2);
   });
 
   it("preserves all critical attributes through conversion", () => {
@@ -197,7 +197,7 @@ describe("M5: End-to-End Mock Pipeline", () => {
     const system = actor.system as Record<string, any>;
 
     // Critical attributes that must be preserved
-    expect(actor.name).toBe(statblock.frontMatter.name);
+    expect(actor.name).toBe(statblock.data.name);
     expect(system.attributes.ac.flat).toBe(statblock.attributes.armorClass);
     expect(system.attributes.hp.value).toBe(statblock.attributes.hitPoints.value);
     expect(system.details.cr).toBe(statblock.challenge.cr);

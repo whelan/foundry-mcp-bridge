@@ -9,30 +9,74 @@
 import { z } from "zod";
 
 /**
- * The parsed statblock with metadata, abilities, and actions parsed from markdown.
+ * Zod schema for a single named entry with a description, used for traits,
+ * actions, reactions, and legendary actions.
+ */
+const NamedEntrySchema = z.object({
+  name: z.string(),
+  desc: z.string(),
+});
+
+/**
+ * Schema for the YAML data inside a Fantasy Statblocks ```statblock fence.
+ * This is the plugin's native "basic 5e" layout: a single YAML document with
+ * flat mechanical fields (ac, hp, stats, ...) plus lists of name/desc entries
+ * for traits, actions, reactions, and legendary actions.
+ */
+export const StatblockSchema = z
+  .object({
+    name: z.string().min(1, "name is required"),
+    image: z.string().optional(),
+    size: z.string().optional(), // "Tiny" | "Small" | "Medium" | "Large" | "Huge" | "Gargantuan"
+    type: z.string().optional(), // "undead", "humanoid (goblinoid)", etc.
+    alignment: z.string().optional(),
+    ac: z.number(),
+    ac_class: z.string().optional(), // flavor text, e.g. "natural armor"
+    hp: z.number(),
+    hit_dice: z.string().optional(),
+    speed: z.string().optional(), // "30 ft., swim 20 ft."
+    stats: z.tuple([z.number(), z.number(), z.number(), z.number(), z.number(), z.number()]),
+    saves: z.array(z.record(z.string(), z.number())).optional(),
+    skillsaves: z.array(z.record(z.string(), z.number())).optional(),
+    damage_resistances: z.string().optional(),
+    damage_immunities: z.string().optional(),
+    damage_vulnerabilities: z.string().optional(),
+    condition_immunities: z.string().optional(),
+    senses: z.string().optional(),
+    languages: z.string().optional(),
+    cr: z.union([z.number(), z.string()]),
+    traits: z.array(NamedEntrySchema).optional(),
+    actions: z.array(NamedEntrySchema).optional(),
+    reactions: z.array(NamedEntrySchema).optional(),
+    legendary_actions: z.array(NamedEntrySchema).optional(),
+  })
+  .passthrough();
+
+export type Statblock = z.infer<typeof StatblockSchema>;
+
+/**
+ * The parsed statblock: the validated fenced-block fields, the prose
+ * surrounding the fence (for round-tripping), and mechanics derived from
+ * both.
  */
 export interface StatblockData {
-  /** Front-matter metadata from the markdown file */
-  frontMatter: {
-    name: string;
-    type: string;
-    cr?: number;
-    source?: string;
-    image?: string; // path to the image file (e.g., "gravemire-stalker.png")
-    [key: string]: unknown;
+  /** Validated fields parsed from the ```statblock fence */
+  data: Statblock;
+
+  /** Prose surrounding the fence in the source note, preserved byte-for-byte */
+  prose: {
+    before: string;
+    after: string;
   };
 
-  /** The raw markdown body (everything after ---) */
-  body: string;
-
-  /** Parsed abilities extracted from the body */
+  /** Parsed abilities/traits (from the `traits` list) */
   abilities: {
     name: string;
     description: string;
     passive?: boolean;
   }[];
 
-  /** Parsed actions and reactions */
+  /** Parsed actions, reactions, and legendary actions */
   actions: {
     name: string;
     type: "action" | "reaction" | "legendary" | "lair";
@@ -44,7 +88,7 @@ export interface StatblockData {
     };
   }[];
 
-  /** Parsed attributes from the statblock (AC, HP, speeds, etc.) */
+  /** Derived attributes (AC, HP, speeds, etc.) */
   attributes: {
     armorClass: number;
     hitPoints: {
@@ -61,7 +105,7 @@ export interface StatblockData {
     };
   };
 
-  /** Parsed from the descriptor line under the name heading, e.g. "Medium undead, chaotic evil" */
+  /** Derived from `size`/`type`/`alignment`, e.g. size "Medium", type "undead" */
   creatureType: {
     size: string; // dnd5e size code: tiny, sm, med, lg, huge, grg
     type: string; // "undead", "humanoid", etc.
@@ -69,7 +113,7 @@ export interface StatblockData {
     alignment: string;
   };
 
-  /** Parsed ability scores */
+  /** Ability scores, from `stats: [str, dex, con, int, wis, cha]` */
   abilities_: {
     str: number;
     dex: number;
@@ -79,7 +123,7 @@ export interface StatblockData {
     cha: number;
   };
 
-  /** Parsed skills and proficiencies */
+  /** Skill and saving throw proficiencies, from `skillsaves`/`saves` */
   skills: {
     proficiencies: Array<{
       skill: string;
@@ -111,13 +155,13 @@ export interface StatblockData {
 }
 
 /**
- * Statblock field mapping: maps Markdown field names to dnd5e actor system paths.
+ * Statblock field mapping: maps statblock concepts to dnd5e actor system paths.
  * Each entry maps a statblock concept to its Foundry equivalent.
  */
 export const STATBLOCK_FIELD_MAP = {
   // Basic attributes
   name: "name",
-  type: "type",
+  type: "system.details.type.value",
   size: "system.details.size",
   alignment: "system.details.alignment",
   race: "system.details.race.value",
@@ -152,24 +196,8 @@ export const STATBLOCK_FIELD_MAP = {
 
   // Portrait and token images
   portraitImage: "img",
-  tokenImage: "img", // shared with portrait in basic import; tokenizer can split later
+  tokenImage: "prototypeToken.texture.src",
 };
-
-/**
- * Schema for the front-matter section of a statblock markdown file.
- */
-export const StatblockFrontMatterSchema = z.object({
-  name: z.string().min(1, "name is required"),
-  type: z.enum(["npc", "creature", "monster"], {
-    errorMap: () => ({ message: "type must be one of: npc, creature, monster" }),
-  }),
-  cr: z.number().min(0).optional(),
-  source: z.string().optional(),
-  image: z.string().optional(),
-  /** Allow additional untyped properties for future extensibility */
-}).passthrough();
-
-export type StatblockFrontMatter = z.infer<typeof StatblockFrontMatterSchema>;
 
 /**
  * Schema for parsed ability/skill lines (e.g., "Acrobatics +2, Perception +4").
