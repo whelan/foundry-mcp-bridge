@@ -77,6 +77,15 @@ export interface BatchUploadAssetsParams {
   skipExisting?: boolean;
 }
 
+/** A compendium index entry returned by a search (§4 of the statblock-sync plan). */
+export interface CompendiumEntry {
+  uuid: string;
+  pack: string;
+  name: string;
+  type: string;
+  cr?: number;
+}
+
 /**
  * The narrow surface the executor needs from Foundry. The real implementation
  * (foundry-runtime.ts) calls `Actor.create`, `document.update`, embedded CRUD,
@@ -133,7 +142,7 @@ export interface FoundryDocumentApi {
     packScope: string | undefined,
     documentType: DocumentType,
     nameQuery: string,
-  ): Promise<Array<{ uuid: string; pack: string; name: string; type: string; cr?: number }>>;
+  ): Promise<CompendiumEntry[]>;
   importFromCompendium(
     documentType: DocumentType,
     uuid: string,

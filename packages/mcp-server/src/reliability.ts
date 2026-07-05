@@ -179,8 +179,13 @@ async function runTerminal(
 interface Mutation {
   documentType: DocumentType;
   mutate: Command;
-  /** Fields the read-back must contain (subset match). */
-  expected: Json;
+  /**
+   * Fields the read-back must contain (subset match). Most callers know this
+   * up front (the data they sent); a few (e.g. import) only know it depends on
+   * what the write actually echoed back, so a function of the write result is
+   * also accepted.
+   */
+  expected: Json | ((written: unknown) => Json);
   /** Known target id (updates); creates derive it from the write result. */
   knownId?: string;
   /** Rollback command run when read-back fails. */
@@ -202,6 +207,8 @@ async function runMutation(
   const id = m.knownId ?? idOf(written);
   if (!id) return fail(steps, { code: "INTERNAL", message: "write returned no _id" });
 
+  const expected = typeof m.expected === "function" ? m.expected(written) : m.expected;
+
   steps.push("read-back");
   const readBack = await send(
     transport,
@@ -209,13 +216,13 @@ async function runMutation(
     false,
     opts,
   );
-  if (!readBack.ok || !isSubset(readBack.data, m.expected)) {
+  if (!readBack.ok || !isSubset(readBack.data, expected)) {
     steps.push("rollback");
     await send(transport, m.rollback(id), false, opts);
     return fail(steps, {
       code: "READBACK_MISMATCH",
       message: m.mismatchMessage,
-      details: { id, expected: m.expected, actual: readBack.ok ? readBack.data : null },
+      details: { id, expected, actual: readBack.ok ? readBack.data : null },
     });
   }
 
@@ -754,8 +761,6 @@ export function importFromCompendiumReliable(
   input: ImportFromCompendiumInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  // Verify patch was applied (if provided); if no patch, any document with _id is acceptable
-  const expected = input.patch ?? {};
   return runMutation(
     transport,
     {
@@ -767,7 +772,15 @@ export function importFromCompendiumReliable(
         patch: input.patch,
         folderId: input.folderId,
       },
-      expected,
+      // A patch names concrete fields to verify. Without one there's nothing
+      // patch-specific to check, so fall back to confirming the write's own
+      // name survived the read-back (catches a read-back of the wrong/empty doc).
+      expected:
+        input.patch ??
+        ((written) => {
+          const name = (written as { name?: unknown } | null)?.name;
+          return typeof name === "string" ? { name } : {};
+        }),
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "imported document did not match expected after read-back; rolled back",
     },

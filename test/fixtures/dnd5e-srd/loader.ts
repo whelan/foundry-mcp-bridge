@@ -23,14 +23,17 @@ export interface SrdFixture {
   data: Record<string, unknown>;
 }
 
+let cached: Map<EntityType, Map<string, SrdFixture>> | undefined;
+
 /**
  * Load all SRD fixtures from the fixture directory. Returns a map keyed by
- * entity type, with each entry a map of {id -> fixture}.
+ * entity type, with each entry a map of {id -> fixture}. The fixture set is
+ * static for the process lifetime (tests construct many MockFoundry
+ * instances), so the disk read + JSON parse is memoized after the first call.
  */
-export function loadSrdFixtures(): Map<
-  EntityType,
-  Map<string, SrdFixture>
-> {
+export function loadSrdFixtures(): Map<EntityType, Map<string, SrdFixture>> {
+  if (cached) return cached;
+
   const result = new Map<EntityType, Map<string, SrdFixture>>();
   const types: EntityType[] = ["Actor", "Item"];
 
@@ -51,6 +54,7 @@ export function loadSrdFixtures(): Map<
     result.set(type, fixturesByType);
   }
 
+  cached = result;
   return result;
 }
 

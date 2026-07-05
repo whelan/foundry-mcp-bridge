@@ -25,7 +25,8 @@ import {
   getByPath,
   applyUpdate,
 } from "@foundry-mcp-bridge/shared";
-import type { WorldInfo } from "../../packages/foundry-module/src/protocol-executor.js";
+import type { WorldInfo, CompendiumEntry } from "../../packages/foundry-module/src/protocol-executor.js";
+import { loadSrdFixtures } from "../fixtures/dnd5e-srd/loader.js";
 
 // ---------------------------------------------------------------------------
 // Foundry key conventions
@@ -201,17 +202,12 @@ export class MockFoundry {
   }
 
   private loadFixtures(): void {
-    try {
-      const { loadSrdFixtures } = require("../fixtures/dnd5e-srd/loader.js");
-      const fixtures = loadSrdFixtures();
-      for (const [type, byId] of fixtures) {
-        for (const [id, fixture] of byId) {
-          const uuid = `Compendium.dnd5e.${type === "Actor" ? "actors24" : "monsterfeatures24"}.${fixture.id}`;
-          this.compendium.set(uuid, { ...fixture.data, _id: fixture.id, name: fixture.name, type });
-        }
+    const fixtures = loadSrdFixtures();
+    for (const [type, byId] of fixtures) {
+      for (const [, fixture] of byId) {
+        const uuid = `Compendium.dnd5e.${type === "Actor" ? "actors24" : "monsterfeatures24"}.${fixture.id}`;
+        this.compendium.set(uuid, { ...fixture.data, _id: fixture.id, name: fixture.name, type });
       }
-    } catch {
-      // Fixtures not available, that's fine for tests that don't use compendium
     }
   }
 
@@ -538,10 +534,11 @@ export class MockFoundry {
     id: string,
     cmd: Extract<Command, { action: "searchCompendium" }>,
   ): CommandResult {
-    const results: Array<{ uuid: string; pack: string; name: string; type: string; cr?: number }> = [];
+    const query = cmd.nameQuery.toLowerCase();
+    const results: CompendiumEntry[] = [];
     for (const [uuid, entry] of this.compendium) {
       const name = String(entry.name ?? "");
-      if (name.toLowerCase().includes(cmd.nameQuery.toLowerCase())) {
+      if (name.toLowerCase().includes(query)) {
         results.push({
           uuid,
           pack: cmd.packScope ?? "dnd5e.actors24",
@@ -563,10 +560,7 @@ export class MockFoundry {
     if (!source) {
       return err(id, "NOT_FOUND", `compendium entry ${cmd.uuid} not found`);
     }
-    const data = { ...source };
-    if (cmd.patch) {
-      applyUpdate(data, cmd.patch);
-    }
+    const data = cmd.patch ? applyUpdate({ ...source }, cmd.patch) : { ...source };
     if (cmd.folderId) {
       data.folder = cmd.folderId;
     }
