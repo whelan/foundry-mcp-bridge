@@ -225,6 +225,30 @@ export const BatchUploadAssetsCommand = z.object({
 });
 export type BatchUploadAssetsCommand = z.infer<typeof BatchUploadAssetsCommand>;
 
+export const SearchCompendiumCommand = z.object({
+  action: z.literal("searchCompendium"),
+  /** Optional pack scope, defaults to "dnd5e" for compendium searches. */
+  packScope: z.string().optional(),
+  /** Document type to search for (e.g. "Actor", "Item"). */
+  documentType: DocumentType,
+  /** Search query by name (partial match). */
+  nameQuery: z.string().min(1),
+});
+export type SearchCompendiumCommand = z.infer<typeof SearchCompendiumCommand>;
+
+export const ImportFromCompendiumCommand = z.object({
+  action: z.literal("importFromCompendium"),
+  /** Document type to import (e.g. "Actor", "Item"). */
+  documentType: DocumentType,
+  /** UUID of the compendium entry to import (e.g. "Compendium.dnd5e.actors24.Item.xyz"). */
+  uuid: z.string().min(1),
+  /** Optional dot-notation patch to apply to the imported document. */
+  patch: z.record(z.string(), z.unknown()).optional(),
+  /** Optional folder id to place the imported document in. */
+  folderId: z.string().optional(),
+});
+export type ImportFromCompendiumCommand = z.infer<typeof ImportFromCompendiumCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -241,6 +265,8 @@ export const Command = z.discriminatedUnion("action", [
   UploadAssetCommand,
   BrowseAssetsCommand,
   BatchUploadAssetsCommand,
+  SearchCompendiumCommand,
+  ImportFromCompendiumCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

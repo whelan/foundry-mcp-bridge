@@ -73,6 +73,12 @@ function stubApi(): FoundryDocumentApi {
       return { ...data, _id: id };
     },
     async deleteQuest() {},
+    async searchCompendium() {
+      return [];
+    },
+    async importFromCompendium(_documentType, _uuid, patch, _folderId, _opts) {
+      return { ...patch, _id: "imported" };
+    },
   };
 }
 

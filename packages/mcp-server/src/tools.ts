@@ -33,6 +33,8 @@ import {
   uploadAssetReliable,
   browseAssetsReliable,
   batchUploadAssetsReliable,
+  searchCompendiumReliable,
+  importFromCompendiumReliable,
   runRead,
   type PipelineOptions,
   type ToolOutcome,
@@ -441,4 +443,47 @@ export function runDeleteQuest(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return deleteQuestReliable(transport, args, opts);
+}
+
+// --- search_compendium -------------------------------------------------------
+
+export const SearchCompendiumShape = {
+  packScope: z.string().optional(),
+  documentType: DocumentType,
+  nameQuery: z.string().min(1),
+};
+const SearchCompendium = z.object(SearchCompendiumShape);
+export type SearchCompendiumArgs = z.infer<typeof SearchCompendium>;
+
+export function runSearchCompendium(
+  transport: RelayTransport,
+  args: SearchCompendiumArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return searchCompendiumReliable(transport, args, opts);
+}
+
+// --- import_from_compendium --------------------------------------------------
+
+export const ImportFromCompendiumShape = {
+  documentType: DocumentType,
+  uuid: z.string().min(1),
+  patch: z.record(z.string(), z.unknown()).optional(),
+  folderId: z.string().optional(),
+  fields: fieldsParam,
+  full: fullParam,
+};
+const ImportFromCompendium = z.object(ImportFromCompendiumShape);
+export type ImportFromCompendiumArgs = z.infer<typeof ImportFromCompendium>;
+
+export async function runImportFromCompendium(
+  transport: RelayTransport,
+  args: ImportFromCompendiumArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return projectEcho(
+    await importFromCompendiumReliable(transport, args, opts),
+    args.fields,
+    args.full,
+  );
 }

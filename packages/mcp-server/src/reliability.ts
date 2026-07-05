@@ -98,6 +98,10 @@ function commandSummary(c: Command): string {
       return `batch-upload ${c.files.length} → ${c.target}`;
     case "getWorldInfo":
       return "";
+    case "searchCompendium":
+      return `${c.documentType} nameQuery=${c.nameQuery}`;
+    case "importFromCompendium":
+      return `uuid=${c.uuid.slice(0, 20)}...`;
   }
 }
 
@@ -711,5 +715,63 @@ export function batchUploadAssetsReliable(
       skipExisting: input.skipExisting ?? false,
     },
     opts,
+  );
+}
+
+export interface SearchCompendiumInput {
+  packScope?: string;
+  documentType: DocumentType;
+  nameQuery: string;
+}
+
+export function searchCompendiumReliable(
+  transport: RelayTransport,
+  input: SearchCompendiumInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runRead(
+    transport,
+    {
+      action: "searchCompendium",
+      packScope: input.packScope,
+      documentType: input.documentType,
+      nameQuery: input.nameQuery,
+    },
+    "search-compendium",
+    opts,
+  );
+}
+
+export interface ImportFromCompendiumInput {
+  documentType: DocumentType;
+  uuid: string;
+  patch?: Json;
+  folderId?: string;
+}
+
+export function importFromCompendiumReliable(
+  transport: RelayTransport,
+  input: ImportFromCompendiumInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  // Verify patch was applied (if provided); if no patch, any document with _id is acceptable
+  const expected = input.patch ?? {};
+  return runMutation(
+    transport,
+    {
+      documentType: input.documentType,
+      mutate: {
+        action: "importFromCompendium",
+        documentType: input.documentType,
+        uuid: input.uuid,
+        patch: input.patch,
+        folderId: input.folderId,
+      },
+      expected,
+      rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
+      mismatchMessage: "imported document did not match expected after read-back; rolled back",
+    },
+    opts,
+    [],
   );
 }

@@ -21,6 +21,8 @@ import {
   runBatchUploadAssets,
   runCreateEmbedded,
   runCreateQuest,
+  runSearchCompendium,
+  runImportFromCompendium,
 } from "../packages/mcp-server/dist/index.js";
 // Reuse the real dot-notation merge + embedded-field mapping instead of re-implementing them.
 import { applyUpdate, embeddedField } from "@foundry-mcp-bridge/shared";
@@ -115,6 +117,16 @@ function handle(env) {
     }
     case "createQuest":
       return ok({ ...(c.data || {}), _id: rid() });
+    case "searchCompendium":
+      // Return a dummy result for testing (real implementation loads from fixtures)
+      return ok([{ uuid: "Compendium.dnd5e.actors24.dummy", pack: "dnd5e.actors24", name: "Dummy", type: "Actor" }]);
+    case "importFromCompendium": {
+      // Simulate importing from compendium
+      const _id = rid();
+      const doc = { _id, name: "Imported Document", type: c.documentType };
+      if (!env.dryRun) store.set(`${c.documentType}:${_id}`, doc);
+      return ok(doc);
+    }
     default:
       return err("UNSUPPORTED", c.action);
   }
@@ -161,6 +173,8 @@ show("create_document (Scene parent)", await runCreateDocument(server, { documen
 show("create_embedded (Token)", await runCreateEmbedded(server, { parentType: "Scene", parentId: "scene-self", embeddedName: "Token", data: [{ name: "Goblin" }] }, opts));
 show("create_quest", await runCreateQuest(server, { data: { name: "Find the Amulet" } }, opts));
 show("delete_document", await runDeleteDocument(server, { documentType: "Actor", id: newId }, opts));
+show("search_compendium (Goblin)", await runSearchCompendium(server, { documentType: "Actor", nameQuery: "Goblin" }, opts));
+show("import_from_compendium (Tier 1)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy" }, opts));
 
 ws.close();
 server.close();

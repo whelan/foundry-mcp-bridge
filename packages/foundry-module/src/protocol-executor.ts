@@ -129,6 +129,18 @@ export interface FoundryDocumentApi {
   createQuest(data: DocData | undefined, parentId: string | undefined, opts: ExecuteOptions): Promise<DocData>;
   updateQuest(id: string, data: DocData, opts: ExecuteOptions): Promise<DocData>;
   deleteQuest(id: string, opts: ExecuteOptions): Promise<void>;
+  searchCompendium(
+    packScope: string | undefined,
+    documentType: DocumentType,
+    nameQuery: string,
+  ): Promise<Array<{ uuid: string; pack: string; name: string; type: string; cr?: number }>>;
+  importFromCompendium(
+    documentType: DocumentType,
+    uuid: string,
+    patch: DocData | undefined,
+    folderId: string | undefined,
+    opts: ExecuteOptions,
+  ): Promise<DocData>;
 }
 
 export interface ExecutorContext {
@@ -242,5 +254,9 @@ async function dispatch(
     case "deleteQuest":
       await api.deleteQuest(command.id, opts);
       return { _id: command.id, deleted: true };
+    case "searchCompendium":
+      return api.searchCompendium(command.packScope, command.documentType, command.nameQuery);
+    case "importFromCompendium":
+      return api.importFromCompendium(command.documentType, command.uuid, command.patch, command.folderId, opts);
   }
 }

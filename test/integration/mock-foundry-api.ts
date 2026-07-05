@@ -123,5 +123,17 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
     async deleteQuest(id, opts) {
       await run({ action: "deleteQuest", id }, opts);
     },
+    async searchCompendium(packScope, documentType, nameQuery) {
+      return (await run(
+        { action: "searchCompendium", packScope, documentType, nameQuery },
+        { dryRun: false },
+      )) as Array<{ uuid: string; pack: string; name: string; type: string; cr?: number }>;
+    },
+    async importFromCompendium(documentType, uuid, patch, folderId, opts) {
+      return (await run(
+        { action: "importFromCompendium", documentType, uuid, patch, folderId },
+        opts,
+      )) as DocData;
+    },
   } satisfies FoundryDocumentApi;
 }

@@ -348,5 +348,56 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         }
       }
     },
+
+    async searchCompendium(packScope, documentType, nameQuery) {
+      const results: Array<{ uuid: string; pack: string; name: string; type: string; cr?: number }> = [];
+      // Search in world and compendium packs (default to dnd5e if not specified).
+      const scope = packScope ?? "dnd5e";
+      for (const pack of game.packs) {
+        // Filter packs by scope and document type.
+        if (!pack.metadata.name.startsWith(`${scope}.`)) continue;
+        if (pack.metadata.type !== documentType) continue;
+        // Query index for partial name match (case-insensitive).
+        const index = await pack.getIndex();
+        for (const entry of index) {
+          if (String(entry.name ?? "").toLowerCase().includes(nameQuery.toLowerCase())) {
+            results.push({
+              uuid: entry.uuid ?? `${pack.collection}.${entry._id}`,
+              pack: pack.metadata.name,
+              name: String(entry.name ?? ""),
+              type: String(entry.type ?? documentType),
+              cr: typeof entry.cr === "number" ? entry.cr : undefined,
+            });
+          }
+        }
+      }
+      return results;
+    },
+
+    async importFromCompendium(documentType, uuid, patch, folderId, opts) {
+      let source;
+      try {
+        source = await (globalThis as any).fromUuid(uuid);
+      } catch {
+        throw new CommandExecutionError("NOT_FOUND", `compendium entry ${uuid} not found`);
+      }
+      if (!source) {
+        throw new CommandExecutionError("NOT_FOUND", `compendium entry ${uuid} not found`);
+      }
+      const data = source.toObject();
+      if (patch) {
+        const { applyUpdate } = await import("@foundry-mcp-bridge/shared");
+        applyUpdate(data, patch);
+      }
+      if (folderId) {
+        data.folder = folderId;
+      }
+      if (opts.dryRun) {
+        const cls = (globalThis as any).getDocumentClass(documentType);
+        return new cls(data).toObject();
+      }
+      const doc = await collection(documentType).create(data);
+      return doc.toObject();
+    },
   } satisfies FoundryDocumentApi;
 }

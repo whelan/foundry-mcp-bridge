@@ -182,6 +182,8 @@ export class MockFoundry {
   readonly quests = new Map<string, Json>();
   /** World snapshot returned by getWorldInfo (overridable for tests). */
   readonly worldInfo: WorldInfo;
+  /** Compendium entries loaded from fixtures. */
+  readonly compendium = new Map<string, Json>();
 
   constructor(options: MockFoundryOptions = {}) {
     this.isGM = options.isGM ?? true;
@@ -194,6 +196,23 @@ export class MockFoundry {
       forge: { active: false, userId: null },
       ...options.worldInfo,
     };
+    // Load SRD fixtures into compendium
+    this.loadFixtures();
+  }
+
+  private loadFixtures(): void {
+    try {
+      const { loadSrdFixtures } = require("../fixtures/dnd5e-srd/loader.js");
+      const fixtures = loadSrdFixtures();
+      for (const [type, byId] of fixtures) {
+        for (const [id, fixture] of byId) {
+          const uuid = `Compendium.dnd5e.${type === "Actor" ? "actors24" : "monsterfeatures24"}.${fixture.id}`;
+          this.compendium.set(uuid, { ...fixture.data, _id: fixture.id, name: fixture.name, type });
+        }
+      }
+    } catch {
+      // Fixtures not available, that's fine for tests that don't use compendium
+    }
   }
 
   /** Queue a one-shot injected failure consumed by the next execute(). */
@@ -297,6 +316,10 @@ export class MockFoundry {
         return this.updateQuest(id, command, dryRun);
       case "deleteQuest":
         return this.deleteQuest(id, command, dryRun);
+      case "searchCompendium":
+        return this.searchCompendium(id, command);
+      case "importFromCompendium":
+        return this.importFromCompendium(id, command, dryRun);
     }
   }
 
@@ -509,5 +532,48 @@ export class MockFoundry {
     }
 
     return ok(id, { _id: cmd.id, deleted: true });
+  }
+
+  private searchCompendium(
+    id: string,
+    cmd: Extract<Command, { action: "searchCompendium" }>,
+  ): CommandResult {
+    const results: Array<{ uuid: string; pack: string; name: string; type: string; cr?: number }> = [];
+    for (const [uuid, entry] of this.compendium) {
+      const name = String(entry.name ?? "");
+      if (name.toLowerCase().includes(cmd.nameQuery.toLowerCase())) {
+        results.push({
+          uuid,
+          pack: cmd.packScope ?? "dnd5e.actors24",
+          name,
+          type: String(entry.type ?? cmd.documentType),
+          cr: typeof entry.cr === "number" ? entry.cr : undefined,
+        });
+      }
+    }
+    return ok(id, results);
+  }
+
+  private importFromCompendium(
+    id: string,
+    cmd: Extract<Command, { action: "importFromCompendium" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const source = this.compendium.get(cmd.uuid);
+    if (!source) {
+      return err(id, "NOT_FOUND", `compendium entry ${cmd.uuid} not found`);
+    }
+    const data = { ...source };
+    if (cmd.patch) {
+      applyUpdate(data, cmd.patch);
+    }
+    if (cmd.folderId) {
+      data.folder = cmd.folderId;
+    }
+    const _id = randomID();
+    const doc = { ...data, _id };
+    if (dryRun) return ok(id, { ...doc, _id: null, _dryRun: true });
+    this.store.set(documentKey(cmd.documentType, _id), doc);
+    return ok(id, doc);
   }
 }

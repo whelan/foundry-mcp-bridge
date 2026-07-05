@@ -26,6 +26,8 @@ import {
   CreateQuestShape,
   UpdateQuestShape,
   DeleteQuestShape,
+  SearchCompendiumShape,
+  ImportFromCompendiumShape,
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
@@ -42,6 +44,8 @@ import {
   runCreateQuest,
   runUpdateQuest,
   runDeleteQuest,
+  runSearchCompendium,
+  runImportFromCompendium,
 } from "./tools.js";
 import {
   ForgeBrowseAssetsShape,
@@ -254,6 +258,19 @@ export function buildServer(
     "Create a folder in The Forge asset bucket via the direct Forge REST API. Requires FORGE_USER_ID + FORGE_API_KEY. Returns { success }.",
     ForgeCreateFolderShape,
     runForgeCreateFolder,
+  );
+
+  register(
+    "search_compendium",
+    "Search compendium entries by name and document type. Returns array of { uuid, pack, name, type, cr? }. Read-only (no dry-run phase).",
+    SearchCompendiumShape,
+    runSearchCompendium,
+  );
+  register(
+    "import_from_compendium",
+    "Clone a compendium entry into the world by UUID, optionally applying a dot-notation patch. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback). Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
+    ImportFromCompendiumShape,
+    runImportFromCompendium,
   );
 
   return server;
