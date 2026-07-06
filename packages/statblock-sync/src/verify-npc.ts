@@ -9,6 +9,7 @@
 import type { StatblockData } from "./schema.js";
 import { getAbilityModifier, getProficiencyBonus } from "./math.js";
 import { parseAttackAction, parseSaveAction } from "./grammar.js";
+import { SKILL_TO_ABBREVIATION_MAP } from "./utils.js";
 
 export interface VerificationCheck {
   name: string;
@@ -124,31 +125,82 @@ export function verifyImportedNpc(
     const attackParsed = parseAttackAction(action.description);
     const saveParsed = parseSaveAction(action.description);
 
-    if (attackParsed) {
-      const itemSystem = item.system as Record<string, any>;
-      const toHitFromItem = parseInt((itemSystem?.attack?.bonus ?? "") as string, 10);
-      // The parsed attack.bonus IS the total to-hit bonus (already includes str mod + prof)
-      const expectedToHit = attackParsed.bonus;
+    const itemSystem = item.system as Record<string, any>;
+    const activities = Object.values((itemSystem?.activities ?? {}) as Record<string, any>);
 
+    if (attackParsed) {
+      const attackAct = activities.find((a) => a.type === "attack");
+      const got = attackAct ? parseInt(String(attackAct.attack?.bonus ?? ""), 10) : undefined;
       checks.push({
         name: `"${action.name}" to-hit`,
-        pass: toHitFromItem === expectedToHit,
-        got: toHitFromItem,
-        want: expectedToHit,
+        pass: got === attackParsed.bonus,
+        got,
+        want: attackParsed.bonus,
       });
     }
 
     if (saveParsed) {
-      const itemSystem = item.system as Record<string, any>;
-      const dcFromItem = (itemSystem?.save?.dc as Record<string, any>)?.value;
-
+      const saveAct = activities.find((a) => a.type === "save");
+      const got = saveAct ? parseInt(String(saveAct.save?.dc?.formula ?? ""), 10) : undefined;
       checks.push({
         name: `"${action.name}" save DC`,
-        pass: dcFromItem === saveParsed.dc,
-        got: dcFromItem,
+        pass: got === saveParsed.dc,
+        got,
         want: saveParsed.dc,
       });
     }
+
+    if (action.recharge) {
+      const recovery = (itemSystem?.uses?.recovery ?? []) as Array<Record<string, any>>;
+      const got = recovery.find((r) => r.period === "recharge")?.formula;
+      checks.push({
+        name: `"${action.name}" recharge`,
+        pass: got === String(action.recharge.value),
+        got,
+        want: String(action.recharge.value),
+      });
+    }
+  }
+
+  // Skill proficiencies (multiplier semantics, dnd5e 5.x)
+  const skillsRB = system.skills as Record<string, any>;
+  for (const p of statblock.skills.proficiencies) {
+    const abbrev = SKILL_TO_ABBREVIATION_MAP[p.skill.toLowerCase().replace(/ of hand/, "")];
+    if (!abbrev) continue;
+    const got = skillsRB?.[abbrev]?.value;
+    checks.push({
+      name: `Skill ${p.skill.toLowerCase()} proficient`,
+      pass: typeof got === "number" && got >= 1,
+      got,
+      want: ">=1",
+    });
+  }
+
+  // Save proficiencies
+  for (const save of statblock.skills.savingThrows) {
+    const key = save.ability.toLowerCase().substring(0, 3);
+    const got = abilities?.[key]?.proficient;
+    checks.push({
+      name: `${key.toUpperCase()} save proficient`,
+      pass: got === 1,
+      got,
+      want: 1,
+    });
+  }
+
+  // Senses ranges
+  const rangesRB = (system.attributes?.senses as Record<string, any>)?.ranges ?? {};
+  for (const s of statblock.traits.senses) {
+    const m = s.match(/(darkvision|blindsight|tremorsense|truesight)\s+(\d+)\s*ft/i);
+    if (!m) continue;
+    const kind = m[1]!.toLowerCase();
+    const want = parseInt(m[2]!, 10);
+    checks.push({
+      name: `Senses: ${kind} ${want} ft`,
+      pass: rangesRB[kind] === want,
+      got: rangesRB[kind],
+      want,
+    });
   }
 
   // Image and token art

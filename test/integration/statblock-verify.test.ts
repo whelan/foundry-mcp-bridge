@@ -20,22 +20,19 @@ function loadStatblock(filename: string) {
   return parseStatblock(fs.readFileSync(filePath, "utf-8"));
 }
 
+const statblock = loadStatblock("gravemire-stalker.md");
+
+/** What the world hands back is (a superset of) what we wrote. */
+function readBackFromConverter(): FoundryActorReadBack {
+  return {
+    _id: "test000000000000",
+    ...(statblockToFoundryActor(statblock, "worlds/npcs/g/g.png") as any),
+  };
+}
+
 describe("M5: verifyImportedNpc - Structured verification reports", () => {
   it("generates a report for a converted NPC with expected structure", () => {
-    const statblock = loadStatblock("gravemire-stalker.md");
-    const actor = statblockToFoundryActor(statblock, "worlds/npcs/gravemire-stalker.png");
-
-    // Simulate a read-back from the world
-    const readBack: FoundryActorReadBack = {
-      _id: "test-id",
-      name: actor.name,
-      type: actor.type as string,
-      img: actor.img,
-      prototypeToken: actor.prototypeToken,
-      system: actor.system,
-      items: actor.items,
-    };
-
+    const readBack = readBackFromConverter();
     const report = verifyImportedNpc(readBack, statblock);
 
     // Verify the report structure exists
@@ -51,21 +48,8 @@ describe("M5: verifyImportedNpc - Structured verification reports", () => {
   });
 
   it("detects AC mismatch", () => {
-    const statblock = loadStatblock("gravemire-stalker.md");
-    const actor = statblockToFoundryActor(statblock);
-
-    const readBack: FoundryActorReadBack = {
-      _id: "test-id",
-      name: actor.name,
-      type: "npc",
-      system: {
-        ...actor.system,
-        attributes: {
-          ac: { flat: 13 }, // Wrong AC
-          hp: { max: 45 },
-        },
-      } as any,
-    };
+    const readBack = readBackFromConverter();
+    (readBack.system as any).attributes.ac.flat = 13;
 
     const report = verifyImportedNpc(readBack, statblock);
     expect(report.ok).toBe(false);
@@ -74,21 +58,8 @@ describe("M5: verifyImportedNpc - Structured verification reports", () => {
   });
 
   it("detects HP mismatch", () => {
-    const statblock = loadStatblock("gravemire-stalker.md");
-    const actor = statblockToFoundryActor(statblock);
-
-    const readBack: FoundryActorReadBack = {
-      _id: "test-id",
-      name: actor.name,
-      type: "npc",
-      system: {
-        ...actor.system,
-        attributes: {
-          ac: { flat: 14 },
-          hp: { max: 50 }, // Wrong HP
-        },
-      } as any,
-    };
+    const readBack = readBackFromConverter();
+    (readBack.system as any).attributes.hp.max = 50;
 
     const report = verifyImportedNpc(readBack, statblock);
     expect(report.ok).toBe(false);
@@ -97,16 +68,9 @@ describe("M5: verifyImportedNpc - Structured verification reports", () => {
   });
 
   it("detects missing image when one is expected", () => {
-    const statblock = loadStatblock("gravemire-stalker.md");
-    const actor = statblockToFoundryActor(statblock, "worlds/npcs/gravemire-stalker.png");
-
-    const readBack: FoundryActorReadBack = {
-      _id: "test-id",
-      name: actor.name,
-      type: "npc",
-      // No img or prototypeToken set
-      system: actor.system,
-    };
+    const readBack = readBackFromConverter();
+    readBack.img = undefined;
+    readBack.prototypeToken = undefined;
 
     const report = verifyImportedNpc(readBack, statblock);
     expect(report.ok).toBe(false);
@@ -115,40 +79,74 @@ describe("M5: verifyImportedNpc - Structured verification reports", () => {
   });
 
   it("passes when no image is in the statblock", () => {
-    const statblock = loadStatblock("gravemire-stalker.md");
-    statblock.data.image = undefined;
-    const actor = statblockToFoundryActor(statblock);
+    const noImageStatblock = { ...statblock, data: { ...statblock.data, image: undefined } };
+    const actor = statblockToFoundryActor(noImageStatblock);
+    const readBack: FoundryActorReadBack = { _id: "test-id", ...(actor as any) };
 
-    const readBack: FoundryActorReadBack = {
-      _id: "test-id",
-      name: actor.name,
-      type: "npc",
-      system: actor.system,
-    };
-
-    const report = verifyImportedNpc(readBack, statblock);
-    // Should pass (no image checks required)
+    const report = verifyImportedNpc(readBack, noImageStatblock);
+    // Should have no image checks required
     const imgChecks = report.checks.filter((c) => c.name.includes("image"));
     expect(imgChecks.length).toBe(0);
   });
 
   it("supports tokenizer mode for reframed images", () => {
-    const statblock = loadStatblock("gravemire-stalker.md");
-    const actor = statblockToFoundryActor(statblock, "worlds/npcs/gravemire-stalker.Avatar.webp");
-
-    const readBack: FoundryActorReadBack = {
-      _id: "test-id",
-      name: actor.name,
-      type: "npc",
-      img: "worlds/npcs/gravemire-stalker.Avatar.webp",
-      prototypeToken: { texture: { src: "worlds/npcs/gravemire-stalker.Token.webp" } },
-      system: actor.system,
-    };
+    const readBack = readBackFromConverter();
+    readBack.img = "worlds/npcs/gravemire-stalker.Avatar.webp";
+    readBack.prototypeToken = { texture: { src: "worlds/npcs/gravemire-stalker.Token.webp" } };
 
     const report = verifyImportedNpc(readBack, statblock, { tokenizeMode: true });
     const avatarCheck = report.checks.find((c) => c.name.includes(".Avatar.webp"));
     expect(avatarCheck?.pass).toBe(true);
     const tokenCheck = report.checks.find((c) => c.name.includes(".Token.webp"));
     expect(tokenCheck?.pass).toBe(true);
+  });
+});
+
+describe("verifyImportedNpc against modern shapes", () => {
+  it("passes on a faithful read-back", () => {
+    const report = verifyImportedNpc(readBackFromConverter(), statblock);
+    expect(report.checks.filter((c) => !c.pass)).toEqual([]);
+    expect(report.ok).toBe(true);
+  });
+
+  it("fails the to-hit check when the attack activity bonus is wrong", () => {
+    const rb = readBackFromConverter();
+    const claw = rb.items!.find((i: any) => i.name === "Claw")!;
+    const act: any = Object.values((claw.system as any).activities)[0];
+    act.attack.bonus = "3";
+    const report = verifyImportedNpc(rb, statblock);
+    expect(report.ok).toBe(false);
+    expect(report.checks.find((c) => c.name === `"Claw" to-hit`)?.pass).toBe(false);
+  });
+
+  it("fails the DC check when the save activity formula is wrong", () => {
+    const rb = readBackFromConverter();
+    const breath = rb.items!.find((i: any) => i.name === "Grave Breath")!;
+    const act: any = Object.values((breath.system as any).activities)[0];
+    act.save.dc.formula = "15";
+    const report = verifyImportedNpc(rb, statblock);
+    expect(report.checks.find((c) => c.name === `"Grave Breath" save DC`)?.pass).toBe(false);
+  });
+
+  it("fails the recharge check when uses.recovery is missing", () => {
+    const rb = readBackFromConverter();
+    const breath = rb.items!.find((i: any) => i.name === "Grave Breath")!;
+    (breath.system as any).uses = { spent: 0, recovery: [], max: "" };
+    const report = verifyImportedNpc(rb, statblock);
+    expect(report.checks.find((c) => c.name === `"Grave Breath" recharge`)?.pass).toBe(false);
+  });
+
+  it("checks skill and save proficiency multipliers", () => {
+    const rb = readBackFromConverter();
+    (rb.system as any).skills.ste = { value: 0 };
+    const report = verifyImportedNpc(rb, statblock);
+    expect(report.checks.find((c) => c.name === "Skill stealth proficient")?.pass).toBe(false);
+  });
+
+  it("checks darkvision range", () => {
+    const rb = readBackFromConverter();
+    (rb.system as any).attributes.senses.ranges.darkvision = null;
+    const report = verifyImportedNpc(rb, statblock);
+    expect(report.checks.find((c) => c.name === "Senses: darkvision 60 ft")?.pass).toBe(false);
   });
 });
