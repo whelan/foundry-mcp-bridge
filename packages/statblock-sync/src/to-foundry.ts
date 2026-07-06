@@ -297,7 +297,7 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
       ability: saveParsed.ability.toLowerCase().substring(0, 3),
       dc: saveParsed.dc,
       parts: saveParsed.damage.map(toDamagePart),
-      onSave: /success:\s*half/i.test(action.description) ? "half" : "none",
+      onSave: /half/i.test(saveParsed.successEffect ?? "") ? "half" : "none",
       template: parseTemplate(action.description),
       consumesItemUse: !!action.recharge,
       activation,

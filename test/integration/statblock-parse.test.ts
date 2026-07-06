@@ -259,4 +259,38 @@ Some trailing prose.
       expect(prose.after).toContain("Some trailing prose.");
     });
   });
+
+  describe("qualified damage-type clauses (e.g. 'from nonmagical attacks')", () => {
+    it("keeps a qualified resistance clause intact instead of splitting it into unconditional types", () => {
+      const markdown = `\`\`\`statblock
+name: Test Wight
+cr: 3
+ac: 14
+hp: 45
+stats: [15, 14, 15, 6, 13, 15]
+damage_resistances: "bludgeoning, piercing, and slashing from nonmagical attacks"
+\`\`\`
+`;
+      const statblock = parseStatblock(markdown);
+      // The whole clause must survive as one entry — splitting it would grant
+      // unconditional resistance to bludgeoning/piercing, which is wrong.
+      expect(statblock.traits.damageResistances).toEqual([
+        "bludgeoning, piercing, and slashing from nonmagical attacks",
+      ]);
+    });
+
+    it("still splits plain, unqualified comma lists into individual types", () => {
+      const markdown = `\`\`\`statblock
+name: Test Elemental
+cr: 3
+ac: 14
+hp: 45
+stats: [15, 14, 15, 6, 13, 15]
+damage_resistances: "cold, fire"
+\`\`\`
+`;
+      const statblock = parseStatblock(markdown);
+      expect(statblock.traits.damageResistances).toEqual(["cold", "fire"]);
+    });
+  });
 });

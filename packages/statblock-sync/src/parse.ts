@@ -181,11 +181,33 @@ function splitTraitList(value?: string): string[] {
     : [];
 }
 
+/**
+ * Qualifier phrases that scope a damage-type clause to a condition (e.g.
+ * "nonmagical attacks", "that aren't silvered") rather than granting the
+ * listed types unconditionally.
+ */
+const DAMAGE_QUALIFIER_RE = /\bnonmagical\b|\bnon-magical\b|\bsilvered\b|\badamantine\b/i;
+
+/**
+ * Split a damage-type list (resistances/immunities/vulnerabilities), but keep
+ * a clause intact — as one opaque entry — when it carries a qualifier like
+ * "from nonmagical attacks". Naively comma-splitting "bludgeoning, piercing,
+ * and slashing from nonmagical attacks" would grant unconditional resistance
+ * to bludgeoning and piercing (wrong: the qualifier applies to the whole
+ * clause). The caller (to-foundry.ts) can't reconstruct a lost qualifier, so
+ * it must never see the clause pre-shredded.
+ */
+function splitDamageTraitList(value?: string): string[] {
+  if (!value) return [];
+  if (DAMAGE_QUALIFIER_RE.test(value)) return [value.trim()];
+  return splitTraitList(value);
+}
+
 function buildTraits(sb: Statblock): StatblockData["traits"] {
   return {
-    damageResistances: splitTraitList(sb.damage_resistances),
-    damageImmunities: splitTraitList(sb.damage_immunities),
-    damageVulnerabilities: splitTraitList(sb.damage_vulnerabilities),
+    damageResistances: splitDamageTraitList(sb.damage_resistances),
+    damageImmunities: splitDamageTraitList(sb.damage_immunities),
+    damageVulnerabilities: splitDamageTraitList(sb.damage_vulnerabilities),
     conditionImmunities: splitTraitList(sb.condition_immunities),
     senses: splitTraitList(sb.senses),
     languages: splitTraitList(sb.languages),

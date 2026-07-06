@@ -48,6 +48,15 @@ export interface DamageFormula {
 export function parseDamageFormula(formula: string): DamageFormula {
   const normalized = formula.toLowerCase().trim();
 
+  // A pure flat number ("1", "3") — no dice at all, e.g. a low-CR statblock's
+  // "Hit: 1 bludgeoning damage." count/die are 0 to signal "no dice component"
+  // rather than falsely implying a die was rolled.
+  const flatMatch = normalized.match(/^(\d+)$/);
+  if (flatMatch && flatMatch[1]) {
+    const bonus = parseInt(flatMatch[1], 10);
+    return { count: 0, die: 0, bonus, average: bonus };
+  }
+
   // Match patterns like "2d6", "4d10", "2d6+3", "2d6 + 3"
   const diceMatch = normalized.match(/(\d+)d(\d+)(?:\s*([+-])\s*(\d+))?/);
 

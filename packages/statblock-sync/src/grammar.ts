@@ -24,6 +24,14 @@ const PLUS_PATTERN = new RegExp(
 );
 
 /**
+ * Fallback for flat (non-dice) damage: "N type damage" with no parenthesized
+ * dice notation at all, e.g. very-low-CR statblocks' "Hit: 1 bludgeoning
+ * damage." Only tried when DAMAGE_PATTERN/PLUS_PATTERN find nothing, so it
+ * never fires on dice-formatted text (the "(...)" always blocks a match).
+ */
+const FLAT_DAMAGE_PATTERN = new RegExp(`(\\d+)\\s+(${DAMAGE_TYPES_STR})\\s+damage`, "i");
+
+/**
  * Parsed attack action details.
  */
 export interface ParsedAttack {
@@ -216,6 +224,16 @@ function parseDamage(description: string): DamagePart[] {
       formula,
       type: type.toLowerCase(),
     });
+  }
+
+  // Flat fallback: no dice-formatted damage found at all (e.g. "Hit: 1
+  // bludgeoning damage." with no dice notation) — without this, such
+  // descriptions would silently produce zero damage parts.
+  if (damages.length === 0) {
+    const flatMatch = description.match(FLAT_DAMAGE_PATTERN);
+    if (flatMatch && flatMatch[1] && flatMatch[2]) {
+      damages.push({ formula: flatMatch[1], type: flatMatch[2].toLowerCase() });
+    }
   }
 
   return damages;

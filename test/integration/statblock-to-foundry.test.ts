@@ -426,3 +426,82 @@ describe("modern dnd5e actor system shapes (5.3.3)", () => {
     expect(sys.details.xp).toBeUndefined();
   });
 });
+
+describe("edge cases", () => {
+  it("keeps a qualified resistance clause ('from nonmagical attacks') as custom text, not an unconditional type", () => {
+    const markdown = `\`\`\`statblock
+name: Test Wight
+cr: 3
+ac: 14
+hp: 45
+stats: [15, 14, 15, 6, 13, 15]
+damage_resistances: "bludgeoning, piercing, and slashing from nonmagical attacks"
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const dr = (actor.system as Record<string, any>).traits.dr;
+
+    // Must NOT grant unconditional resistance to bludgeoning/piercing.
+    expect(dr.value).toEqual([]);
+    expect(dr.custom).toBe("bludgeoning, piercing, and slashing from nonmagical attacks");
+  });
+
+  it("still recognizes a plain, unqualified damage-type list", () => {
+    const markdown = `\`\`\`statblock
+name: Test Elemental
+cr: 3
+ac: 14
+hp: 45
+stats: [15, 14, 15, 6, 13, 15]
+damage_resistances: "cold, fire"
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const dr = (actor.system as Record<string, any>).traits.dr;
+
+    expect(dr.value).toEqual(["cold", "fire"]);
+    expect(dr.custom).toBe("");
+  });
+
+  it("converts flat (non-dice) damage instead of dropping it", () => {
+    const markdown = `\`\`\`statblock
+name: Weakling
+cr: 0
+ac: 10
+hp: 4
+stats: [6, 10, 10, 10, 10, 10]
+actions:
+  - name: Feeble Jab
+    desc: "Melee Attack Roll: -1, reach 5 ft. Hit: 1 bludgeoning damage."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const jab = actor.items.find((i) => i.name === "Feeble Jab")!;
+    const base = (jab.system as Record<string, any>).damage.base;
+
+    expect(base).toMatchObject({ number: 0, denomination: 0, bonus: "1", types: ["bludgeoning"] });
+  });
+
+  it("computes onSave 'half' from the classic 2014-style phrasing (no 'Success:' label)", () => {
+    const markdown = `\`\`\`statblock
+name: Classic Breather
+cr: 5
+ac: 14
+hp: 60
+stats: [10, 10, 15, 10, 10, 10]
+actions:
+  - name: Poison Breath (Recharge 5-6)
+    desc: "Constitution Saving Throw: DC 14, each creature in a 15-foot cone. Failure: 22 (4d10) Poison damage, or half as much damage on a successful save."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const breath = actor.items.find((i) => i.name === "Poison Breath")!;
+    const act = Object.values((breath.system as Record<string, any>).activities)[0] as any;
+
+    expect(act.damage.onSave).toBe("half");
+  });
+});
