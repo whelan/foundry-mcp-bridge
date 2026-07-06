@@ -141,6 +141,20 @@ describe("create_document pipeline", () => {
     );
     expectErr(out, "TIMEOUT");
   });
+
+  it("rejects an empty data instead of a vacuously-verified create", async () => {
+    // Regression test: create's data isn't run through filterUnsafePaths, so
+    // an empty object can only be the caller's own doing. A document created
+    // from nothing has no name/type of its own for nameOrTypeFallback to
+    // check either, so unlike duplicate/import there's no weaker fallback
+    // available -- an empty create must be rejected outright, or read-back
+    // verification would trivially "pass" no matter what came back.
+    const { mock, transport } = setup();
+    transport.corruptReadBack = true; // would otherwise be masked by the vacuous check
+    const out = await runCreateDocument(transport, { documentType: "Actor", data: {} });
+    expectErr(out, "VALIDATION");
+    expect(mock.documents("Actor").length).toBe(0);
+  });
 });
 
 describe("create_scene pipeline", () => {
@@ -736,6 +750,17 @@ describe("duplicate_document pipeline", () => {
     // No clone was created -- rejected before the pipeline ever ran.
     expect(mock.documents("Actor").length).toBe(1);
   });
+
+  it("rejects a literal empty overrides object the same way", async () => {
+    // A caller-supplied {} (not something filterUnsafePaths stripped down to
+    // empty) must be rejected identically -- isEmptyDiff doesn't care why the
+    // object is empty, and both are equally "supplied but nothing to apply".
+    const { mock, transport } = setup();
+    await seedGoblin(mock);
+    const out = await runDuplicateDocument(transport, { documentType: "Actor", id: "g1", overrides: {} });
+    expectErr(out, "VALIDATION");
+    expect(mock.documents("Actor").length).toBe(1);
+  });
 });
 
 describe("search_compendium / import_from_compendium pipeline", () => {
@@ -847,6 +872,16 @@ describe("search_compendium / import_from_compendium pipeline", () => {
     });
     expectErr(out, "VALIDATION");
     // No import happened -- rejected before the pipeline ever ran.
+    expect(mock.documents("Actor").length).toBe(0);
+  });
+
+  it("rejects a literal empty patch object the same way", async () => {
+    // A caller-supplied {} (not something filterUnsafePaths stripped down to
+    // empty) must be rejected identically -- isEmptyDiff doesn't care why the
+    // object is empty, and both are equally "supplied but nothing to apply".
+    const { mock, transport } = setup();
+    const out = await runImportFromCompendium(transport, { documentType: "Actor", uuid: GRAVEMIRE_UUID, patch: {} });
+    expectErr(out, "VALIDATION");
     expect(mock.documents("Actor").length).toBe(0);
   });
 

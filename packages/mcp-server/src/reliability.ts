@@ -128,24 +128,31 @@ function fail(steps: string[], error: CommandError): ToolOutcome {
 
 /**
  * Structured VALIDATION failure for input rejected before the pipeline runs
- * at all — no transport contact, nothing to roll back. Callers that reject a
- * caller-supplied diff/patch/overrides object (e.g. empty after
- * `filterUnsafePaths` stripped every key) should use this rather than a raw
- * `ToolOutcome` object literal, so every such rejection is shaped and traced
- * identically.
+ * at all — no transport contact, nothing to roll back. Used to reject a
+ * caller-supplied diff/patch/overrides object that's empty (see `isEmptyDiff`)
+ * rather than proceeding to a no-op write that would read back as
+ * "unchanged" and report success, silently discarding whatever the caller
+ * intended to change. Enforced inside each `xxxReliable` function itself
+ * (not just at the tools.ts boundary) so any future direct caller gets the
+ * guard for free, instead of a raw `ToolOutcome` object literal duplicated
+ * at every call site.
  */
 function validationFailure(message: string): ToolOutcome {
   return fail(["validate"], { code: "VALIDATION", message });
 }
 
 /** True when a dot-notation object was supplied but has nothing safe left to
- * apply (e.g. every key was stripped by `filterUnsafePaths`). `undefined`
+ * apply beyond `ignoreKeys` (e.g. every real key was stripped by
+ * `filterUnsafePaths`, or the caller passed `{}` outright). `undefined`
  * itself is not empty in this sense — it means "not supplied", which is
  * legitimate wherever the field is optional (duplicate's overrides, import's
  * patch); only a *supplied-but-empty* object is the caller-intent-silently-
- * dropped case this predicate exists to catch. */
-function isEmptyDiff(data: Json | undefined): data is Json {
-  return data !== undefined && Object.keys(data).length === 0;
+ * dropped case this predicate exists to catch. `ignoreKeys` lets a per-entry
+ * check (e.g. an embedded diff's required `_id`) share this same predicate
+ * instead of hand-rolling its own threshold. */
+function isEmptyDiff(data: Json | undefined, ignoreKeys: string[] = []): boolean {
+  if (data === undefined) return false;
+  return Object.keys(data).filter((k) => !ignoreKeys.includes(k)).length === 0;
 }
 
 function idOf(data: unknown): string | undefined {
@@ -178,7 +185,7 @@ function nameOrTypeFallback(written: unknown): Json {
  * empty must never be used directly as `expected`.
  */
 function expectedFromOverrides(overrides: Json | undefined): Json | ((written: unknown) => Json) {
-  return overrides && Object.keys(overrides).length > 0 ? expandObject(overrides) : nameOrTypeFallback;
+  return overrides && !isEmptyDiff(overrides) ? expandObject(overrides) : nameOrTypeFallback;
 }
 
 /**
@@ -285,11 +292,24 @@ export interface CreateDocumentInput {
   keepId?: boolean;
 }
 
-export function createDocumentReliable(
+export async function createDocumentReliable(
   transport: RelayTransport,
   input: CreateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // Unlike update/duplicate/import, runCreateDocument doesn't run `data`
+  // through filterUnsafePaths, so an empty object here can only mean the
+  // caller supplied one outright (documentData's zod shape allows `{}`).
+  // There's no fallback content to verify against (nameOrTypeFallback
+  // degrades to `{}` too, since a document created from nothing has no
+  // name/type of its own) -- unlike duplicate/import, which always clone an
+  // existing document that already has one -- so this can't be silently
+  // downgraded to a weaker check the way those two are; it must be rejected.
+  const expected = input.verifyData ?? input.data;
+  if (isEmptyDiff(expected)) {
+    return validationFailure("create data has no fields to verify on read-back");
+  }
+
   return runMutation(
     transport,
     {
@@ -300,7 +320,7 @@ export function createDocumentReliable(
         data: input.data,
         keepId: input.keepId,
       },
-      expected: input.verifyData ?? input.data,
+      expected,
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "created document did not match the requested data; rolled back",
     },
@@ -320,12 +340,9 @@ export async function updateDocumentReliable(
   input: UpdateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  // An empty diff (originally empty, or every key stripped as unsafe
-  // upstream) is a no-op write that would read back as "unchanged" and
-  // report success, silently discarding whatever the caller actually
-  // intended to change. Enforced here (not just at the tools.ts boundary)
-  // so any future caller of this function gets the guard for free.
-  if (Object.keys(input.data).length === 0) {
+  // data is required, so empty here always means "nothing safe survived
+  // filtering" (see validationFailure/isEmptyDiff).
+  if (isEmptyDiff(input.data)) {
     return validationFailure("update data has no safe fields to apply");
   }
 
@@ -401,10 +418,8 @@ export async function duplicateDocumentReliable(
   input: DuplicateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  // overrides is optional -- undefined ("clone as-is") is fine. But if the
-  // caller explicitly supplied overrides and every key was stripped as
-  // unsafe upstream, silently falling back to a name/type check would clone
-  // the document while dropping the caller's actual intent with no error.
+  // overrides is optional (undefined = clone as-is); only reject when
+  // explicitly supplied but empty (see isEmptyDiff).
   if (isEmptyDiff(input.overrides)) {
     return validationFailure("duplicate overrides has no safe fields to apply");
   }
@@ -561,13 +576,10 @@ export async function updateEmbeddedReliable(
   input: UpdateEmbeddedInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  // An entry left with only `_id` (every other key stripped as unsafe
-  // upstream, or none supplied) is a no-op write: the parent read-back would
-  // trivially "verify" against it (the entry is found by that same _id),
-  // silently discarding whatever the caller actually intended to change.
-  // Enforced here (not just at the tools.ts boundary) so any future caller
-  // of this function gets the guard for free.
-  const emptyIds = input.data.filter((d) => Object.keys(d).length <= 1).map((d) => d._id);
+  // Each entry always carries _id, so exclude it from the emptiness check
+  // (see validationFailure/isEmptyDiff) -- an entry with nothing else would
+  // trivially "verify" on read-back, since it's found by that same _id.
+  const emptyIds = input.data.filter((d) => isEmptyDiff(d, ["_id"])).map((d) => d._id);
   if (emptyIds.length > 0) {
     return validationFailure(`update data for _id=${emptyIds.join(", ")} has no safe fields to apply`);
   }
@@ -837,10 +849,8 @@ export async function importFromCompendiumReliable(
   input: ImportFromCompendiumInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  // patch is optional -- undefined ("clone as-is") is fine. But if the
-  // caller explicitly supplied a patch and every key was stripped as unsafe
-  // upstream, silently falling back to a name/type check would import the
-  // compendium entry while dropping the caller's actual intent with no error.
+  // patch is optional (undefined = clone as-is); only reject when explicitly
+  // supplied but empty (see isEmptyDiff).
   if (isEmptyDiff(input.patch)) {
     return validationFailure("import patch has no safe fields to apply");
   }
