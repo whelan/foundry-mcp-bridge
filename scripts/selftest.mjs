@@ -5,10 +5,22 @@
 //
 // This is the same path the live system uses; only the world behind the module
 // is replaced by an in-memory store.
+//
+// --live: instead of spinning up an in-process stub relay + fake module, binds
+// to the *real* relay (RELAY_URL/RELAY_TOKEN, same config the real MCP server
+// reads) and waits for your actual Foundry module to connect. Only the M6 NPC
+// leg runs in this mode (the M0-M5 legs above aren't cleaned up and would
+// litter a real world). This is the M6a/M6c gate from
+// docs/statblock-import-execution-plan.md: run
+//   npm run install:foundry
+//   node scripts/selftest.mjs --live
+// with Foundry open, the module enabled, and its Module Settings relay URL
+// matching RELAY_URL (default ws://localhost:8787).
 
 import { WebSocket } from "ws";
 import {
   RelayServer,
+  loadConfig,
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
@@ -136,10 +148,8 @@ function handle(env) {
   }
 }
 
-const TOKEN = "selftest";
-// Pass a trace logger so the selftest also exercises (and demonstrates) the
-// per-command trace the real server emits to stderr.
-const opts = { token: TOKEN, timeoutMs: 2000, log: (line) => console.log(line) };
+const live = process.argv.includes("--live");
+
 let failed = false;
 const show = (name, out) => {
   if (!out.ok) failed = true;
@@ -149,40 +159,10 @@ const show = (name, out) => {
   return out;
 };
 
-const server = new RelayServer({ url: "ws://localhost:0", token: TOKEN, defaultTimeoutMs: 2000 });
-const port = await server.listening();
-const ws = new WebSocket(`ws://localhost:${port}?token=${TOKEN}`);
-ws.on("message", (d) => ws.send(JSON.stringify(handle(JSON.parse(d.toString())))));
-await new Promise((res, rej) => {
-  ws.on("open", res);
-  ws.on("error", rej);
-});
-await new Promise((r) => setTimeout(r, 20));
-
-console.log(`relay listening on ws://localhost:${port}; stub module connected.\n`);
-
-show("create_document (Actor 'Probe')", await runCreateDocument(server, { documentType: "Actor", data: { name: "Probe", type: "npc" } }, opts));
-show("create_scene ('Self Test Scene')", await runCreateScene(server, { name: "Self Test Scene", gridSize: 100 }, opts));
-const created = show("create_document (Actor to update)", await runCreateDocument(server, { documentType: "Actor", data: { name: "Updatable" } }, opts));
-const newId = created.ok ? created.data._id : "missing";
-show("update_document (rename)", await runUpdateDocument(server, { documentType: "Actor", id: newId, data: { name: "Updated" } }, opts));
-show("duplicate_document (clone)", await runDuplicateDocument(server, { documentType: "Actor", id: newId, overrides: { name: "Clone" } }, opts));
-show("find_documents (by id)", await runFindDocuments(server, { documentType: "Actor", id: newId }, opts));
-show("get_world_info", await runGetWorldInfo(server, {}, opts));
-show("upload_asset", await runUploadAsset(server, { source: "data", target: "worlds/selftest", filename: "probe.webp", contentBase64: "AAAA" }, opts));
-show("batch_upload_assets", await runBatchUploadAssets(server, { source: "data", target: "worlds/selftest/scenes", files: [{ filename: "map1.webp", contentBase64: "AAAA" }, { filename: "map2.webp", contentBase64: "BBBB" }] }, opts));
-show("browse_assets (after upload)", await runBrowseAssets(server, { source: "data", target: "worlds/selftest/scenes" }, opts));
-show("batch_upload_assets (skipExisting)", await runBatchUploadAssets(server, { source: "data", target: "worlds/selftest/scenes", files: [{ filename: "map1.webp", contentBase64: "AAAA" }, { filename: "map3.webp", contentBase64: "CCCC" }], skipExisting: true }, opts));
-show("create_document (Scene parent)", await runCreateDocument(server, { documentType: "Scene", data: { _id: "scene-self", name: "Embedded Parent" }, keepId: true }, opts));
-show("create_embedded (Token)", await runCreateEmbedded(server, { parentType: "Scene", parentId: "scene-self", embeddedName: "Token", data: [{ name: "Goblin" }] }, opts));
-show("create_quest", await runCreateQuest(server, { data: { name: "Find the Amulet" } }, opts));
-show("delete_document", await runDeleteDocument(server, { documentType: "Actor", id: newId }, opts));
-show("search_compendium (Goblin)", await runSearchCompendium(server, { documentType: "Actor", nameQuery: "Goblin" }, opts));
-show("import_from_compendium (Tier 1)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy" }, opts));
-show("import_from_compendium (Tier 1, with patch)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy", patch: { name: "Patched Goblin" } }, opts));
-
-// M6: NPC import leg (full pipeline: parse → upload image → importNpc → verify → clean up)
-try {
+// M6: NPC import leg (full pipeline: parse → upload image → importNpc → verify → clean up).
+// Shared by mock mode (in-process stub) and --live mode (real relay + module) —
+// only what's on the other end of `server` differs.
+async function runNpcLeg(server, opts) {
   const statblockPath = "test/fixtures/statblock-import/gravemire-stalker.md";
   const imagePath = "test/fixtures/statblock-import/gravemire-stalker.png";
 
@@ -231,10 +211,85 @@ try {
     });
   }
 
-  // Clean up: delete the actor and uploaded assets
+  // Clean up: delete the actor and uploaded assets (selftest must stay non-destructive).
   await runDeleteDocument(server, { documentType: "Actor", id: importResult.actorId }, opts);
 
   show("import_npc (M6 NPC leg)", { ok: verification.ok, checks: passCount, failed: failCount });
+}
+
+if (live) {
+  // --live: bind to the REAL relay (same config the real MCP server reads) and
+  // wait for your actual Foundry module to connect. No in-process stub here —
+  // commands really travel server -> relay -> your Foundry world.
+  const config = loadConfig();
+  const opts = { token: config.relayToken, timeoutMs: 20_000, log: (line) => console.log(line) };
+  const server = new RelayServer({
+    url: config.relayUrl,
+    token: config.relayToken,
+    defaultTimeoutMs: 20_000,
+  });
+  await server.listening();
+  console.log(
+    `relay listening on ${config.relayUrl}; waiting up to ${opts.timeoutMs}ms for your ` +
+      `Foundry module to connect (open the world, module enabled, Module Settings relay ` +
+      `URL matching this address)...\n`,
+  );
+
+  try {
+    await runNpcLeg(server, opts);
+  } catch (e) {
+    console.error("NPC import leg error:", e.message);
+    failed = true;
+  }
+
+  server.close();
+  console.log(
+    failed
+      ? "\nSELFTEST (--live) FAILED"
+      : "\nSELFTEST (--live) PASSED — MCP server -> relay -> module -> read-back all working against your real Foundry world.",
+  );
+  process.exit(failed ? 1 : 0);
+}
+
+const TOKEN = "selftest";
+// Pass a trace logger so the selftest also exercises (and demonstrates) the
+// per-command trace the real server emits to stderr.
+const opts = { token: TOKEN, timeoutMs: 2000, log: (line) => console.log(line) };
+
+const server = new RelayServer({ url: "ws://localhost:0", token: TOKEN, defaultTimeoutMs: 2000 });
+const port = await server.listening();
+const ws = new WebSocket(`ws://localhost:${port}?token=${TOKEN}`);
+ws.on("message", (d) => ws.send(JSON.stringify(handle(JSON.parse(d.toString())))));
+await new Promise((res, rej) => {
+  ws.on("open", res);
+  ws.on("error", rej);
+});
+await new Promise((r) => setTimeout(r, 20));
+
+console.log(`relay listening on ws://localhost:${port}; stub module connected.\n`);
+
+show("create_document (Actor 'Probe')", await runCreateDocument(server, { documentType: "Actor", data: { name: "Probe", type: "npc" } }, opts));
+show("create_scene ('Self Test Scene')", await runCreateScene(server, { name: "Self Test Scene", gridSize: 100 }, opts));
+const created = show("create_document (Actor to update)", await runCreateDocument(server, { documentType: "Actor", data: { name: "Updatable" } }, opts));
+const newId = created.ok ? created.data._id : "missing";
+show("update_document (rename)", await runUpdateDocument(server, { documentType: "Actor", id: newId, data: { name: "Updated" } }, opts));
+show("duplicate_document (clone)", await runDuplicateDocument(server, { documentType: "Actor", id: newId, overrides: { name: "Clone" } }, opts));
+show("find_documents (by id)", await runFindDocuments(server, { documentType: "Actor", id: newId }, opts));
+show("get_world_info", await runGetWorldInfo(server, {}, opts));
+show("upload_asset", await runUploadAsset(server, { source: "data", target: "worlds/selftest", filename: "probe.webp", contentBase64: "AAAA" }, opts));
+show("batch_upload_assets", await runBatchUploadAssets(server, { source: "data", target: "worlds/selftest/scenes", files: [{ filename: "map1.webp", contentBase64: "AAAA" }, { filename: "map2.webp", contentBase64: "BBBB" }] }, opts));
+show("browse_assets (after upload)", await runBrowseAssets(server, { source: "data", target: "worlds/selftest/scenes" }, opts));
+show("batch_upload_assets (skipExisting)", await runBatchUploadAssets(server, { source: "data", target: "worlds/selftest/scenes", files: [{ filename: "map1.webp", contentBase64: "AAAA" }, { filename: "map3.webp", contentBase64: "CCCC" }], skipExisting: true }, opts));
+show("create_document (Scene parent)", await runCreateDocument(server, { documentType: "Scene", data: { _id: "scene-self", name: "Embedded Parent" }, keepId: true }, opts));
+show("create_embedded (Token)", await runCreateEmbedded(server, { parentType: "Scene", parentId: "scene-self", embeddedName: "Token", data: [{ name: "Goblin" }] }, opts));
+show("create_quest", await runCreateQuest(server, { data: { name: "Find the Amulet" } }, opts));
+show("delete_document", await runDeleteDocument(server, { documentType: "Actor", id: newId }, opts));
+show("search_compendium (Goblin)", await runSearchCompendium(server, { documentType: "Actor", nameQuery: "Goblin" }, opts));
+show("import_from_compendium (Tier 1)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy" }, opts));
+show("import_from_compendium (Tier 1, with patch)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy", patch: { name: "Patched Goblin" } }, opts));
+
+try {
+  await runNpcLeg(server, opts);
 } catch (e) {
   console.error("NPC import leg error:", e.message);
   failed = true;
