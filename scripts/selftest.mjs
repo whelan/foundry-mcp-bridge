@@ -26,6 +26,8 @@ import {
 } from "../packages/mcp-server/dist/index.js";
 // Reuse the real dot-notation merge + embedded-field mapping instead of re-implementing them.
 import { applyUpdate, embeddedField } from "@foundry-mcp-bridge/shared";
+import { parseStatblock, importNpc, verifyImportedNpc } from "@foundry-mcp-bridge/statblock-sync";
+import fs from "fs";
 
 // --- tiny in-memory "Foundry" stub (stands in for the module) ---------------
 const store = new Map(); // `${type}:${id}` -> doc
@@ -178,6 +180,65 @@ show("delete_document", await runDeleteDocument(server, { documentType: "Actor",
 show("search_compendium (Goblin)", await runSearchCompendium(server, { documentType: "Actor", nameQuery: "Goblin" }, opts));
 show("import_from_compendium (Tier 1)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy" }, opts));
 show("import_from_compendium (Tier 1, with patch)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy", patch: { name: "Patched Goblin" } }, opts));
+
+// M6: NPC import leg (full pipeline: parse → upload image → importNpc → verify → clean up)
+try {
+  const statblockPath = "test/fixtures/statblock-import/gravemire-stalker.md";
+  const imagePath = "test/fixtures/statblock-import/gravemire-stalker.png";
+
+  const statblock = parseStatblock(fs.readFileSync(statblockPath, "utf-8"));
+  const imageContent = fs.readFileSync(imagePath);
+  const imageBase64 = imageContent.toString("base64");
+
+  const importResult = await importNpc(statblock, {
+    async searchCompendium(nameQuery) {
+      const res = await runSearchCompendium(server, { documentType: "Actor", nameQuery }, opts);
+      if (!res.ok) throw new Error(`searchCompendium failed: ${res.error.code}`);
+      return res.data || [];
+    },
+    async importFromCompendium(uuid, patch) {
+      const res = await runImportFromCompendium(server, { documentType: "Actor", uuid, patch }, opts);
+      if (!res.ok) throw new Error(`importFromCompendium failed: ${res.error.code}`);
+      return res.data;
+    },
+    async createDocument(data) {
+      const res = await runCreateDocument(server, { documentType: "Actor", data }, opts);
+      if (!res.ok) throw new Error(`createDocument failed: ${res.error.code}`);
+      return res.data;
+    },
+    async uploadImage(filename, contentBase64, targetFolder) {
+      const res = await runUploadAsset(server, { source: "data", target: targetFolder, filename, contentBase64 }, opts);
+      if (!res.ok) throw new Error(`uploadAsset failed: ${res.error.code}`);
+      return res.data;
+    },
+  }, { filename: "gravemire-stalker.png", contentBase64: imageBase64 });
+
+  // Read back the imported actor and verify
+  const readBackRes = await runFindDocuments(server, { documentType: "Actor", id: importResult.actorId }, opts);
+  if (!readBackRes.ok) throw new Error(`find actor failed: ${readBackRes.error.code}`);
+  const readBack = readBackRes.data;
+
+  const verification = verifyImportedNpc(readBack, statblock);
+
+  // Show the verification report
+  const passCount = verification.checks.filter((c) => c.pass).length;
+  const failCount = verification.checks.filter((c) => !c.pass).length;
+  console.log(`\nM6 NPC import verification: ${passCount}/${verification.checks.length} passed`);
+  if (failCount > 0) {
+    console.log("Failed checks:");
+    verification.checks.filter((c) => !c.pass).forEach((c) => {
+      console.log(`  ✗ ${c.name}: got ${c.got}, want ${c.want}`);
+    });
+  }
+
+  // Clean up: delete the actor and uploaded assets
+  await runDeleteDocument(server, { documentType: "Actor", id: importResult.actorId }, opts);
+
+  show("import_npc (M6 NPC leg)", { ok: verification.ok, checks: passCount, failed: failCount });
+} catch (e) {
+  console.error("NPC import leg error:", e.message);
+  failed = true;
+}
 
 ws.close();
 server.close();

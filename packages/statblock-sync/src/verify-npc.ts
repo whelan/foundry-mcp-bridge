@@ -127,12 +127,11 @@ export function verifyImportedNpc(
     if (attackParsed) {
       const itemSystem = item.system as Record<string, any>;
       const toHitFromItem = parseInt((itemSystem?.attack?.bonus ?? "") as string, 10);
-      const strMod = getAbilityModifier(statblock.abilities_.str);
-      const profBonus = getProficiencyBonus(statblock.challenge.cr);
-      const expectedToHit = strMod + profBonus + attackParsed.bonus;
+      // The parsed attack.bonus IS the total to-hit bonus (already includes str mod + prof)
+      const expectedToHit = attackParsed.bonus;
 
       checks.push({
-        name: `"${action.name}" to-hit (ability + prof + parsed bonus)`,
+        name: `"${action.name}" to-hit`,
         pass: toHitFromItem === expectedToHit,
         got: toHitFromItem,
         want: expectedToHit,
@@ -173,11 +172,13 @@ export function verifyImportedNpc(
         got: readBack.img,
       });
 
+      const tokenSrc = String(readBack.prototypeToken?.texture?.src ?? "");
+      const actorImgStr = String(readBack.img ?? "");
       checks.push({
         name: "Token texture matches actor image",
-        pass: readBack.prototypeToken?.texture?.src === readBack.img,
-        got: readBack.prototypeToken?.texture?.src,
-        want: readBack.img,
+        pass: tokenSrc === actorImgStr && tokenSrc.length > 0,
+        got: tokenSrc || "(not set)",
+        want: actorImgStr,
       });
     }
   }
