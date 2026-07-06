@@ -144,13 +144,11 @@ describe("create_document pipeline", () => {
 
   it("rejects an empty data instead of a vacuously-verified create", async () => {
     // Regression test: create's data isn't run through filterUnsafePaths, so
-    // an empty object can only be the caller's own doing. A document created
-    // from nothing has no name/type of its own for nameOrTypeFallback to
-    // check either, so unlike duplicate/import there's no weaker fallback
-    // available -- an empty create must be rejected outright, or read-back
-    // verification would trivially "pass" no matter what came back.
+    // an empty object can only be the caller's own doing. Unlike
+    // duplicate/import, there's no weaker name/type fallback available for a
+    // document created from nothing, so this must be rejected before any
+    // write happens -- confirmed below by asserting nothing was created.
     const { mock, transport } = setup();
-    transport.corruptReadBack = true; // would otherwise be masked by the vacuous check
     const out = await runCreateDocument(transport, { documentType: "Actor", data: {} });
     expectErr(out, "VALIDATION");
     expect(mock.documents("Actor").length).toBe(0);

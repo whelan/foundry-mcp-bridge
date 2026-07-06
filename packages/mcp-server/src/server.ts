@@ -139,7 +139,7 @@ export function buildServer(
 
   register(
     "create_document",
-    "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch). The echoed result is slim by default (_id, name, _stats.modifiedTime) to save context — read-back still verifies the whole document server-side; pass full:true for the entire document, or fields:[...] for specific dot-paths.",
+    "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch). Rejects with VALIDATION if data (and verifyData, if given) has no fields to verify on read-back. The echoed result is slim by default (_id, name, _stats.modifiedTime) to save context — read-back still verifies the whole document server-side; pass full:true for the entire document, or fields:[...] for specific dot-paths.",
     CreateDocumentShape,
     runCreateDocument,
   );

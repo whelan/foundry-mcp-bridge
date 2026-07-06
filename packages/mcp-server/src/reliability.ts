@@ -129,13 +129,15 @@ function fail(steps: string[], error: CommandError): ToolOutcome {
 /**
  * Structured VALIDATION failure for input rejected before the pipeline runs
  * at all — no transport contact, nothing to roll back. Used to reject a
- * caller-supplied diff/patch/overrides object that's empty (see `isEmptyDiff`)
- * rather than proceeding to a no-op write that would read back as
- * "unchanged" and report success, silently discarding whatever the caller
- * intended to change. Enforced inside each `xxxReliable` function itself
- * (not just at the tools.ts boundary) so any future direct caller gets the
- * guard for free, instead of a raw `ToolOutcome` object literal duplicated
- * at every call site.
+ * caller-supplied diff/patch/overrides/data object that's empty (see
+ * `isEmptyDiff`): for update/duplicate/import/updateEmbedded that would
+ * otherwise be a no-op write reading back as "unchanged" and reporting
+ * success; for create, an empty `expected` would make `isSubset` vacuously
+ * pass regardless of what was actually written. Either way the caller's
+ * intent is silently dropped without this guard. Enforced inside each
+ * `xxxReliable` function itself (not just at the tools.ts boundary) so any
+ * future direct caller gets the guard for free, instead of a raw
+ * `ToolOutcome` object literal duplicated at every call site.
  */
 function validationFailure(message: string): ToolOutcome {
   return fail(["validate"], { code: "VALIDATION", message });
@@ -297,14 +299,9 @@ export async function createDocumentReliable(
   input: CreateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
-  // Unlike update/duplicate/import, runCreateDocument doesn't run `data`
-  // through filterUnsafePaths, so an empty object here can only mean the
-  // caller supplied one outright (documentData's zod shape allows `{}`).
-  // There's no fallback content to verify against (nameOrTypeFallback
-  // degrades to `{}` too, since a document created from nothing has no
-  // name/type of its own) -- unlike duplicate/import, which always clone an
-  // existing document that already has one -- so this can't be silently
-  // downgraded to a weaker check the way those two are; it must be rejected.
+  // Unlike duplicate/import, a document created from nothing has no
+  // name/type for nameOrTypeFallback to degrade to, so an empty data/
+  // verifyData must be rejected outright (see validationFailure/isEmptyDiff).
   const expected = input.verifyData ?? input.data;
   if (isEmptyDiff(expected)) {
     return validationFailure("create data has no fields to verify on read-back");
