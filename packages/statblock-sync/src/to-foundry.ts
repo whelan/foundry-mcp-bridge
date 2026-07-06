@@ -11,8 +11,9 @@
  */
 
 import type { StatblockData } from "./schema.js";
-import { SKILL_TO_ABBREVIATION_MAP } from "./utils.js";
+import { SKILL_TO_ABBREVIATION_MAP, SKILL_DEFAULT_ABILITY } from "./utils.js";
 import { parseAttackAction, parseSaveAction } from "./grammar.js";
+import { getAbilityModifier, getProficiencyBonus, getAbilityMod } from "./math.js";
 import {
   attackActivity,
   saveActivity,
@@ -51,19 +52,90 @@ const DEFAULT_ITEM_ICONS: Record<string, string> = {
   weapon: "icons/svg/sword.svg",
 };
 
+const KNOWN_DAMAGE_TYPES = new Set([
+  "acid", "bludgeoning", "cold", "fire", "force", "lightning", "necrotic",
+  "piercing", "poison", "psychic", "radiant", "slashing", "thunder",
+]);
+const KNOWN_CONDITIONS = new Set([
+  "blinded", "charmed", "deafened", "exhaustion", "frightened", "grappled",
+  "incapacitated", "invisible", "paralyzed", "petrified", "poisoned", "prone",
+  "restrained", "stunned", "unconscious",
+]);
+const KNOWN_LANGUAGES = new Set([
+  "common", "dwarvish", "elvish", "giant", "gnomish", "goblin", "halfling",
+  "orc", "abyssal", "celestial", "draconic", "deep speech", "infernal",
+  "primordial", "sylvan", "undercommon", "common sign language", "thieves' cant", "druidic",
+]);
+
+/** Split a trait list into dnd5e keys vs. free text ("magical bludgeoning…"). */
+function splitKnown(values: string[], known: Set<string>): { value: string[]; custom: string } {
+  const value: string[] = [];
+  const custom: string[] = [];
+  for (const v of values) {
+    const k = v.trim().toLowerCase();
+    if (known.has(k)) value.push(k);
+    else if (v.trim()) custom.push(v.trim());
+  }
+  return { value, custom: custom.join("; ") };
+}
+
+/** "darkvision 60 ft." lists → attributes.senses; passive Perception is derived, drop it. */
+function buildSenses(senses: string[]): Record<string, unknown> {
+  const ranges: Record<string, number | null> = {
+    darkvision: null, blindsight: null, tremorsense: null, truesight: null,
+  };
+  const special: string[] = [];
+  for (const s of senses) {
+    const m = s.match(/(darkvision|blindsight|tremorsense|truesight)\s+(\d+)\s*ft/i);
+    if (m) ranges[m[1]!.toLowerCase()] = parseInt(m[2]!, 10);
+    else if (!/passive\s+perception/i.test(s)) special.push(s.trim());
+  }
+  return { units: null, special: special.join("; "), ranges };
+}
+
 /**
  * Convert a parsed statblock to a Foundry dnd5e actor document.
  * If `resolvedImagePath` is provided, use it for both img and prototypeToken.texture.src.
  */
 export function statblockToFoundryActor(statblock: StatblockData, resolvedImagePath?: string): Dnd5eActorDocument {
   const abilities_ = statblock.abilities_;
+  const prof = getProficiencyBonus(statblock.challenge.cr);
+
+  // Skill proficiencies as multipliers; statblock-vs-derived deltas go in bonuses.check.
+  const skills: Record<string, Record<string, unknown>> = {};
+  for (const p of statblock.skills.proficiencies) {
+    const abbrev = SKILL_TO_ABBREVIATION_MAP[p.skill.toLowerCase().replace(/ of hand/, "")];
+    if (!abbrev) continue;
+    const mod = getAbilityMod(abilities_, SKILL_DEFAULT_ABILITY[abbrev] ?? "wis");
+    const delta = p.bonus - (mod + prof);
+    skills[abbrev] = delta === 0 ? { value: 1 } : { value: 1, bonuses: { check: String(delta) } };
+  }
+
+  // Ability scores; save proficiencies live on abilities.<abl>.proficient.
+  const abilities: Record<string, Record<string, unknown>> = {};
+  for (const key of ["str", "dex", "con", "int", "wis", "cha"] as const) {
+    abilities[key] = { value: abilities_[key] };
+  }
+  for (const save of statblock.skills.savingThrows) {
+    const key = save.ability.toLowerCase().substring(0, 3);
+    if (!abilities[key]) continue;
+    const delta = save.bonus - (getAbilityModifier(abilities_[key as keyof typeof abilities_]) + prof);
+    abilities[key]!.proficient = 1;
+    if (delta !== 0) abilities[key]!.bonuses = { save: String(delta) };
+  }
+
+  const dr = splitKnown(statblock.traits.damageResistances, KNOWN_DAMAGE_TYPES);
+  const di = splitKnown(statblock.traits.damageImmunities, KNOWN_DAMAGE_TYPES);
+  const dv = splitKnown(statblock.traits.damageVulnerabilities, KNOWN_DAMAGE_TYPES);
+  const ci = splitKnown(statblock.traits.conditionImmunities, KNOWN_CONDITIONS);
+  const langs = splitKnown(statblock.traits.languages, KNOWN_LANGUAGES);
 
   // Build system object
   const system: Record<string, unknown> = {
     attributes: {
       ac: {
         flat: statblock.attributes.armorClass,
-        calc: "default",
+        calc: /natural/i.test(statblock.data.ac_class ?? "") ? "natural" : "flat",
       },
       hp: {
         value: statblock.attributes.hitPoints.value,
@@ -71,49 +143,41 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
         formula: statblock.attributes.hitPoints.formula,
       },
       movement: {
-        walk: statblock.attributes.speed.walk ?? 0,
-        fly: statblock.attributes.speed.fly ?? 0,
-        swim: statblock.attributes.speed.swim ?? 0,
-        burrow: statblock.attributes.speed.burrow ?? 0,
-        climb: statblock.attributes.speed.climb ?? 0,
+        // Only the speeds the statblock has — officials omit absent speeds
+        // entirely (ghast: walk only; wyrmling: walk/fly/swim/burrow).
+        ...Object.fromEntries(
+          Object.entries(statblock.attributes.speed).filter(
+            ([, v]) => typeof v === "number" && v > 0,
+          ),
+        ),
         units: "ft",
         hover: false,
       },
+      senses: buildSenses(statblock.traits.senses),
     },
     details: {
       biography: { value: "" },
       alignment: statblock.creatureType.alignment,
-      race: { value: "" },
       type: {
         value: statblock.creatureType.type,
         subtype: statblock.creatureType.subtype ?? "",
       },
-      size: statblock.creatureType.size,
       cr: statblock.challenge.cr,
-      xp: statblock.challenge.xp,
+      // No xp (dnd5e derives it from CR) and — critically — no `race`: on
+      // NPCs it's a LocalDocumentField (Item reference, officially null); the
+      // legacy `race: { value: "" }` is what dry-run rejected with
+      // "The value provided to a LocalDocumentField must be a BaseItem instance."
     },
     traits: {
-      languages: { value: statblock.traits.languages },
-      senses: statblock.traits.senses.join("; "),
+      size: statblock.creatureType.size,
+      languages: { value: langs.value, custom: langs.custom, communication: {} },
+      dr: { value: dr.value, bypasses: [], custom: dr.custom },
+      di: { value: di.value, bypasses: [], custom: di.custom },
+      dv: { value: dv.value, bypasses: [], custom: dv.custom },
+      ci: { value: ci.value, custom: ci.custom },
     },
-    traits_: {
-      weaponProf: { value: [] },
-      armorProf: { value: [] },
-      toolProf: { value: [] },
-      damageResistances: { value: statblock.traits.damageResistances },
-      damageImmunities: { value: statblock.traits.damageImmunities },
-      damageVulnerabilities: { value: statblock.traits.damageVulnerabilities },
-      conditionImmunities: { value: statblock.traits.conditionImmunities },
-    },
-    abilities: {
-      str: { value: abilities_.str },
-      dex: { value: abilities_.dex },
-      con: { value: abilities_.con },
-      int: { value: abilities_.int },
-      wis: { value: abilities_.wis },
-      cha: { value: abilities_.cha },
-    },
-    skills: buildSkills(statblock),
+    abilities,
+    skills,
   };
 
   // Create embedded items from abilities and actions
@@ -121,13 +185,13 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
 
   // Add trait features (passive: the "trait" property, no activity)
   for (const ability of statblock.abilities) {
-    const system = featSystem(ability.description);
-    system.properties = ["trait"];
+    const itemSystem = featSystem(ability.description);
+    itemSystem.properties = ["trait"];
     items.push({
       name: ability.name,
       type: "feat",
       img: DEFAULT_ITEM_ICONS.feat,
-      system,
+      system: itemSystem,
     });
   }
 
@@ -146,26 +210,6 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
     effects: [],
     prototypeToken: actorImg ? { texture: { src: actorImg } } : undefined,
   };
-}
-
-/**
- * Build skills object for the dnd5e system.
- */
-function buildSkills(statblock: StatblockData): Record<string, unknown> {
-  const skills: Record<string, Record<string, unknown>> = {};
-
-  // Add proficient skills (using dnd5e abbreviations like "prc" for Perception)
-  for (const prof of statblock.skills.proficiencies) {
-    const skillNameLower = prof.skill.toLowerCase().replace(/ of hand/, "");
-    const abbrev = SKILL_TO_ABBREVIATION_MAP[skillNameLower];
-    if (!abbrev) continue;
-
-    skills[abbrev] = {
-      value: prof.bonus, // dnd5e stores the total bonus in value
-    };
-  }
-
-  return skills;
 }
 
 /** Item-level `uses` for a recharge action, else the empty default. */

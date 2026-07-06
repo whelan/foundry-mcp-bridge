@@ -75,12 +75,12 @@ function verifyImportedNpc(
     errors.push("Skills not converted to system");
   }
 
-  // Verify resistances (moved to system.traits_ in dnd5e structure)
+  // Verify resistances (dnd5e 5.3.3: system.traits.dr, not traits_)
   const resistancesMatch = statblock.traits.damageResistances.every((res) =>
-    ((system.traits_ as Record<string, any>)?.damageResistances?.value || []).includes(res)
+    ((system.traits as Record<string, any>)?.dr?.value || []).includes(res.toLowerCase())
   );
   if (!resistancesMatch) {
-    const actual = ((system.traits_ as Record<string, any>)?.damageResistances?.value || []) as string[];
+    const actual = ((system.traits as Record<string, any>)?.dr?.value || []) as string[];
     errors.push(
       `Resistances mismatch: ${statblock.traits.damageResistances.join(", ")} vs ${actual.join(", ")}`
     );
@@ -201,7 +201,8 @@ describe("M5: End-to-End Mock Pipeline", () => {
     expect(system.attributes.ac.flat).toBe(statblock.attributes.armorClass);
     expect(system.attributes.hp.value).toBe(statblock.attributes.hitPoints.value);
     expect(system.details.cr).toBe(statblock.challenge.cr);
-    expect(system.details.xp).toBe(statblock.challenge.xp);
+    // xp is not an NPC field in dnd5e 5.3.3 (derived from CR) — never emitted
+    expect(system.details.xp).toBeUndefined();
 
     // Ability scores
     expect(system.abilities.str.value).toBe(statblock.abilities_.str);

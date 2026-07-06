@@ -48,6 +48,13 @@ export const SKILL_TO_ABBREVIATION_MAP: Record<string, string> = {
   survival: "sur",
 };
 
+/** dnd5e default ability per skill abbreviation (for deriving expected bonuses). */
+export const SKILL_DEFAULT_ABILITY: Record<string, string> = {
+  acr: "dex", ani: "wis", arc: "int", ath: "str", dec: "cha", his: "int",
+  ins: "wis", itm: "cha", inv: "int", med: "wis", nat: "int", prc: "wis",
+  prf: "cha", per: "cha", rel: "int", slt: "dex", ste: "dex", sur: "wis",
+};
+
 /** Damage types recognized in D&D 5e */
 export const DAMAGE_TYPES_STR =
   "slashing|piercing|bludgeoning|psychic|necrotic|fire|cold|lightning|radiant|acid|poison|thunder|force";

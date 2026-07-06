@@ -102,11 +102,12 @@ stats: [10, 10, 10, 10, 10, 10]
     const statblock = parseStatblock(markdown);
     const actor = statblockToFoundryActor(statblock);
 
+    // Officials omit absent speeds entirely rather than emitting walk: 0.
     const system = actor.system as Record<string, any>;
-    expect(system.attributes.movement.walk).toBe(0);
+    expect(system.attributes.movement.walk).toBeUndefined();
   });
 
-  it("sets CR and XP", () => {
+  it("sets CR (XP is not an NPC field; dnd5e derives it from CR)", () => {
     const filePath = path.join(
       __dirname,
       "..",
@@ -120,7 +121,7 @@ stats: [10, 10, 10, 10, 10, 10]
 
     const system = actor.system as Record<string, any>;
     expect(system.details.cr).toBe(3);
-    expect(system.details.xp).toBe(700);
+    expect(system.details.xp).toBeUndefined();
   });
 
   it("includes traits and resistances", () => {
@@ -136,8 +137,8 @@ stats: [10, 10, 10, 10, 10, 10]
     const actor = statblockToFoundryActor(statblock);
 
     const system = actor.system as Record<string, any>;
-    expect(system.traits_.damageResistances.value).toContain("necrotic");
-    expect(system.traits.senses).toContain("darkvision");
+    expect(system.traits.dr.value).toContain("necrotic");
+    expect(system.attributes.senses.ranges.darkvision).toBe(60);
   });
 
   it("sets creature type, size, and alignment from the descriptor line", () => {
@@ -154,7 +155,7 @@ stats: [10, 10, 10, 10, 10, 10]
 
     const system = actor.system as Record<string, any>;
     expect(system.details.type.value).toBe("undead");
-    expect(system.details.size).toBe("med");
+    expect(system.traits.size).toBe("med");
     expect(system.details.alignment).toBe("Neutral Evil");
   });
 
@@ -360,5 +361,68 @@ describe("modern dnd5e item shapes (5.3.3 Activities)", () => {
     expect(sys.type).toEqual({ value: "monster", subtype: "" });
     expect(sys.properties).toEqual(["trait"]);
     expect(sys.activities).toEqual({});
+  });
+});
+
+describe("modern dnd5e actor system shapes (5.3.3)", () => {
+  const statblock = parseStatblock(
+    fs.readFileSync("test/fixtures/statblock-import/gravemire-stalker.md", "utf-8"),
+  );
+  const actor = statblockToFoundryActor(statblock);
+  const sys = actor.system as Record<string, any>;
+
+  it("puts senses under attributes.senses.ranges and never emits passive Perception", () => {
+    expect(sys.attributes.senses).toEqual({
+      units: null,
+      special: "",
+      ranges: { darkvision: 60, blindsight: null, tremorsense: null, truesight: null },
+    });
+  });
+
+  it("uses natural-armor AC calc when the statblock says so", () => {
+    // gravemire-stalker.md: "ac: 14 (natural armor)"
+    expect(sys.attributes.ac).toEqual({ flat: 14, calc: "natural" });
+  });
+
+  it("emits damage/condition traits under traits.dr/di/dv/ci", () => {
+    expect(sys.traits.dr).toEqual({ value: ["necrotic"], bypasses: [], custom: "" });
+    expect(sys.traits.ci).toEqual({ value: ["charmed"], custom: "" });
+    expect(sys.traits.di).toEqual({ value: [], bypasses: [], custom: "" });
+    expect(sys.traits.dv).toEqual({ value: [], bypasses: [], custom: "" });
+    expect(sys.traits_).toBeUndefined();
+  });
+
+  it("puts free-text languages in custom, size under traits", () => {
+    // "understands Common but can't speak" is not a language key
+    expect(sys.traits.languages).toEqual({
+      value: [],
+      custom: "understands Common but can't speak",
+      communication: {},
+    });
+    expect(sys.traits.size).toBe("med");
+    expect(sys.details.size).toBeUndefined();
+  });
+
+  it("emits skill proficiencies as multipliers, not totals", () => {
+    // Stealth +4 = dex +2 + prof +2 → multiplier 1, no delta
+    expect(sys.skills.ste).toEqual({ value: 1 });
+    // Perception +3 = wis +1 + prof +2 → multiplier 1, no delta
+    expect(sys.skills.prc).toEqual({ value: 1 });
+  });
+
+  it("emits save proficiencies on abilities.<abl>.proficient", () => {
+    // WIS save +3 = wis +1 + prof +2 → proficient, no delta
+    expect(sys.abilities.wis).toEqual({ value: 12, proficient: 1 });
+    expect(sys.abilities.str).toEqual({ value: 16 });
+  });
+
+  it("emits only the speeds the statblock defines", () => {
+    // gravemire-stalker.md: "speed: 30 ft., swim 20 ft." — no climb: 0 noise
+    expect(sys.attributes.movement).toEqual({ walk: 30, swim: 20, units: "ft", hover: false });
+  });
+
+  it("does not emit details.race (LocalDocumentField) or details.xp (derived)", () => {
+    expect(sys.details.race).toBeUndefined();
+    expect(sys.details.xp).toBeUndefined();
   });
 });
