@@ -317,6 +317,101 @@ hold against real Foundry (the mock disagreed with reality somewhere), which
 is a bug to fix and re-run through M0–M5's gates first, not a manual
 workaround.
 
+#### M6a run log (2026-07-06, local world "Test-mcp", Foundry 14.364, dnd5e 5.3.3)
+
+`npm run selftest` was passing (16/16) but proved nothing about the live
+world: it has always run its M0–M5 legs *and* the M6 NPC leg against its own
+in-process stub relay+module (`ws://localhost:0` + an in-memory `Map`), never
+against the real Foundry module. Fixed this first — `scripts/selftest.mjs`
+now takes a `--live` flag (`npm run selftest:live`) that binds to the real
+relay (`RELAY_URL`, default `ws://localhost:8787` — same config the real MCP
+server reads) and waits for the actual module to connect, running only the
+M6 NPC leg (the M0–M5 legs aren't cleanup-safe against a real world). Note:
+it can't run while a production MCP session already holds the relay port —
+only one process can bind it.
+
+Running the real NPC import against the live world (manually, via the
+already-connected `mcp__foundry__*` tools, since `--live` couldn't share the
+port with this session) surfaced two real bugs the mock never caught:
+
+**Bug 1 — FIXED.** `uploadAsset`/`batchUploadAssets` didn't create the
+target directory. Real `FilePicker.upload` returns no path (silently, no
+throw) when the target doesn't exist, and `FilePicker.createDirectory` is
+**not** recursive like `mkdir -p` — the parent must already exist, one level
+at a time creating `worlds/npcs` before `worlds/npcs/gravemire-stalker`
+works. Fixed in
+[`foundry-runtime.ts`](../packages/foundry-module/src/foundry-runtime.ts)
+with an `ensureDirectory` helper that walks the target path segment by
+segment before every upload/browse; verified live (uploaded
+`worlds/npcs/gravemire-stalker/gravemire-stalker.png` to a brand-new nested
+path successfully). **Not yet covered by a regression test** — the mock
+never enforced directory existence, which is exactly how this shipped
+unnoticed through M0–M5's gates. Fix that (either make the mock enforce the
+same constraint, or add a dedicated test) before trusting `npm test` on this
+again.
+
+**Bug 2 — NOT FIXED, blocks all Tier 3 imports.** `statblockToFoundryActor`
+(`packages/statblock-sync/src/to-foundry.ts`) targets a dnd5e schema that
+predates the Activities system (dnd5e 3.0+) and diverges from the live
+Actor schema in several places. `create_document` fails immediately at
+dry-run: `"The value provided to a LocalDocumentField must be a BaseItem
+instance."` Confirmed by diffing against a real actor already in the world
+(`MCP Test-kriger`) and by reading the actually-installed dnd5e system's own
+compendium data directly (LevelDB packs under
+`.../FoundryVTT/Data/systems/dnd5e/packs/`, read with the `classic-level` npm
+package — raw `strings` output is Snappy-compressed and unreadable, don't
+bother with it):
+
+- Items: weapon-type attacks (Claw, Grave Breath) need a `system.damage.base`
+  (`number`/`denomination`/`types`/`bonus`/`custom`/`scaling`) plus a
+  `system.activities.<16-char-id>` entry of `type: "attack"` carrying
+  `attack: { flat: true, ability: "none", bonus: "<n>", type: { value:
+  "melee"|"ranged", classification: "" } }` and `damage: { includeBase: true,
+  parts: [] }` (plus activation/duration/range/target/uses/consumption
+  boilerplate — see `Rotting Touch` in the `monsterfeatures24` pack for a
+  clean real example). The legacy flat fields this repo currently emits
+  (`system.damage.parts`, `system.attack.bonus`, `system.save`,
+  `system.range`, `system.recharge` directly on the item) no longer exist.
+  Passive traits (Multiattack, Stench of the Grave, Grasp of the Mire)
+  should be `type: "feat"` with `system.type.value: "monster"` and
+  `activities: {}` — not `type: "feature"`, which isn't a valid dnd5e item
+  type at all (see `Abduct` in the same pack for reference).
+- Actor: `senses` moved from a flat `system.traits.senses` string to
+  `system.attributes.senses.ranges.{darkvision,blindsight,tremorsense,
+  truesight}` + `.units`/`.special`; damage resistances/immunities/
+  vulnerabilities and condition immunities moved from
+  `system.traits_.damage{Resistances,Immunities,Vulnerabilities}` /
+  `conditionImmunities` to `system.traits.{dr,di,dv,ci}.value` (relocated
+  under `traits`, renamed to abbreviations); languages needs a
+  `.communication` field alongside `.value`; `system.details.race` is a
+  document reference (`null` when unset), not a string — not currently
+  modeled at all.
+
+Real fix is a rework of `statblockToFoundryActor` for the Activities schema
+and the Actor restructuring above — this is real engineering work, not a
+live patch. **The full implementation plan is
+`docs/superpowers/plans/2026-07-06-dnd5e-activities-schema-rewrite.md`**,
+with ground-truth fixtures extracted from the live install committed in
+`test/fixtures/dnd5e-53-schema/` (see its README — a cloud session has no
+Foundry install, so those files are its only source of truth). After the
+plan lands, re-run `npm run selftest:live` from M6a top.
+
+Follow-up root cause (confirmed from the Ghast fixture): the exact
+`LocalDocumentField` error comes from emitting `details.race: { value: "" }`
+— on NPCs `race` is a LocalDocumentField (an Item reference, officially
+`null`), so a plain object there is rejected at dry-run.
+
+Record the tested version once fixed: dnd5e **5.3.3** on Foundry core
+**14.364** (`statblock-sync/src/compat.ts` — not yet created).
+
+**Live-world state left behind:** `worlds/npcs/gravemire-stalker/
+gravemire-stalker.png` and `worlds/test-mcp/scenes/selftest-probe.png` were
+uploaded to the real "Test-mcp" world while debugging (both tiny placeholder
+test images, harmless clutter). No Gravemire Stalker actor was created — the
+Tier 3 `create_document` call never succeeded, so nothing needs deleting
+there. There's no `delete_asset` command in the bridge, so the two stray
+files need manual cleanup (or leave them — they don't hurt anything).
+
 ### M6b — Local world, manual verification (you, after M6a is green)
 
 Same checklist either way (local or Forge), ~3 minutes, the definition of
