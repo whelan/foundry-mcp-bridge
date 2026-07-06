@@ -196,7 +196,7 @@ stats: [10, 10, 10, 10, 10, 10]
     expect(itemNames).toContain("Claw");
   });
 
-  it("only types actions with a parsed attack/save roll as weapon items", () => {
+  it("only types actions with a parsed attack roll as weapons; save/descriptive actions are feats", () => {
     const filePath = path.join(
       __dirname,
       "..",
@@ -209,26 +209,31 @@ stats: [10, 10, 10, 10, 10, 10]
     const actor = statblockToFoundryActor(statblock);
 
     const byName = (name: string) => actor.items.find((i) => i.name === name);
+    const activityOfType = (item: ReturnType<typeof byName>, type: string): any =>
+      Object.values((item?.system as Record<string, any>)?.activities ?? {}).find(
+        (a: any) => a.type === type
+      );
 
     // Multiattack and Grasp of the Mire have no attack roll/save - they're
-    // descriptive features, matching the official compendium structure.
-    expect(byName("Multiattack")?.type).toBe("feature");
-    expect(byName("Grasp of the Mire")?.type).toBe("feature");
+    // descriptive feats, matching the official compendium structure.
+    expect(byName("Multiattack")?.type).toBe("feat");
+    expect(byName("Grasp of the Mire")?.type).toBe("feat");
 
-    // Claw and Grave Breath have parsed mechanics - they're weapons.
+    // Claw has a parsed attack roll - it's a weapon. Grave Breath has a
+    // parsed save - it's a feat with a save activity.
     expect(byName("Claw")?.type).toBe("weapon");
-    expect(byName("Grave Breath")?.type).toBe("weapon");
+    expect(byName("Grave Breath")?.type).toBe("feat");
 
-    // Claw's attack bonus is positive (+5), formatted with a leading "+"
+    // Claw's attack activity carries the flat to-hit bonus (+5)
     const claw = byName("Claw");
-    expect((claw?.system as Record<string, any>)?.attack?.bonus).toBe("+5");
+    expect(activityOfType(claw, "attack")?.attack?.bonus).toBe("5");
 
-    // Grave Breath's save DC and ability are persisted so the sheet can
-    // prompt the correct saving throw
+    // Grave Breath's save activity carries the DC and ability so the sheet
+    // can prompt the correct saving throw
     const graveBreath = byName("Grave Breath");
-    const graveBreathSystem = graveBreath?.system as Record<string, any>;
-    expect(graveBreathSystem?.save?.ability).toBe("con");
-    expect(graveBreathSystem?.save?.dc?.value).toBe(12);
+    const saveAct = activityOfType(graveBreath, "save");
+    expect(saveAct?.save?.ability).toEqual(["con"]);
+    expect(saveAct?.save?.dc?.formula).toBe("12");
   });
 
   it("formats a negative attack bonus without a doubled sign", () => {
@@ -247,7 +252,8 @@ actions:
     const actor = statblockToFoundryActor(statblock);
     const jab = actor.items.find((i) => i.name === "Feeble Jab");
 
-    expect((jab?.system as Record<string, any>)?.attack?.bonus).toBe("-1");
+    const act: any = Object.values((jab?.system as Record<string, any>)?.activities ?? {})[0];
+    expect(act?.attack?.bonus).toBe("-1");
   });
 
   it("assigns default icons per item type", () => {
@@ -265,5 +271,94 @@ actions:
     for (const item of actor.items) {
       expect(item.img).toMatch(/^icons\/svg\//);
     }
+  });
+});
+
+describe("modern dnd5e item shapes (5.3.3 Activities)", () => {
+  const statblock = parseStatblock(
+    fs.readFileSync("test/fixtures/statblock-import/gravemire-stalker.md", "utf-8"),
+  );
+  const actor = statblockToFoundryActor(statblock);
+  const byName = (n: string) => actor.items.find((i) => i.name === n)!;
+
+  it("never emits the invalid 'feature' item type", () => {
+    for (const item of actor.items) {
+      expect(["weapon", "feat"]).toContain(item.type);
+    }
+  });
+
+  it("emits Claw as a natural weapon with structured base damage and a flat attack activity", () => {
+    const claw = byName("Claw");
+    expect(claw.type).toBe("weapon");
+    const sys = claw.system as Record<string, any>;
+    expect(sys.type).toEqual({ value: "natural", baseItem: "" });
+    expect(sys.damage.base).toMatchObject({
+      number: 1,
+      denomination: 10,
+      bonus: "3",
+      types: ["slashing"],
+    });
+    const acts = Object.values(sys.activities as Record<string, any>);
+    expect(acts).toHaveLength(1);
+    expect(acts[0].type).toBe("attack");
+    expect(acts[0].attack).toMatchObject({ flat: true, ability: "none", bonus: "5" });
+    expect(acts[0].damage.includeBase).toBe(true);
+    expect(acts[0].damage.parts).toHaveLength(1);
+    expect(acts[0].damage.parts[0]).toMatchObject({
+      number: 1,
+      denomination: 6,
+      types: ["necrotic"],
+    });
+    expect(sys.range).toMatchObject({ reach: 5, units: "ft" });
+    // legacy fields must be gone
+    expect(sys.attack).toBeUndefined();
+    expect(sys.save).toBeUndefined();
+    expect(sys.recharge).toBeUndefined();
+  });
+
+  it("emits Grave Breath as a feat with a save activity and recharge uses", () => {
+    const breath = byName("Grave Breath");
+    expect(breath.type).toBe("feat");
+    const sys = breath.system as Record<string, any>;
+    expect(sys.type).toEqual({ value: "monster", subtype: "" });
+    expect(sys.uses).toEqual({
+      spent: 0,
+      max: "1",
+      recovery: [{ period: "recharge", formula: "5", type: "recoverAll" }],
+    });
+    const act = Object.values(sys.activities as Record<string, any>)[0];
+    expect(act.type).toBe("save");
+    expect(act.save).toEqual({ ability: ["con"], dc: { calculation: "", formula: "12" } });
+    expect(act.damage.onSave).toBe("half");
+    expect(act.damage.parts[0]).toMatchObject({ number: 4, denomination: 6, types: ["poison"] });
+    expect(act.target.template).toMatchObject({ type: "cone", size: "15" });
+    expect(act.consumption.targets).toEqual([
+      { type: "itemUses", value: "1", target: "", scaling: {} },
+    ]);
+  });
+
+  it("emits Multiattack as a feat with a utility activity", () => {
+    const multi = byName("Multiattack");
+    expect(multi.type).toBe("feat");
+    const sys = multi.system as Record<string, any>;
+    const act = Object.values(sys.activities as Record<string, any>)[0];
+    expect(act.type).toBe("utility");
+    expect(act.activation.type).toBe("action");
+  });
+
+  it("emits the reaction with reaction activation", () => {
+    const grasp = byName("Grasp of the Mire");
+    expect(grasp.type).toBe("feat");
+    const act = Object.values((grasp.system as Record<string, any>).activities)[0] as any;
+    expect(act.activation.type).toBe("reaction");
+  });
+
+  it("emits traits as feats flagged with the trait property and no activities", () => {
+    const stench = byName("Stench of the Grave");
+    expect(stench.type).toBe("feat");
+    const sys = stench.system as Record<string, any>;
+    expect(sys.type).toEqual({ value: "monster", subtype: "" });
+    expect(sys.properties).toEqual(["trait"]);
+    expect(sys.activities).toEqual({});
   });
 });

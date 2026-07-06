@@ -13,6 +13,13 @@
 import type { StatblockData } from "./schema.js";
 import { SKILL_TO_ABBREVIATION_MAP } from "./utils.js";
 import { parseAttackAction, parseSaveAction } from "./grammar.js";
+import {
+  attackActivity,
+  saveActivity,
+  utilityActivity,
+  toDamagePart,
+  parseTemplate,
+} from "./activities.js";
 
 export interface Dnd5eActorDocument {
   name: string;
@@ -40,7 +47,7 @@ export interface Dnd5eItem {
  * of this feature, not part of grammar-only conversion).
  */
 const DEFAULT_ITEM_ICONS: Record<string, string> = {
-  feature: "icons/svg/book.svg",
+  feat: "icons/svg/book.svg",
   weapon: "icons/svg/sword.svg",
 };
 
@@ -112,16 +119,15 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
   // Create embedded items from abilities and actions
   const items: Dnd5eItem[] = [];
 
-  // Add trait/ability features
+  // Add trait features (passive: the "trait" property, no activity)
   for (const ability of statblock.abilities) {
+    const system = featSystem(ability.description);
+    system.properties = ["trait"];
     items.push({
       name: ability.name,
-      type: "feature",
-      img: DEFAULT_ITEM_ICONS.feature,
-      system: {
-        description: { value: ability.description },
-        source: "",
-      },
+      type: "feat",
+      img: DEFAULT_ITEM_ICONS.feat,
+      system,
     });
   }
 
@@ -162,64 +168,102 @@ function buildSkills(statblock: StatblockData): Record<string, unknown> {
   return skills;
 }
 
+/** Item-level `uses` for a recharge action, else the empty default. */
+function itemUses(recharge?: { value: number; charged: boolean }): Record<string, unknown> {
+  if (!recharge) return { spent: 0, recovery: [], max: "" };
+  return {
+    spent: 0,
+    max: "1",
+    recovery: [{ period: "recharge", formula: String(recharge.value), type: "recoverAll" }],
+  };
+}
+
+/** Shared scaffolding for `feat` items (traits, multiattack, save actions, reactions). */
+function featSystem(description: string): Record<string, unknown> {
+  return {
+    description: { value: description, chat: "" },
+    type: { value: "monster", subtype: "" },
+    properties: [] as string[],
+    requirements: "",
+    uses: { spent: 0, recovery: [], max: "" },
+    activities: {},
+  };
+}
+
 /**
  * Convert an action to a Foundry item.
  *
- * Whether an action becomes a rollable "weapon" item or a plain "feature"
+ * Whether an action becomes a rollable "weapon" item or a plain "feat"
  * item is decided by whether the grammar parser actually found an attack
  * roll or saving throw in its description — not by which section it came
  * from. Purely descriptive actions/reactions (e.g. "Multiattack", "Sudden
  * Lurch") have no mechanical roll and belong in the official compendium as
- * "feature" items even though they're under the Actions/Reactions headers.
+ * "feat" items even though they're under the Actions/Reactions headers.
  */
 function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
   const attackParsed = parseAttackAction(action.description);
   const saveParsed = parseSaveAction(action.description);
-  const isMechanical = !!attackParsed || !!saveParsed;
-
-  const item: Dnd5eItem = {
-    name: action.name,
-    type: isMechanical ? "weapon" : "feature",
-    img: isMechanical ? DEFAULT_ITEM_ICONS.weapon : DEFAULT_ITEM_ICONS.feature,
-    system: {
-      description: { value: action.description },
-      source: "",
-    },
-  };
-
-  if (!isMechanical) return item;
-
-  const system = item.system as Record<string, unknown>;
-  system.damage = { parts: [] };
-  system.attack = { bonus: "" };
-  system.range = { value: null, long: null, units: "ft" };
+  const activation = action.type === "reaction" ? ("reaction" as const) : ("action" as const);
 
   if (attackParsed) {
-    system.type = attackParsed.type === "ranged" ? "rangedW" : "meleeM";
-    system.attack = { bonus: attackParsed.bonus >= 0 ? `+${attackParsed.bonus}` : `${attackParsed.bonus}` };
-    system.damage = {
-      parts: attackParsed.damage.map((d) => [d.formula, d.type]),
+    const [base, ...extra] = attackParsed.damage;
+    return {
+      name: action.name,
+      type: "weapon",
+      img: DEFAULT_ITEM_ICONS.weapon,
+      system: {
+        description: { value: action.description, chat: "" },
+        type: { value: "natural", baseItem: "" },
+        damage: {
+          // No parsed damage (rare): an inert base with no types.
+          base: base
+            ? toDamagePart(base)
+            : { ...toDamagePart({ formula: "0d4", type: "" }), types: [] },
+          versatile: {
+            number: null,
+            denomination: null,
+            types: [],
+            custom: { enabled: false },
+            scaling: { number: 1 },
+          },
+        },
+        range: {
+          value: attackParsed.range?.normal ?? null,
+          long: attackParsed.range?.long ?? null,
+          reach: attackParsed.reach ?? null,
+          units: "ft",
+        },
+        properties: [],
+        proficient: null,
+        uses: itemUses(action.recharge),
+        activities: attackActivity({
+          bonus: attackParsed.bonus,
+          attackType: attackParsed.type === "ranged" ? "ranged" : "melee",
+          extraParts: extra.map(toDamagePart),
+          activation,
+        }),
+      },
     };
-    if (attackParsed.reach) {
-      (system.range as Record<string, unknown>).value = attackParsed.reach;
-    } else if (attackParsed.range) {
-      (system.range as Record<string, unknown>).value = attackParsed.range.normal;
-      (system.range as Record<string, unknown>).long = attackParsed.range.long ?? null;
-    }
-  } else if (saveParsed) {
-    system.type = "spellcasting";
-    system.save = {
+  }
+
+  if (saveParsed) {
+    const system = featSystem(action.description);
+    system.uses = itemUses(action.recharge);
+    system.activities = saveActivity({
       ability: saveParsed.ability.toLowerCase().substring(0, 3),
-      dc: { value: saveParsed.dc, scaling: "flat" },
-    };
-    system.damage = {
-      parts: saveParsed.damage.map((d) => [d.formula, d.type]),
-    };
+      dc: saveParsed.dc,
+      parts: saveParsed.damage.map(toDamagePart),
+      onSave: /success:\s*half/i.test(action.description) ? "half" : "none",
+      template: parseTemplate(action.description),
+      consumesItemUse: !!action.recharge,
+      activation,
+    });
+    return { name: action.name, type: "feat", img: DEFAULT_ITEM_ICONS.feat, system };
   }
 
-  if (action.recharge) {
-    system.recharge = action.recharge;
-  }
-
-  return item;
+  // Purely descriptive (Multiattack, reactions without rolls, …): a feat with
+  // a utility activity so it still shows under the right action economy.
+  const system = featSystem(action.description);
+  system.activities = utilityActivity({ activation });
+  return { name: action.name, type: "feat", img: DEFAULT_ITEM_ICONS.feat, system };
 }
