@@ -387,14 +387,11 @@ bother with it):
   document reference (`null` when unset), not a string — not currently
   modeled at all.
 
-Real fix is a rework of `statblockToFoundryActor` for the Activities schema
-and the Actor restructuring above — this is real engineering work, not a
-live patch. **The full implementation plan is
-`docs/superpowers/plans/2026-07-06-dnd5e-activities-schema-rewrite.md`**,
-with ground-truth fixtures extracted from the live install committed in
-`test/fixtures/dnd5e-53-schema/` (see its README — a cloud session has no
-Foundry install, so those files are its only source of truth). After the
-plan lands, re-run `npm run selftest:live` from M6a top.
+Fixed by the Activities-schema rewrite (see
+`docs/superpowers/plans/2026-07-06-dnd5e-activities-schema-rewrite.md`;
+ground-truth fixtures in `test/fixtures/dnd5e-53-schema/`). Re-run M6a from
+the top (`npm run install:foundry && npm run selftest:live`) to confirm
+against the live world.
 
 Follow-up root cause (confirmed from the Ghast fixture): the exact
 `LocalDocumentField` error comes from emitting `details.race: { value: "" }`
