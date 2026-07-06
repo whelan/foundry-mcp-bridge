@@ -126,6 +126,28 @@ function fail(steps: string[], error: CommandError): ToolOutcome {
   return { ok: false, error, steps };
 }
 
+/**
+ * Structured VALIDATION failure for input rejected before the pipeline runs
+ * at all — no transport contact, nothing to roll back. Callers that reject a
+ * caller-supplied diff/patch/overrides object (e.g. empty after
+ * `filterUnsafePaths` stripped every key) should use this rather than a raw
+ * `ToolOutcome` object literal, so every such rejection is shaped and traced
+ * identically.
+ */
+function validationFailure(message: string): ToolOutcome {
+  return fail(["validate"], { code: "VALIDATION", message });
+}
+
+/** True when a dot-notation object was supplied but has nothing safe left to
+ * apply (e.g. every key was stripped by `filterUnsafePaths`). `undefined`
+ * itself is not empty in this sense — it means "not supplied", which is
+ * legitimate wherever the field is optional (duplicate's overrides, import's
+ * patch); only a *supplied-but-empty* object is the caller-intent-silently-
+ * dropped case this predicate exists to catch. */
+function isEmptyDiff(data: Json | undefined): data is Json {
+  return data !== undefined && Object.keys(data).length === 0;
+}
+
 function idOf(data: unknown): string | undefined {
   if (data && typeof data === "object" && "_id" in data) {
     const id = (data as { _id: unknown })._id;
@@ -298,6 +320,15 @@ export async function updateDocumentReliable(
   input: UpdateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // An empty diff (originally empty, or every key stripped as unsafe
+  // upstream) is a no-op write that would read back as "unchanged" and
+  // report success, silently discarding whatever the caller actually
+  // intended to change. Enforced here (not just at the tools.ts boundary)
+  // so any future caller of this function gets the guard for free.
+  if (Object.keys(input.data).length === 0) {
+    return validationFailure("update data has no safe fields to apply");
+  }
+
   const steps: string[] = [];
 
   // Pre-read for existence and as the rollback baseline.
@@ -365,11 +396,19 @@ export interface DuplicateDocumentInput {
   overrides?: Json;
 }
 
-export function duplicateDocumentReliable(
+export async function duplicateDocumentReliable(
   transport: RelayTransport,
   input: DuplicateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // overrides is optional -- undefined ("clone as-is") is fine. But if the
+  // caller explicitly supplied overrides and every key was stripped as
+  // unsafe upstream, silently falling back to a name/type check would clone
+  // the document while dropping the caller's actual intent with no error.
+  if (isEmptyDiff(input.overrides)) {
+    return validationFailure("duplicate overrides has no safe fields to apply");
+  }
+
   return runMutation(
     transport,
     {
@@ -522,6 +561,17 @@ export async function updateEmbeddedReliable(
   input: UpdateEmbeddedInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // An entry left with only `_id` (every other key stripped as unsafe
+  // upstream, or none supplied) is a no-op write: the parent read-back would
+  // trivially "verify" against it (the entry is found by that same _id),
+  // silently discarding whatever the caller actually intended to change.
+  // Enforced here (not just at the tools.ts boundary) so any future caller
+  // of this function gets the guard for free.
+  const emptyIds = input.data.filter((d) => Object.keys(d).length <= 1).map((d) => d._id);
+  if (emptyIds.length > 0) {
+    return validationFailure(`update data for _id=${emptyIds.join(", ")} has no safe fields to apply`);
+  }
+
   const steps: string[] = [];
 
   // Pre-read snapshot is the rollback baseline.
@@ -782,11 +832,19 @@ export interface ImportFromCompendiumInput {
   folderId?: string;
 }
 
-export function importFromCompendiumReliable(
+export async function importFromCompendiumReliable(
   transport: RelayTransport,
   input: ImportFromCompendiumInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // patch is optional -- undefined ("clone as-is") is fine. But if the
+  // caller explicitly supplied a patch and every key was stripped as unsafe
+  // upstream, silently falling back to a name/type check would import the
+  // compendium entry while dropping the caller's actual intent with no error.
+  if (isEmptyDiff(input.patch)) {
+    return validationFailure("import patch has no safe fields to apply");
+  }
+
   return runMutation(
     transport,
     {

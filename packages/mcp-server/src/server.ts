@@ -151,7 +151,7 @@ export function buildServer(
   );
   register(
     "update_document",
-    "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true for the whole document or fields:[...] for specific paths.",
+    "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch. Rejects with VALIDATION if the diff has no safe fields to apply (e.g. empty, or every key stripped as unsafe). Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true for the whole document or fields:[...] for specific paths.",
     UpdateDocumentShape,
     runUpdateDocument,
   );
@@ -163,7 +163,7 @@ export function buildServer(
   );
   register(
     "duplicate_document",
-    "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
+    "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure. Rejects with VALIDATION if overrides is supplied but has no safe fields to apply. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     DuplicateDocumentShape,
     runDuplicateDocument,
   );
@@ -205,7 +205,7 @@ export function buildServer(
   );
   register(
     "update_embedded",
-    "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
+    "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch. Rejects with VALIDATION if any entry has no safe fields beyond _id to apply. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     UpdateEmbeddedShape,
     runUpdateEmbedded,
   );
@@ -268,7 +268,7 @@ export function buildServer(
   );
   register(
     "import_from_compendium",
-    "Clone a compendium entry into the world by UUID, optionally applying a dot-notation patch. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback). Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
+    "Clone a compendium entry into the world by UUID, optionally applying a dot-notation patch. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback). Rejects with VALIDATION if patch is supplied but has no safe fields to apply. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     ImportFromCompendiumShape,
     runImportFromCompendium,
   );

@@ -390,10 +390,12 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         // malformed uuid, an unindexed pack) -- keep NOT_FOUND as the code
         // (still the most useful default) but preserve the real message
         // instead of discarding it, so a genuine failure is diagnosable.
+        // (e isn't guaranteed to be an Error instance -- a thrown string or
+        // plain object would silently yield `.message === undefined`.)
         throw new CommandExecutionError(
           "NOT_FOUND",
           `compendium entry ${uuid} not found`,
-          { cause: (e as Error).message },
+          { cause: e instanceof Error ? e.message : String(e) },
         );
       }
       if (!source) {

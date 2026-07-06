@@ -719,6 +719,23 @@ describe("duplicate_document pipeline", () => {
     // Only the original survives; the rolled-back copy is gone.
     expect(mock.documents("Actor").length).toBe(1);
   });
+
+  it("rejects overrides with no safe fields instead of silently cloning as-is", async () => {
+    // Regression test: overrides is optional (undefined = clone as-is is fine),
+    // but if the caller explicitly supplied overrides and every key was
+    // stripped as unsafe, silently falling back to a plain clone would drop
+    // the caller's actual intent with no error.
+    const { mock, transport } = setup();
+    await seedGoblin(mock);
+    const out = await runDuplicateDocument(transport, {
+      documentType: "Actor",
+      id: "g1",
+      overrides: { "__proto__.polluted": "x" },
+    });
+    expectErr(out, "VALIDATION");
+    // No clone was created -- rejected before the pipeline ever ran.
+    expect(mock.documents("Actor").length).toBe(1);
+  });
 });
 
 describe("search_compendium / import_from_compendium pipeline", () => {
@@ -815,6 +832,22 @@ describe("search_compendium / import_from_compendium pipeline", () => {
       uuid: "Compendium.dnd5e.actors24.does-not-exist",
     });
     expectErr(out, "NOT_FOUND");
+  });
+
+  it("rejects a patch with no safe fields instead of silently importing as-is", async () => {
+    // Regression test: patch is optional (undefined = clone as-is is fine),
+    // but if the caller explicitly supplied a patch and every key was
+    // stripped as unsafe, silently falling back to a plain import would drop
+    // the caller's actual intent with no error.
+    const { mock, transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: GRAVEMIRE_UUID,
+      patch: { "__proto__.polluted": "x" },
+    });
+    expectErr(out, "VALIDATION");
+    // No import happened -- rejected before the pipeline ever ran.
+    expect(mock.documents("Actor").length).toBe(0);
   });
 
   it("does not leak embedded-item mutations back into the compendium fixture", async () => {

@@ -136,18 +136,10 @@ export async function runUpdateDocument(
 ): Promise<ToolOutcome> {
   // Drop unsafe dot-path keys from the outgoing diff so the live runtime never
   // receives a prototype-pollution path (and stays consistent with the mock,
-  // whose applyUpdate already drops them via expandObject).
+  // whose applyUpdate already drops them via expandObject). updateDocumentReliable
+  // rejects an empty-after-filtering diff itself (VALIDATION), so it doesn't
+  // need re-checking here.
   const data = filterUnsafePaths(args.data);
-  if (Object.keys(data).length === 0) {
-    // An empty diff (originally empty, or every key stripped as unsafe) is a
-    // no-op write that would read back as "unchanged" and report success,
-    // silently discarding whatever the caller actually intended to change.
-    return {
-      ok: false,
-      error: { code: "VALIDATION", message: "update data has no safe fields to apply" },
-      steps: [],
-    };
-  }
   return projectEcho(
     await updateDocumentReliable(transport, { ...args, data }, opts),
     args.fields,
@@ -384,24 +376,11 @@ export async function runUpdateEmbedded(
 ): Promise<ToolOutcome> {
   // Each embedded diff is dot-notation too — strip unsafe keys (keeping the
   // required _id) before the entries reach the live runtime.
+  // updateEmbeddedReliable rejects any entry left with only `_id` itself
+  // (VALIDATION), so it doesn't need re-checking here.
   const data = args.data.map(
     (d) => filterUnsafePaths(d) as typeof d,
   );
-  // An entry left with only `_id` (every other key stripped as unsafe, or
-  // none supplied) is a no-op write: the parent read-back would trivially
-  // "verify" against it (the entry is found by that same _id), silently
-  // discarding whatever the caller actually intended to change.
-  const empty = data.find((d) => Object.keys(d).length <= 1);
-  if (empty) {
-    return {
-      ok: false,
-      error: {
-        code: "VALIDATION",
-        message: `update data for _id=${empty._id} has no safe fields to apply`,
-      },
-      steps: [],
-    };
-  }
   return projectEcho(await updateEmbeddedReliable(transport, { ...args, data }, opts), args.fields, args.full);
 }
 
