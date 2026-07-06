@@ -59,6 +59,12 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
         "createDocument",
       );
     },
+    async uploadImage(filename, contentBase64, targetFolder) {
+      return unwrap<string>(
+        await (transport as any).uploadAsset?.({ source: "data", target: targetFolder ?? "worlds/npcs", filename, contentBase64 }),
+        "uploadAsset",
+      ) ?? `${targetFolder ?? "worlds/npcs"}/${filename}`;
+    },
   };
 }
 

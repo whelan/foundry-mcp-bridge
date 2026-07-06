@@ -46,8 +46,9 @@ const DEFAULT_ITEM_ICONS: Record<string, string> = {
 
 /**
  * Convert a parsed statblock to a Foundry dnd5e actor document.
+ * If `resolvedImagePath` is provided, use it for both img and prototypeToken.texture.src.
  */
-export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDocument {
+export function statblockToFoundryActor(statblock: StatblockData, resolvedImagePath?: string): Dnd5eActorDocument {
   const abilities_ = statblock.abilities_;
 
   // Build system object
@@ -129,7 +130,7 @@ export function statblockToFoundryActor(statblock: StatblockData): Dnd5eActorDoc
     items.push(actionToItem(action));
   }
 
-  const actorImg = statblock.data.image ?? undefined;
+  const actorImg = resolvedImagePath ?? statblock.data.image ?? undefined;
   return {
     name: statblock.data.name,
     type: "npc",

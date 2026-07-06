@@ -34,6 +34,8 @@ export interface ImportNpcDeps {
   importFromCompendium(uuid: string, patch?: Record<string, unknown>): Promise<{ _id: string }>;
   /** Create a synthesized document from scratch (Tier 3 fallback). */
   createDocument(data: Dnd5eActorDocument): Promise<{ _id: string }>;
+  /** Upload an image file and return the resolved remote path. */
+  uploadImage?(filename: string, contentBase64: string, targetFolder?: string): Promise<string>;
 }
 
 /**
@@ -42,7 +44,11 @@ export interface ImportNpcDeps {
  * an existing compendium actor — the "works like the official compendium
  * monster" goal (design doc §1).
  */
-export async function importNpc(statblock: StatblockData, deps: ImportNpcDeps): Promise<ImportNpcResult> {
+export async function importNpc(
+  statblock: StatblockData,
+  deps: ImportNpcDeps,
+  imageContent?: { filename: string; contentBase64: string }
+): Promise<ImportNpcResult> {
   const index = await deps.searchCompendium(statblock.data.name);
   const plan = matchStatblock(statblock, index);
 
@@ -51,7 +57,17 @@ export async function importNpc(statblock: StatblockData, deps: ImportNpcDeps): 
     return { actorId: doc._id, tier: 1, matchedUuid: plan.uuid };
   }
 
-  const actorData = statblockToFoundryActor(statblock);
+  // For Tier 3: upload image if provided, then use resolved path in actor data
+  let resolvedImagePath: string | undefined;
+  if (imageContent && deps.uploadImage) {
+    resolvedImagePath = await deps.uploadImage(
+      imageContent.filename,
+      imageContent.contentBase64,
+      `worlds/npcs/${statblock.data.name.replace(/\s+/g, "-").toLowerCase()}`
+    );
+  }
+
+  const actorData = statblockToFoundryActor(statblock, resolvedImagePath);
   const doc = await deps.createDocument(actorData);
   return { actorId: doc._id, tier: 3 };
 }

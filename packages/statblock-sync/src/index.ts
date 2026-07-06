@@ -10,3 +10,4 @@ export * from "./to-foundry.js";
 export * from "./utils.js";
 export * from "./match.js";
 export * from "./import-npc.js";
+export * from "./verify-npc.js";
