@@ -23,6 +23,7 @@ import {
   runSearchCompendium,
   runImportFromCompendium,
   runCreateDocument,
+  runUploadAsset,
 } from "../../packages/mcp-server/src/tools.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,10 +61,16 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
       );
     },
     async uploadImage(filename, contentBase64, targetFolder) {
-      return unwrap<string>(
-        await (transport as any).uploadAsset?.({ source: "data", target: targetFolder ?? "worlds/npcs", filename, contentBase64 }),
+      const { path } = unwrap<{ path: string }>(
+        await runUploadAsset(transport, {
+          source: "data",
+          target: targetFolder ?? "worlds/npcs",
+          filename,
+          contentBase64,
+        }),
         "uploadAsset",
-      ) ?? `${targetFolder ?? "worlds/npcs"}/${filename}`;
+      );
+      return path;
     },
   };
 }
@@ -107,5 +114,48 @@ describe("importNpc: Tier 1 compendium match wired into the import pipeline", ()
     const created = actors.find((a) => a._id === result.actorId);
     expect(created).toBeDefined();
     expect(created!.name).toBe("Completely Homebrew Bog Horror");
+  });
+
+  it("imports a homebrew legendary-action NPC end-to-end, with legendary items correctly activated", async () => {
+    const mock = new MockFoundry();
+    const transport = new MockTransport(mock);
+    const statblock = loadStatblock("duskfang-bog-wyrm.md");
+    const imagePath = path.join(__dirname, "..", "fixtures", "statblock-import", "duskfang-bog-wyrm.png");
+    const imageContent = {
+      filename: "duskfang-bog-wyrm.png",
+      contentBase64: fs.readFileSync(imagePath).toString("base64"),
+    };
+
+    const result = await importNpc(statblock, realDeps(transport), imageContent);
+
+    expect(result.tier).toBe(3); // no compendium entry for a homebrew dragon
+    const actors = mock.documents("Actor") as Array<{
+      _id: string;
+      name: string;
+      type: string;
+      img?: string;
+      items?: Array<{ name: string; type: string; system?: Record<string, any> }>;
+    }>;
+    const created = actors.find((a) => a._id === result.actorId);
+    expect(created).toBeDefined();
+    expect(created!.name).toBe("Duskfang, the Bog Wyrm");
+    expect(created!.type).toBe("npc");
+    expect(created!.img).toMatch(/duskfang-bog-wyrm\.png$/);
+
+    const legendaryNames = ["Detect", "Tail Attack", "Wing Buffet"];
+    for (const name of legendaryNames) {
+      const item = created!.items!.find((i) => i.name === name);
+      expect(item, `${name} should exist as an item`).toBeDefined();
+      const act = Object.values(item!.system!.activities as Record<string, any>)[0];
+      expect(act.activation.type, `${name}'s activation`).toBe("legendary");
+    }
+
+    // The recharge-limited breath weapon still works alongside the legendary actions.
+    const breath = created!.items!.find((i) => i.name === "Miasmic Breath");
+    expect(breath!.system!.uses).toEqual({
+      spent: 0,
+      max: "1",
+      recovery: [{ period: "recharge", formula: "5", type: "recoverAll" }],
+    });
   });
 });
