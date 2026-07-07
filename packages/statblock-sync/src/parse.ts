@@ -284,11 +284,11 @@ function extractRecharge(name: string): {
   };
 }
 
-/** The `actions`/`reactions`/`legendary_actions` lists become the actions array. */
+/** The `actions`/`reactions`/`legendary_actions`/`lair_actions` lists become the actions array. */
 function buildActions(sb: Statblock): StatblockData["actions"] {
   const fromList = (
     list: Array<{ name: string; desc: string }> | undefined,
-    type: "action" | "reaction" | "legendary"
+    type: "action" | "reaction" | "legendary" | "lair"
   ): StatblockData["actions"] =>
     (list ?? []).map((entry) => {
       const { name, recharge } = extractRecharge(entry.name);
@@ -305,5 +305,6 @@ function buildActions(sb: Statblock): StatblockData["actions"] {
     ...fromList(sb.actions, "action"),
     ...fromList(sb.reactions, "reaction"),
     ...fromList(sb.legendary_actions, "legendary"),
+    ...fromList(sb.lair_actions, "lair"),
   ];
 }

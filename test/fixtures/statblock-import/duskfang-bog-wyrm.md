@@ -46,6 +46,11 @@ legendary_actions:
     desc: "The wyrm makes a tail attack."
   - name: Wing Buffet
     desc: "Costs 2 Actions. The wyrm beats its wings. Each creature within 10 feet of it must succeed on a DC 19 Dexterity saving throw or take 13 (2d6 + 6) Bludgeoning damage and be knocked prone."
+lair_actions:
+  - name: Rising Mire
+    desc: "Thick, choking mist rises from the bog in a 20-foot-radius sphere centered on a point Duskfang can see within 120 feet of it. The mist heavily obscures its area until initiative count 20 on the next round."
+  - name: Grasping Roots
+    desc: "Roots and vines burst from the ground in a 20-foot-radius sphere centered on a point Duskfang can see within 120 feet of it. Each creature in that area must succeed on a DC 18 Strength saving throw or be restrained until the roots are destroyed (AC 15, 20 hit points)."
 ```
 
 A rot-scaled horror said to lair beneath the Duskmire, surfacing only when the marsh itself seems to hunger.

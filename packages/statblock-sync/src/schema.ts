@@ -49,6 +49,7 @@ export const StatblockSchema = z
     actions: z.array(NamedEntrySchema).optional(),
     reactions: z.array(NamedEntrySchema).optional(),
     legendary_actions: z.array(NamedEntrySchema).optional(),
+    lair_actions: z.array(NamedEntrySchema).optional(),
   })
   .passthrough();
 

@@ -116,6 +116,30 @@ stats: [10, 10, 10, 10, 10, 10]
     expect(statblock.attributes.hitPoints.value).toBe(20);
   });
 
+  it("parses legendary_actions and lair_actions into actions with their own type", () => {
+    const markdown = `\`\`\`statblock
+name: Test Lair Dragon
+cr: 13
+ac: 18
+hp: 195
+stats: [23, 10, 21, 14, 13, 17]
+legendary_actions:
+  - name: Detect
+    desc: "The dragon makes a Wisdom (Perception) check."
+lair_actions:
+  - name: Rising Mist
+    desc: "Thick mist rises from the ground in a 20-foot-radius sphere centered on a point the dragon can see within 120 feet of it."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+
+    const legendary = statblock.actions.find((a) => a.name === "Detect");
+    expect(legendary?.type).toBe("legendary");
+
+    const lair = statblock.actions.find((a) => a.name === "Rising Mist");
+    expect(lair?.type).toBe("lair");
+  });
+
   it("throws when the fence is missing required fields", () => {
     const markdown = `\`\`\`statblock
 ac: 10
