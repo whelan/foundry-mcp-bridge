@@ -171,12 +171,17 @@ function buildSkillsAndSaves(sb: Statblock): StatblockData["skills"] {
   return { proficiencies, savingThrows };
 }
 
-/** Split a comma-separated trait string (e.g. "necrotic, cold") into a list. */
+/**
+ * Split a comma-separated trait string (e.g. "necrotic, cold") into a list.
+ * Strips a leading "and " so an Oxford-comma list's last item ("cold, fire,
+ * and lightning") survives as "lightning", not "and lightning" — the latter
+ * fails every known-type lookup and silently drops into free-text custom.
+ */
 function splitTraitList(value?: string): string[] {
   return value
     ? value
         .split(",")
-        .map((s) => s.trim())
+        .map((s) => s.trim().replace(/^and\s+/i, ""))
         .filter(Boolean)
     : [];
 }

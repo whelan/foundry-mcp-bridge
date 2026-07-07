@@ -112,7 +112,9 @@ export function deriveSaveBonus(
  */
 export function getAbilityMod(abilities_: StatblockData["abilities_"], ability: string): number {
   const score = (abilities_ as Record<string, number>)[ability.toLowerCase()];
-  return score ? getAbilityModifier(score) : 0;
+  // A real score of 0 is legitimate (some constructs/objects have it) and
+  // must not be treated the same as an unknown ability key.
+  return score !== undefined ? getAbilityModifier(score) : 0;
 }
 
 /**

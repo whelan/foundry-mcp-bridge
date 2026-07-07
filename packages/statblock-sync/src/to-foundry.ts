@@ -14,6 +14,7 @@ import type { StatblockData } from "./schema.js";
 import { skillAbbrev, getSkillAbility, KNOWN_DAMAGE_TYPES, SENSE_RANGE_RE } from "./utils.js";
 import { parseAttackAction, parseSaveAction } from "./grammar.js";
 import { getProficiencyBonus, getAbilityMod } from "./math.js";
+import type { ActivationType } from "./activities.js";
 import {
   attackActivity,
   saveActivity,
@@ -84,8 +85,19 @@ function buildSenses(senses: string[]): Record<string, unknown> {
   const special: string[] = [];
   for (const s of senses) {
     const m = s.match(SENSE_RANGE_RE);
-    if (m) ranges[m[1]!.toLowerCase()] = parseInt(m[2]!, 10);
-    else if (!/passive\s+perception/i.test(s)) special.push(s.trim());
+    if (m) {
+      ranges[m[1]!.toLowerCase()] = parseInt(m[2]!, 10);
+      // Preserve any trailing qualifier ("(blind beyond this radius)")
+      // instead of discarding it now that the range itself is captured.
+      const qualifier = s
+        .slice(m.index! + m[0].length)
+        .replace(/^[.,;\s]+/, "")
+        .replace(/^\((.*)\)$/, "$1")
+        .trim();
+      if (qualifier) special.push(qualifier);
+    } else if (!/passive\s+perception/i.test(s)) {
+      special.push(s.trim());
+    }
   }
   return { units: null, special: special.join("; "), ranges };
 }
@@ -260,7 +272,10 @@ const INERT_DAMAGE_PART = {
 function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
   const attackParsed = parseAttackAction(action.description);
   const saveParsed = parseSaveAction(action.description);
-  const activation = action.type === "reaction" ? ("reaction" as const) : ("action" as const);
+  // action.type's values ("action"/"reaction"/"legendary"/"lair") are exactly
+  // dnd5e's activation-type strings — legendary/lair actions must NOT
+  // collapse to "action" (that would consume the wrong action-economy slot).
+  const activation: ActivationType = action.type;
 
   if (attackParsed) {
     const [base, ...extra] = attackParsed.damage;
@@ -296,6 +311,7 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
           attackType: attackParsed.type === "ranged" ? "ranged" : "melee",
           extraParts: extra.map(toDamagePart),
           activation,
+          consumesItemUse: !!action.recharge,
         }),
       },
     };
@@ -318,5 +334,10 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
 
   // Purely descriptive (Multiattack, reactions without rolls, …): a feat with
   // a utility activity so it still shows under the right action economy.
-  return featItem(action.name, action.description, { activities: utilityActivity({ activation }) });
+  // Still recharge-limited if the statblock says so (e.g. a narrative-only
+  // "Roar (Recharge 5-6)" the grammar parser didn't classify as attack/save).
+  return featItem(action.name, action.description, {
+    activities: utilityActivity({ activation }),
+    uses: itemUses(action.recharge),
+  });
 }

@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import {
   parseStatblock,
   getAbilityModifier,
+  getAbilityMod,
   getProficiencyBonus,
   parseDamageFormula,
   deriveSkillBonus,
@@ -30,6 +31,20 @@ describe("M2: 5e Math Derivation", () => {
       expect(getAbilityModifier(20)).toBe(5);
       expect(getAbilityModifier(8)).toBe(-1);
       expect(getAbilityModifier(6)).toBe(-2);
+    });
+  });
+
+  describe("getAbilityMod", () => {
+    const abilities_ = { str: 0, dex: 14, con: 15, int: 6, wis: 12, cha: 8 };
+
+    it("does not treat a real score of 0 as missing", () => {
+      // A score of 0 is legitimate (some constructs/objects have it) and
+      // must yield getAbilityModifier(0) === -5, not the "missing" default 0.
+      expect(getAbilityMod(abilities_, "str")).toBe(-5);
+    });
+
+    it("computes the modifier for a normal score", () => {
+      expect(getAbilityMod(abilities_, "dex")).toBe(2);
     });
   });
 

@@ -74,6 +74,23 @@ describe("attackActivity", () => {
       },
     ]);
   });
+
+  it("wires itemUses consumption for a recharge-limited attack", () => {
+    const acts = attackActivity({
+      id: "test0000000000id",
+      bonus: 5,
+      attackType: "melee",
+      consumesItemUse: true,
+    });
+    expect(only(acts).consumption.targets).toEqual([
+      { type: "itemUses", value: "1", target: "", scaling: {} },
+    ]);
+  });
+
+  it("defaults to no item-use consumption", () => {
+    const acts = attackActivity({ id: "test0000000000id", bonus: 5, attackType: "melee" });
+    expect(only(acts).consumption.targets).toEqual([]);
+  });
 });
 
 describe("saveActivity", () => {

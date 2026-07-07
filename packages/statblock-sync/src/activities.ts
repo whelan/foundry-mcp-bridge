@@ -49,12 +49,22 @@ export function parseTemplate(description: string): AreaTemplate | undefined {
   return { type: m[2]!.toLowerCase(), size: m[1]! };
 }
 
+/**
+ * dnd5e's activation-type enum (CONFIG.DND5E.activityActivationTypes)
+ * includes "legendary"/"lair" alongside "action"/"reaction"; none of our
+ * committed fixtures (test/fixtures/dnd5e-53-schema/) include a legendary or
+ * lair action, so this pairing isn't fixture-verified the way the rest of
+ * this file is — confirm against a live world in M6b if a legendary-action
+ * statblock is imported.
+ */
+export type ActivationType = "action" | "reaction" | "legendary" | "lair" | "";
+
 // The boilerplate every activity carries, kept to the *minimal* key set that
 // appears in ALL official examples (the compendium strips schema defaults, so
 // e.g. Ghast's Claw attack activity has no activation.condition while Rotting
 // Touch's does — emitting only the common denominator keeps us a key-subset
 // of every official document). saveActivity adds the save-specific extras.
-function activityCommon(id: string, activation: "action" | "reaction" | "") {
+function activityCommon(id: string, activation: ActivationType) {
   return {
     _id: id,
     sort: 0,
@@ -91,14 +101,17 @@ export interface AttackActivityOptions {
   attackType: "melee" | "ranged";
   /** Damage beyond damage.base — e.g. the "plus 3 (1d6) Necrotic" part. */
   extraParts?: ActivityDamagePart[];
-  activation?: "action" | "reaction";
+  activation?: ActivationType;
+  /** True when the item has recharge uses this activity should consume. */
+  consumesItemUse?: boolean;
 }
 
 export function attackActivity(opts: AttackActivityOptions): Activities {
   const id = opts.id ?? foundryId();
+  const common = activityCommon(id, opts.activation ?? "action");
   return {
     [id]: {
-      ...activityCommon(id, opts.activation ?? "action"),
+      ...common,
       type: "attack",
       attack: {
         critical: { threshold: null },
@@ -110,6 +123,12 @@ export function attackActivity(opts: AttackActivityOptions): Activities {
         type: { value: opts.attackType, classification: "" },
       },
       damage: { critical: { bonus: "" }, includeBase: true, parts: opts.extraParts ?? [] },
+      consumption: {
+        ...common.consumption,
+        targets: opts.consumesItemUse
+          ? [{ type: "itemUses", value: "1", target: "", scaling: {} }]
+          : [],
+      },
     },
   };
 }
@@ -124,7 +143,7 @@ export interface SaveActivityOptions {
   template?: AreaTemplate;
   /** True when the item has recharge uses this activity should consume. */
   consumesItemUse?: boolean;
-  activation?: "action" | "reaction" | "";
+  activation?: ActivationType;
 }
 
 export function saveActivity(opts: SaveActivityOptions): Activities {
@@ -166,7 +185,7 @@ export function saveActivity(opts: SaveActivityOptions): Activities {
 
 export interface UtilityActivityOptions {
   id?: string;
-  activation: "action" | "reaction";
+  activation: ActivationType;
 }
 
 export function utilityActivity(opts: UtilityActivityOptions): Activities {

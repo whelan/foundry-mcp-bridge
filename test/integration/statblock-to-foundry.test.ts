@@ -302,6 +302,24 @@ describe("modern dnd5e actor system shapes (5.3.3)", () => {
 });
 
 describe("edge cases", () => {
+  it("preserves a sense's parenthetical qualifier instead of discarding it", () => {
+    const markdown = `\`\`\`statblock
+name: Test Ooze
+cr: 4
+ac: 12
+hp: 50
+stats: [12, 10, 16, 2, 8, 2]
+senses: "tremorsense 60 ft. (blind beyond this radius), passive Perception 9"
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const senses = (actor.system as Record<string, any>).attributes.senses;
+
+    expect(senses.ranges.tremorsense).toBe(60);
+    expect(senses.special).toBe("blind beyond this radius");
+  });
+
   it("keeps a qualified resistance clause ('from nonmagical attacks') as custom text, not an unconditional type", () => {
     const markdown = `\`\`\`statblock
 name: Test Wight
@@ -336,6 +354,24 @@ damage_resistances: "cold, fire"
     const dr = (actor.system as Record<string, any>).traits.dr;
 
     expect(dr.value).toEqual(["cold", "fire"]);
+    expect(dr.custom).toBe("");
+  });
+
+  it("doesn't lose the last type of an Oxford-comma unqualified list into custom text", () => {
+    const markdown = `\`\`\`statblock
+name: Test Elemental
+cr: 3
+ac: 14
+hp: 45
+stats: [15, 14, 15, 6, 13, 15]
+damage_resistances: "cold, fire, and lightning"
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const dr = (actor.system as Record<string, any>).traits.dr;
+
+    expect(dr.value).toEqual(["cold", "fire", "lightning"]);
     expect(dr.custom).toBe("");
   });
 
@@ -377,5 +413,77 @@ actions:
     const act = Object.values((breath.system as Record<string, any>).activities)[0] as any;
 
     expect(act.damage.onSave).toBe("half");
+  });
+
+  it("wires recharge consumption on a recharge-limited attack (not just save actions)", () => {
+    const markdown = `\`\`\`statblock
+name: Recharge Biter
+cr: 5
+ac: 14
+hp: 60
+stats: [16, 10, 15, 10, 10, 10]
+actions:
+  - name: Vicious Bite (Recharge 5-6)
+    desc: "Melee Attack Roll: +7, reach 5 ft. Hit: 18 (4d6 + 4) piercing damage."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const bite = actor.items.find((i) => i.name === "Vicious Bite")!;
+    const sys = bite.system as Record<string, any>;
+
+    expect(sys.uses).toEqual({
+      spent: 0,
+      max: "1",
+      recovery: [{ period: "recharge", formula: "5", type: "recoverAll" }],
+    });
+    const act = Object.values(sys.activities)[0] as any;
+    expect(act.consumption.targets).toEqual([
+      { type: "itemUses", value: "1", target: "", scaling: {} },
+    ]);
+  });
+
+  it("gives legendary actions a legendary activation, not a normal action-economy slot", () => {
+    const markdown = `\`\`\`statblock
+name: Test Dragon
+cr: 10
+ac: 18
+hp: 150
+stats: [20, 10, 18, 10, 14, 16]
+legendary_actions:
+  - name: Tail Attack
+    desc: "The dragon makes a tail attack."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const tail = actor.items.find((i) => i.name === "Tail Attack")!;
+    const act = Object.values((tail.system as Record<string, any>).activities)[0] as any;
+
+    expect(act.activation.type).toBe("legendary");
+  });
+
+  it("keeps the recharge limiter on a purely-descriptive action whose description matches no attack/save grammar", () => {
+    const markdown = `\`\`\`statblock
+name: Test Roarer
+cr: 5
+ac: 14
+hp: 60
+stats: [16, 10, 15, 10, 10, 10]
+actions:
+  - name: Roar (Recharge 5-6)
+    desc: "The creature lets out a terrifying roar."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const roar = actor.items.find((i) => i.name === "Roar")!;
+    const sys = roar.system as Record<string, any>;
+
+    expect(sys.uses).toEqual({
+      spent: 0,
+      max: "1",
+      recovery: [{ period: "recharge", formula: "5", type: "recoverAll" }],
+    });
   });
 });

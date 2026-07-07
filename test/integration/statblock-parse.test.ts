@@ -293,6 +293,20 @@ damage_resistances: "cold, fire"
       expect(statblock.traits.damageResistances).toEqual(["cold", "fire"]);
     });
 
+    it("strips the Oxford-comma 'and' so a 3+ item unqualified list splits into individual types", () => {
+      const markdown = `\`\`\`statblock
+name: Test Elemental
+cr: 3
+ac: 14
+hp: 45
+stats: [15, 14, 15, 6, 13, 15]
+damage_resistances: "cold, fire, and lightning"
+\`\`\`
+`;
+      const statblock = parseStatblock(markdown);
+      expect(statblock.traits.damageResistances).toEqual(["cold", "fire", "lightning"]);
+    });
+
     it("keeps an unconditional clause separate from a qualified one in the same semicolon-separated list", () => {
       const markdown = `\`\`\`statblock
 name: Test Devil
