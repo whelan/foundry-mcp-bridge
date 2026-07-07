@@ -11,9 +11,9 @@
  */
 
 import type { StatblockData } from "./schema.js";
-import { SKILL_TO_ABBREVIATION_MAP, SKILL_DEFAULT_ABILITY } from "./utils.js";
+import { skillAbbrev, getSkillAbility, KNOWN_DAMAGE_TYPES, SENSE_RANGE_RE } from "./utils.js";
 import { parseAttackAction, parseSaveAction } from "./grammar.js";
-import { getAbilityModifier, getProficiencyBonus, getAbilityMod } from "./math.js";
+import { getProficiencyBonus, getAbilityMod } from "./math.js";
 import {
   attackActivity,
   saveActivity,
@@ -52,10 +52,6 @@ const DEFAULT_ITEM_ICONS: Record<string, string> = {
   weapon: "icons/svg/sword.svg",
 };
 
-const KNOWN_DAMAGE_TYPES = new Set([
-  "acid", "bludgeoning", "cold", "fire", "force", "lightning", "necrotic",
-  "piercing", "poison", "psychic", "radiant", "slashing", "thunder",
-]);
 const KNOWN_CONDITIONS = new Set([
   "blinded", "charmed", "deafened", "exhaustion", "frightened", "grappled",
   "incapacitated", "invisible", "paralyzed", "petrified", "poisoned", "prone",
@@ -72,9 +68,10 @@ function splitKnown(values: string[], known: Set<string>): { value: string[]; cu
   const value: string[] = [];
   const custom: string[] = [];
   for (const v of values) {
-    const k = v.trim().toLowerCase();
+    const trimmed = v.trim();
+    const k = trimmed.toLowerCase();
     if (known.has(k)) value.push(k);
-    else if (v.trim()) custom.push(v.trim());
+    else if (trimmed) custom.push(trimmed);
   }
   return { value, custom: custom.join("; ") };
 }
@@ -86,7 +83,7 @@ function buildSenses(senses: string[]): Record<string, unknown> {
   };
   const special: string[] = [];
   for (const s of senses) {
-    const m = s.match(/(darkvision|blindsight|tremorsense|truesight)\s+(\d+)\s*ft/i);
+    const m = s.match(SENSE_RANGE_RE);
     if (m) ranges[m[1]!.toLowerCase()] = parseInt(m[2]!, 10);
     else if (!/passive\s+perception/i.test(s)) special.push(s.trim());
   }
@@ -104,9 +101,9 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
   // Skill proficiencies as multipliers; statblock-vs-derived deltas go in bonuses.check.
   const skills: Record<string, Record<string, unknown>> = {};
   for (const p of statblock.skills.proficiencies) {
-    const abbrev = SKILL_TO_ABBREVIATION_MAP[p.skill.toLowerCase().replace(/ of hand/, "")];
+    const abbrev = skillAbbrev(p.skill);
     if (!abbrev) continue;
-    const mod = getAbilityMod(abilities_, SKILL_DEFAULT_ABILITY[abbrev] ?? "wis");
+    const mod = getAbilityMod(abilities_, getSkillAbility(p.skill));
     const delta = p.bonus - (mod + prof);
     skills[abbrev] = delta === 0 ? { value: 1 } : { value: 1, bonuses: { check: String(delta) } };
   }
@@ -119,7 +116,7 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
   for (const save of statblock.skills.savingThrows) {
     const key = save.ability.toLowerCase().substring(0, 3);
     if (!abilities[key]) continue;
-    const delta = save.bonus - (getAbilityModifier(abilities_[key as keyof typeof abilities_]) + prof);
+    const delta = save.bonus - (getAbilityMod(abilities_, key) + prof);
     abilities[key]!.proficient = 1;
     if (delta !== 0) abilities[key]!.bonuses = { save: String(delta) };
   }
@@ -185,14 +182,7 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
 
   // Add trait features (passive: the "trait" property, no activity)
   for (const ability of statblock.abilities) {
-    const itemSystem = featSystem(ability.description);
-    itemSystem.properties = ["trait"];
-    items.push({
-      name: ability.name,
-      type: "feat",
-      img: DEFAULT_ITEM_ICONS.feat,
-      system: itemSystem,
-    });
+    items.push(featItem(ability.name, ability.description, { properties: ["trait"] }));
   }
 
   // Add actions (weapons and special actions)
@@ -234,6 +224,29 @@ function featSystem(description: string): Record<string, unknown> {
   };
 }
 
+/** Assemble a `feat` item — the one shape shared by traits, save actions, and purely descriptive actions. */
+function featItem(
+  name: string,
+  description: string,
+  opts?: { activities?: Record<string, unknown>; uses?: Record<string, unknown>; properties?: string[] }
+): Dnd5eItem {
+  const system = featSystem(description);
+  if (opts?.uses) system.uses = opts.uses;
+  if (opts?.activities) system.activities = opts.activities;
+  if (opts?.properties) system.properties = opts.properties;
+  return { name, type: "feat", img: DEFAULT_ITEM_ICONS.feat, system };
+}
+
+/** A zero-damage, typeless base — used when an attack's description had no parseable damage at all. */
+const INERT_DAMAGE_PART = {
+  number: 0,
+  denomination: 0,
+  bonus: "",
+  types: [] as string[],
+  custom: { enabled: false, formula: "" },
+  scaling: { number: 1 },
+};
+
 /**
  * Convert an action to a Foundry item.
  *
@@ -260,9 +273,7 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
         type: { value: "natural", baseItem: "" },
         damage: {
           // No parsed damage (rare): an inert base with no types.
-          base: base
-            ? toDamagePart(base)
-            : { ...toDamagePart({ formula: "0d4", type: "" }), types: [] },
+          base: base ? toDamagePart(base) : INERT_DAMAGE_PART,
           versatile: {
             number: null,
             denomination: null,
@@ -291,23 +302,21 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
   }
 
   if (saveParsed) {
-    const system = featSystem(action.description);
-    system.uses = itemUses(action.recharge);
-    system.activities = saveActivity({
-      ability: saveParsed.ability.toLowerCase().substring(0, 3),
-      dc: saveParsed.dc,
-      parts: saveParsed.damage.map(toDamagePart),
-      onSave: /half/i.test(saveParsed.successEffect ?? "") ? "half" : "none",
-      template: parseTemplate(action.description),
-      consumesItemUse: !!action.recharge,
-      activation,
+    return featItem(action.name, action.description, {
+      uses: itemUses(action.recharge),
+      activities: saveActivity({
+        ability: saveParsed.ability.toLowerCase().substring(0, 3),
+        dc: saveParsed.dc,
+        parts: saveParsed.damage.map(toDamagePart),
+        onSave: saveParsed.onSave,
+        template: parseTemplate(action.description),
+        consumesItemUse: !!action.recharge,
+        activation,
+      }),
     });
-    return { name: action.name, type: "feat", img: DEFAULT_ITEM_ICONS.feat, system };
   }
 
   // Purely descriptive (Multiattack, reactions without rolls, …): a feat with
   // a utility activity so it still shows under the right action economy.
-  const system = featSystem(action.description);
-  system.activities = utilityActivity({ activation });
-  return { name: action.name, type: "feat", img: DEFAULT_ITEM_ICONS.feat, system };
+  return featItem(action.name, action.description, { activities: utilityActivity({ activation }) });
 }

@@ -48,16 +48,15 @@ export const SKILL_TO_ABBREVIATION_MAP: Record<string, string> = {
   survival: "sur",
 };
 
-/** dnd5e default ability per skill abbreviation (for deriving expected bonuses). */
-export const SKILL_DEFAULT_ABILITY: Record<string, string> = {
-  acr: "dex", ani: "wis", arc: "int", ath: "str", dec: "cha", his: "int",
-  ins: "wis", itm: "cha", inv: "int", med: "wis", nat: "int", prc: "wis",
-  prf: "cha", per: "cha", rel: "int", slt: "dex", ste: "dex", sur: "wis",
-};
-
 /** Damage types recognized in D&D 5e */
 export const DAMAGE_TYPES_STR =
   "slashing|piercing|bludgeoning|psychic|necrotic|fire|cold|lightning|radiant|acid|poison|thunder|force";
+
+/** `DAMAGE_TYPES_STR` as a Set, for O(1) "is this a known damage type" checks. */
+export const KNOWN_DAMAGE_TYPES = new Set(DAMAGE_TYPES_STR.split("|"));
+
+/** Matches "darkvision 60 ft." style sense clauses; group 1 = kind, group 2 = range in feet. */
+export const SENSE_RANGE_RE = /(darkvision|blindsight|tremorsense|truesight)\s+(\d+)\s*ft/i;
 
 /** D&D 5e size name to dnd5e system size code mapping */
 export const SIZE_TO_ABBREVIATION_MAP: Record<string, string> = {
@@ -116,4 +115,9 @@ export function stripMarkdown(text: string): string {
 /** Get ability modifier for a skill name (encapsulates lowercase normalization) */
 export function getSkillAbility(skill: string): string {
   return SKILL_TO_ABILITY_MAP[skill.toLowerCase()] || "str";
+}
+
+/** Look up a skill's dnd5e abbreviation by its full name (e.g. "Sleight of Hand" -> "slt"). */
+export function skillAbbrev(skill: string): string | undefined {
+  return SKILL_TO_ABBREVIATION_MAP[skill.toLowerCase().replace(/ of hand/, "")];
 }

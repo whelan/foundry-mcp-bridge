@@ -292,5 +292,24 @@ damage_resistances: "cold, fire"
       const statblock = parseStatblock(markdown);
       expect(statblock.traits.damageResistances).toEqual(["cold", "fire"]);
     });
+
+    it("keeps an unconditional clause separate from a qualified one in the same semicolon-separated list", () => {
+      const markdown = `\`\`\`statblock
+name: Test Devil
+cr: 5
+ac: 16
+hp: 80
+stats: [18, 14, 18, 12, 14, 16]
+damage_resistances: "cold; bludgeoning, piercing, and slashing from nonmagical attacks"
+\`\`\`
+`;
+      const statblock = parseStatblock(markdown);
+      // "cold" is unconditional and must survive as its own entry — a whole-
+      // string qualifier check would wrongly swallow it into the qualified clause.
+      expect(statblock.traits.damageResistances).toEqual([
+        "cold",
+        "bludgeoning, piercing, and slashing from nonmagical attacks",
+      ]);
+    });
   });
 });

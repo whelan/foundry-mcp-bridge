@@ -196,11 +196,20 @@ const DAMAGE_QUALIFIER_RE = /\bnonmagical\b|\bnon-magical\b|\bsilvered\b|\badama
  * to bludgeoning and piercing (wrong: the qualifier applies to the whole
  * clause). The caller (to-foundry.ts) can't reconstruct a lost qualifier, so
  * it must never see the clause pre-shredded.
+ *
+ * Clauses are separated by ";" (e.g. "cold; bludgeoning, piercing, and
+ * slashing from nonmagical attacks") — commas only enumerate types *within*
+ * a clause, so the qualifier check and comma-split both apply per clause,
+ * not to the whole string (otherwise one qualified clause would swallow an
+ * unrelated, unconditional resistance listed alongside it).
  */
 function splitDamageTraitList(value?: string): string[] {
   if (!value) return [];
-  if (DAMAGE_QUALIFIER_RE.test(value)) return [value.trim()];
-  return splitTraitList(value);
+  return value
+    .split(";")
+    .map((clause) => clause.trim())
+    .filter(Boolean)
+    .flatMap((clause) => (DAMAGE_QUALIFIER_RE.test(clause) ? [clause] : splitTraitList(clause)));
 }
 
 function buildTraits(sb: Statblock): StatblockData["traits"] {

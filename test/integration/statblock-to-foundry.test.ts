@@ -10,41 +10,22 @@ import { parseStatblock, statblockToFoundryActor } from "@foundry-mcp-bridge/sta
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const GRAVEMIRE_PATH = path.join(__dirname, "..", "fixtures", "statblock-import", "gravemire-stalker.md");
+const gravemireStatblock = parseStatblock(fs.readFileSync(GRAVEMIRE_PATH, "utf-8"));
+const gravemireActor = statblockToFoundryActor(gravemireStatblock);
+
 describe("M4: Convert to Foundry dnd5e Actor", () => {
   it("creates valid actor document from statblock", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-
-    const actor = statblockToFoundryActor(statblock);
-
     // Verify basic structure
-    expect(actor.name).toBe("Gravemire Stalker");
-    expect(actor.type).toBe("npc");
-    expect(actor.system).toBeDefined();
-    expect(actor.items).toBeDefined();
-    expect(actor.effects).toBeDefined();
+    expect(gravemireActor.name).toBe("Gravemire Stalker");
+    expect(gravemireActor.type).toBe("npc");
+    expect(gravemireActor.system).toBeDefined();
+    expect(gravemireActor.items).toBeDefined();
+    expect(gravemireActor.effects).toBeDefined();
   });
 
   it("sets correct ability scores", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
-    const system = actor.system as Record<string, any>;
+    const system = gravemireActor.system as Record<string, any>;
     expect(system.abilities.str.value).toBe(16);
     expect(system.abilities.dex.value).toBe(14);
     expect(system.abilities.con.value).toBe(15);
@@ -54,18 +35,7 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
   });
 
   it("sets correct AC and HP", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
-    const system = actor.system as Record<string, any>;
+    const system = gravemireActor.system as Record<string, any>;
     expect(system.attributes.ac.flat).toBe(14);
     expect(system.attributes.hp.value).toBe(45);
     expect(system.attributes.hp.max).toBe(45);
@@ -73,18 +43,7 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
   });
 
   it("sets movement from the parsed speed", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
-    const system = actor.system as Record<string, any>;
+    const system = gravemireActor.system as Record<string, any>;
     expect(system.attributes.movement.walk).toBe(30);
     expect(system.attributes.movement.swim).toBe(20);
     expect(system.attributes.movement.units).toBe("ft");
@@ -108,108 +67,42 @@ stats: [10, 10, 10, 10, 10, 10]
   });
 
   it("sets CR (XP is not an NPC field; dnd5e derives it from CR)", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
-    const system = actor.system as Record<string, any>;
+    const system = gravemireActor.system as Record<string, any>;
     expect(system.details.cr).toBe(3);
     expect(system.details.xp).toBeUndefined();
   });
 
   it("includes traits and resistances", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
-    const system = actor.system as Record<string, any>;
+    const system = gravemireActor.system as Record<string, any>;
     expect(system.traits.dr.value).toContain("necrotic");
     expect(system.attributes.senses.ranges.darkvision).toBe(60);
   });
 
   it("sets creature type, size, and alignment from the descriptor line", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
-    const system = actor.system as Record<string, any>;
+    const system = gravemireActor.system as Record<string, any>;
     expect(system.details.type.value).toBe("undead");
     expect(system.traits.size).toBe("med");
     expect(system.details.alignment).toBe("Neutral Evil");
   });
 
   it("sets prototypeToken texture to match the actor image", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
-    expect(actor.img).toBe("gravemire-stalker.png");
-    expect(actor.prototypeToken?.texture?.src).toBe("gravemire-stalker.png");
+    expect(gravemireActor.img).toBe("gravemire-stalker.png");
+    expect(gravemireActor.prototypeToken?.texture?.src).toBe("gravemire-stalker.png");
   });
 
   it("creates items from abilities and actions", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
     // Should have items for abilities and actions
-    expect(actor.items.length).toBeGreaterThan(0);
+    expect(gravemireActor.items.length).toBeGreaterThan(0);
 
     // Look for expected items
-    const itemNames = actor.items.map((i) => i.name);
+    const itemNames = gravemireActor.items.map((i) => i.name);
     expect(itemNames).toContain("Stench of the Grave");
     expect(itemNames).toContain("Multiattack");
     expect(itemNames).toContain("Claw");
   });
 
   it("only types actions with a parsed attack roll as weapons; save/descriptive actions are feats", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
-    const byName = (name: string) => actor.items.find((i) => i.name === name);
+    const byName = (name: string) => gravemireActor.items.find((i) => i.name === name);
     const activityOfType = (item: ReturnType<typeof byName>, type: string): any =>
       Object.values((item?.system as Record<string, any>)?.activities ?? {}).find(
         (a: any) => a.type === type
@@ -258,32 +151,17 @@ actions:
   });
 
   it("assigns default icons per item type", () => {
-    const filePath = path.join(
-      __dirname,
-      "..",
-      "fixtures",
-      "statblock-import",
-      "gravemire-stalker.md"
-    );
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const statblock = parseStatblock(raw);
-    const actor = statblockToFoundryActor(statblock);
-
-    for (const item of actor.items) {
+    for (const item of gravemireActor.items) {
       expect(item.img).toMatch(/^icons\/svg\//);
     }
   });
 });
 
 describe("modern dnd5e item shapes (5.3.3 Activities)", () => {
-  const statblock = parseStatblock(
-    fs.readFileSync("test/fixtures/statblock-import/gravemire-stalker.md", "utf-8"),
-  );
-  const actor = statblockToFoundryActor(statblock);
-  const byName = (n: string) => actor.items.find((i) => i.name === n)!;
+  const byName = (n: string) => gravemireActor.items.find((i) => i.name === n)!;
 
   it("never emits the invalid 'feature' item type", () => {
-    for (const item of actor.items) {
+    for (const item of gravemireActor.items) {
       expect(["weapon", "feat"]).toContain(item.type);
     }
   });
@@ -365,11 +243,7 @@ describe("modern dnd5e item shapes (5.3.3 Activities)", () => {
 });
 
 describe("modern dnd5e actor system shapes (5.3.3)", () => {
-  const statblock = parseStatblock(
-    fs.readFileSync("test/fixtures/statblock-import/gravemire-stalker.md", "utf-8"),
-  );
-  const actor = statblockToFoundryActor(statblock);
-  const sys = actor.system as Record<string, any>;
+  const sys = gravemireActor.system as Record<string, any>;
 
   it("puts senses under attributes.senses.ranges and never emits passive Perception", () => {
     expect(sys.attributes.senses).toEqual({

@@ -9,7 +9,7 @@
 import type { StatblockData } from "./schema.js";
 import { getAbilityModifier, getProficiencyBonus } from "./math.js";
 import { parseAttackAction, parseSaveAction } from "./grammar.js";
-import { SKILL_TO_ABBREVIATION_MAP } from "./utils.js";
+import { skillAbbrev, SENSE_RANGE_RE } from "./utils.js";
 
 export interface VerificationCheck {
   name: string;
@@ -165,7 +165,7 @@ export function verifyImportedNpc(
   // Skill proficiencies (multiplier semantics, dnd5e 5.x)
   const skillsRB = system.skills as Record<string, any>;
   for (const p of statblock.skills.proficiencies) {
-    const abbrev = SKILL_TO_ABBREVIATION_MAP[p.skill.toLowerCase().replace(/ of hand/, "")];
+    const abbrev = skillAbbrev(p.skill);
     if (!abbrev) continue;
     const got = skillsRB?.[abbrev]?.value;
     checks.push({
@@ -191,7 +191,7 @@ export function verifyImportedNpc(
   // Senses ranges
   const rangesRB = (system.attributes?.senses as Record<string, any>)?.ranges ?? {};
   for (const s of statblock.traits.senses) {
-    const m = s.match(/(darkvision|blindsight|tremorsense|truesight)\s+(\d+)\s*ft/i);
+    const m = s.match(SENSE_RANGE_RE);
     if (!m) continue;
     const kind = m[1]!.toLowerCase();
     const want = parseInt(m[2]!, 10);

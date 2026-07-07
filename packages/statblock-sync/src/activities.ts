@@ -8,19 +8,12 @@
  * question comes up, answer it from the fixtures.
  */
 
+import { randomID } from "@foundry-mcp-bridge/shared";
 import type { DamagePart as GrammarDamagePart } from "./grammar.js";
 import { parseDamageFormula } from "./math.js";
 
-const ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-
 /** Random 16-char Foundry document id. */
-export function foundryId(): string {
-  let id = "";
-  for (let i = 0; i < 16; i++) {
-    id += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
-  }
-  return id;
-}
+export const foundryId = randomID;
 
 /** dnd5e structured damage part (used for damage.base and activity damage.parts). */
 export interface ActivityDamagePart {
@@ -148,18 +141,16 @@ export function saveActivity(opts: SaveActivityOptions): Activities {
       description: { chatFlavor: "" },
       range: { ...common.range, special: "" },
       target: {
+        ...common.target,
         template: {
-          contiguous: false,
-          units: "ft",
+          ...common.target.template,
           type: opts.template?.type ?? "",
           size: opts.template?.size ?? "",
           count: "",
         },
-        affects: { choice: false, type: opts.template ? "creature" : "", count: "", special: "" },
-        override: false,
-        prompt: true,
+        affects: { ...common.target.affects, type: opts.template ? "creature" : "", count: "", special: "" },
       },
-      uses: { spent: 0, recovery: [], max: "" },
+      uses: { ...common.uses, max: "" },
       consumption: {
         ...common.consumption,
         targets: opts.consumesItemUse

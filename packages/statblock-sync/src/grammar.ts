@@ -61,7 +61,8 @@ export interface ParsedSave {
   dc: number;
   ability: string; // "Wisdom", "Dexterity", etc.
   damage: DamagePart[];
-  successEffect?: string; // e.g., "half as much on a successful one"
+  successEffect?: string; // raw text, e.g. "half as much on a successful one"
+  onSave: "half" | "none"; // classified from successEffect
 }
 
 /**
@@ -156,6 +157,7 @@ export function parseSaveAction(description: string): ParsedSave | undefined {
     ability,
     damage,
     successEffect,
+    onSave: successEffect && /half/i.test(successEffect) ? "half" : "none",
   };
 }
 
