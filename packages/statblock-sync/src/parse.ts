@@ -291,7 +291,9 @@ function extractRecharge(name: string): {
  */
 const ACTION_LIST_FIELDS: Array<{
   field: "actions" | "reactions" | "legendary_actions" | "lair_actions";
-  type: "action" | "reaction" | "legendary" | "lair";
+  // Derived from StatblockData itself so this can't silently drift from the
+  // action `type` union declared in schema.ts.
+  type: StatblockData["actions"][number]["type"];
 }> = [
   { field: "actions", type: "action" },
   { field: "reactions", type: "reaction" },
