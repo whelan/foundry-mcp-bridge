@@ -142,21 +142,16 @@ describe("importNpc: Tier 1 compendium match wired into the import pipeline", ()
     expect(created!.type).toBe("npc");
     expect(created!.img).toMatch(/duskfang-bog-wyrm\.png$/);
 
-    const legendaryNames = ["Detect", "Tail Attack", "Wing Buffet"];
-    for (const name of legendaryNames) {
-      const item = created!.items!.find((i) => i.name === name);
-      expect(item, `${name} should exist as an item`).toBeDefined();
-      const act = Object.values(item!.system!.activities as Record<string, any>)[0];
-      expect(act.activation.type, `${name}'s activation`).toBe("legendary");
-    }
-
-    const lairNames = ["Rising Mire", "Grasping Roots"];
-    for (const name of lairNames) {
-      const item = created!.items!.find((i) => i.name === name);
-      expect(item, `${name} should exist as an item`).toBeDefined();
-      const act = Object.values(item!.system!.activities as Record<string, any>)[0];
-      expect(act.activation.type, `${name}'s activation`).toBe("lair");
-    }
+    const expectActivationType = (names: string[], expectedType: string) => {
+      for (const name of names) {
+        const item = created!.items!.find((i) => i.name === name);
+        expect(item, `${name} should exist as an item`).toBeDefined();
+        const act = Object.values(item!.system!.activities as Record<string, any>)[0];
+        expect(act.activation.type, `${name}'s activation`).toBe(expectedType);
+      }
+    };
+    expectActivationType(["Detect", "Tail Attack", "Wing Buffet"], "legendary");
+    expectActivationType(["Rising Mire", "Grasping Roots"], "lair");
 
     // The recharge-limited breath weapon still works alongside the legendary/lair actions.
     const breath = created!.items!.find((i) => i.name === "Miasmic Breath");

@@ -284,13 +284,25 @@ function extractRecharge(name: string): {
   };
 }
 
+/**
+ * Which statblock YAML field maps to which action type. Adding another
+ * named-entry action category (the design doc's `regional_effects`, e.g.)
+ * is a one-line addition here, not a new `fromList` call site.
+ */
+const ACTION_LIST_FIELDS: Array<{
+  field: "actions" | "reactions" | "legendary_actions" | "lair_actions";
+  type: "action" | "reaction" | "legendary" | "lair";
+}> = [
+  { field: "actions", type: "action" },
+  { field: "reactions", type: "reaction" },
+  { field: "legendary_actions", type: "legendary" },
+  { field: "lair_actions", type: "lair" },
+];
+
 /** The `actions`/`reactions`/`legendary_actions`/`lair_actions` lists become the actions array. */
 function buildActions(sb: Statblock): StatblockData["actions"] {
-  const fromList = (
-    list: Array<{ name: string; desc: string }> | undefined,
-    type: "action" | "reaction" | "legendary" | "lair"
-  ): StatblockData["actions"] =>
-    (list ?? []).map((entry) => {
+  return ACTION_LIST_FIELDS.flatMap(({ field, type }) =>
+    (sb[field] ?? []).map((entry) => {
       const { name, recharge } = extractRecharge(entry.name);
       return {
         name,
@@ -299,12 +311,6 @@ function buildActions(sb: Statblock): StatblockData["actions"] {
         multiattack: name.toLowerCase().includes("multiattack"),
         recharge,
       };
-    });
-
-  return [
-    ...fromList(sb.actions, "action"),
-    ...fromList(sb.reactions, "reaction"),
-    ...fromList(sb.legendary_actions, "legendary"),
-    ...fromList(sb.lair_actions, "lair"),
-  ];
+    })
+  );
 }

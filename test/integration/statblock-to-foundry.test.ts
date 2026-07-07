@@ -443,44 +443,27 @@ actions:
     ]);
   });
 
-  it("gives legendary actions a legendary activation, not a normal action-economy slot", () => {
+  it.each([
+    ["legendary_actions", "legendary"],
+    ["lair_actions", "lair"],
+  ])("gives %s a %s activation, not a normal action-economy slot", (field, expectedType) => {
     const markdown = `\`\`\`statblock
 name: Test Dragon
 cr: 10
 ac: 18
 hp: 150
 stats: [20, 10, 18, 10, 14, 16]
-legendary_actions:
-  - name: Tail Attack
-    desc: "The dragon makes a tail attack."
+${field}:
+  - name: Special Move
+    desc: "The dragon does a special move."
 \`\`\`
 `;
     const statblock = parseStatblock(markdown);
     const actor = statblockToFoundryActor(statblock);
-    const tail = actor.items.find((i) => i.name === "Tail Attack")!;
-    const act = Object.values((tail.system as Record<string, any>).activities)[0] as any;
+    const item = actor.items.find((i) => i.name === "Special Move")!;
+    const act = Object.values((item.system as Record<string, any>).activities)[0] as any;
 
-    expect(act.activation.type).toBe("legendary");
-  });
-
-  it("gives lair actions a lair activation", () => {
-    const markdown = `\`\`\`statblock
-name: Test Lair Dragon
-cr: 10
-ac: 18
-hp: 150
-stats: [20, 10, 18, 10, 14, 16]
-lair_actions:
-  - name: Rising Mist
-    desc: "Thick mist rises from the ground in a 20-foot-radius sphere."
-\`\`\`
-`;
-    const statblock = parseStatblock(markdown);
-    const actor = statblockToFoundryActor(statblock);
-    const mist = actor.items.find((i) => i.name === "Rising Mist")!;
-    const act = Object.values((mist.system as Record<string, any>).activities)[0] as any;
-
-    expect(act.activation.type).toBe("lair");
+    expect(act.activation.type).toBe(expectedType);
   });
 
   it("keeps the recharge limiter on a purely-descriptive action whose description matches no attack/save grammar", () => {
