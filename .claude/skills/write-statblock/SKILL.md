@@ -96,3 +96,29 @@ If the note is meant to become a permanent test fixture, put it in
 `image:`, if the note has one) and add it to the relevant test file, following
 `statblock-import.test.ts`'s pattern. Otherwise it's ready to import as-is via
 the `import_npc` flow (see `docs/statblock-import-execution-plan.md`).
+
+## Using this skill from another repo (e.g. an Obsidian vault)
+
+This whole `.claude/skills/write-statblock/` folder is copy-paste portable.
+Alongside `SKILL.md` it contains `lint-statblock.bundle.cjs` — a single
+dependency-free bundle of `scripts/lint-statblock.mjs` plus its
+`@foundry-mcp-bridge/statblock-sync` dependency (zod, yaml, and the tiny
+`randomID` helper from `@foundry-mcp-bridge/shared` are bundled in too). It
+needs nothing from this monorepo: no `npm install`, no workspace resolution,
+just a `node` binary.
+
+To copy it: take the whole `write-statblock/` folder as-is into the other
+repo's `.claude/skills/`, then in that repo lint with:
+```bash
+node .claude/skills/write-statblock/lint-statblock.bundle.cjs path/to/note.md
+```
+or with no path to recursively scan the whole repo (it silently skips any
+`.md` file without a ` ```statblock ` fence, so it's safe to point at an
+entire Obsidian vault — only files that actually claim to be statblocks get
+checked).
+
+The bundle is generated, not hand-written — if this bridge's grammar
+(`packages/statblock-sync/src/grammar.ts`) ever changes, regenerate it here
+with `npm run bundle:write-statblock-skill` and re-copy the folder; don't
+hand-edit the `.cjs` file directly, and don't edit it in the other repo
+either, since your edits would be silently lost on the next re-copy.

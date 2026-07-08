@@ -20,6 +20,7 @@
     "selftest": "npm run build && node scripts/selftest.mjs",
     "selftest:live": "npm run build && node scripts/selftest.mjs --live",
     "lint:statblock": "npm run build && node scripts/lint-statblock.mjs",
+    "bundle:write-statblock-skill": "npm run build && node scripts/bundle-write-statblock-skill.mjs",
     "gen:image": "node scripts/gen-image.mjs",
     "install:foundry": "npm run bundle:module && node scripts/install-into-foundry.mjs",
     "clean": "tsc --build --clean"
