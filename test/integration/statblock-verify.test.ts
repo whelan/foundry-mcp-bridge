@@ -128,6 +128,30 @@ describe("verifyImportedNpc against modern shapes", () => {
     expect(report.checks.find((c) => c.name === `"Grave Breath" save DC`)?.pass).toBe(false);
   });
 
+  it("doesn't fail a calculated (non-flat) attack bonus -- official monsters derive to-hit at roll time", () => {
+    const rb = readBackFromConverter();
+    const claw = rb.items!.find((i: any) => i.name === "Claw")!;
+    const act: any = Object.values((claw.system as any).activities)[0];
+    act.attack.flat = false;
+    delete act.attack.bonus;
+    const report = verifyImportedNpc(rb, statblock);
+    expect(report.checks.find((c) => c.name === `"Claw" to-hit`)).toBeUndefined();
+    expect(report.checks.find((c) => c.name.includes("Claw") && c.name.includes("calculated to-hit"))?.pass).toBe(true);
+    expect(report.ok).toBe(true);
+  });
+
+  it("doesn't fail a calculated (ability-expression) save DC -- official monsters derive DC at roll time", () => {
+    const rb = readBackFromConverter();
+    const breath = rb.items!.find((i: any) => i.name === "Grave Breath")!;
+    const act: any = Object.values((breath.system as any).activities)[0];
+    act.save.dc.calculation = "con";
+    act.save.dc.formula = "8 + @mod + @prof";
+    const report = verifyImportedNpc(rb, statblock);
+    expect(report.checks.find((c) => c.name === `"Grave Breath" save DC`)).toBeUndefined();
+    expect(report.checks.find((c) => c.name.includes("Grave Breath") && c.name.includes("calculated DC"))?.pass).toBe(true);
+    expect(report.ok).toBe(true);
+  });
+
   it("fails the recharge check when uses.recovery is missing", () => {
     const rb = readBackFromConverter();
     const breath = rb.items!.find((i: any) => i.name === "Grave Breath")!;

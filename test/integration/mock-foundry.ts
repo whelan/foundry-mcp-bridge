@@ -560,12 +560,14 @@ export class MockFoundry {
       if (!record.pack.startsWith(`${scope}.`)) continue;
       const name = String(record.data.name ?? "");
       if (name.toLowerCase().includes(query)) {
+        const system = record.data.system as Record<string, any> | undefined;
+        const cr = system?.details?.cr;
         results.push({
           uuid,
           pack: record.pack,
           name,
           type: String(record.data.type ?? record.documentType),
-          cr: typeof record.data.cr === "number" ? record.data.cr : undefined,
+          cr: typeof cr === "number" ? cr : undefined,
         });
       }
     }

@@ -130,24 +130,47 @@ export function verifyImportedNpc(
 
     if (attackParsed) {
       const attackAct = activities.find((a) => a.type === "attack");
-      const got = attackAct ? parseInt(String(attackAct.attack?.bonus ?? ""), 10) : undefined;
-      checks.push({
-        name: `"${action.name}" to-hit`,
-        pass: got === attackParsed.bonus,
-        got,
-        want: attackParsed.bonus,
-      });
+      // Tier 1 clones of official monsters often use a calculated to-hit
+      // (attack.flat: false, no static bonus stored — derived from ability +
+      // proficiency at roll time) rather than our own Tier 3 emission's flat
+      // numeric bonus. There's nothing static to compare in that case.
+      if (attackAct && attackAct.attack?.flat !== true) {
+        checks.push({
+          name: `"${action.name}" attack activity present (calculated to-hit, not compared)`,
+          pass: true,
+          got: attackAct.attack?.bonus,
+        });
+      } else {
+        const got = attackAct ? parseInt(String(attackAct.attack?.bonus ?? ""), 10) : undefined;
+        checks.push({
+          name: `"${action.name}" to-hit`,
+          pass: got === attackParsed.bonus,
+          got,
+          want: attackParsed.bonus,
+        });
+      }
     }
 
     if (saveParsed) {
       const saveAct = activities.find((a) => a.type === "save");
-      const got = saveAct ? parseInt(String(saveAct.save?.dc?.formula ?? ""), 10) : undefined;
-      checks.push({
-        name: `"${action.name}" save DC`,
-        pass: got === saveParsed.dc,
-        got,
-        want: saveParsed.dc,
-      });
+      // Same as attack above: a calculated DC (dc.calculation set to an
+      // ability key, formula like "8 + @mod + @prof") has no static number to
+      // compare against the parsed statblock DC.
+      if (saveAct && saveAct.save?.dc?.calculation) {
+        checks.push({
+          name: `"${action.name}" save activity present (calculated DC, not compared)`,
+          pass: true,
+          got: saveAct.save.dc.formula,
+        });
+      } else {
+        const got = saveAct ? parseInt(String(saveAct.save?.dc?.formula ?? ""), 10) : undefined;
+        checks.push({
+          name: `"${action.name}" save DC`,
+          pass: got === saveParsed.dc,
+          got,
+          want: saveParsed.dc,
+        });
+      }
     }
 
     if (action.recharge) {

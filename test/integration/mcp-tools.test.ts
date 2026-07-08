@@ -769,7 +769,7 @@ describe("search_compendium / import_from_compendium pipeline", () => {
     const out = await runSearchCompendium(transport, { documentType: "Actor", nameQuery: "Gravemire" });
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    const results = out.data as Array<{ uuid: string; pack: string; name: string; type: string }>;
+    const results = out.data as Array<{ uuid: string; pack: string; name: string; type: string; cr?: number }>;
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
       uuid: GRAVEMIRE_UUID,
@@ -778,6 +778,9 @@ describe("search_compendium / import_from_compendium pipeline", () => {
       // The result's `type` is the fixture's real game-system subtype, not the
       // top-level DocumentType ("Actor") — guards against the two being conflated.
       type: "npc",
+      // Lives at system.details.cr on the actor doc, not a top-level field —
+      // guards against reading the wrong path and always getting undefined.
+      cr: 3,
     });
   });
 

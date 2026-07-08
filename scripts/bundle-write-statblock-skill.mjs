@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Bundles scripts/lint-statblock.mjs plus its @foundry-mcp-bridge/statblock-sync
 // dependency (and the transitive @foundry-mcp-bridge/shared randomID helper,
-// zod, and yaml) into a single dependency-free .mjs, written into
+// zod, and yaml) into a single dependency-free .cjs, written into
 // .claude/skills/write-statblock/. That makes the whole
 // .claude/skills/write-statblock/ folder copy-paste portable into any other
 // repo (e.g. an Obsidian vault repo) -- no npm install, no monorepo workspace
-// resolution, just `node lint-statblock.bundle.mjs`.
+// resolution, just `node lint-statblock.bundle.cjs`.
 //
 // Run via `npm run bundle:write-statblock-skill` (this builds the workspace
 // first so esbuild resolves the real compiled .js, not stale dist output).
