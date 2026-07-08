@@ -12472,10 +12472,20 @@ var EXCLUDED_DIRS = /* @__PURE__ */ new Set(["node_modules", ".git", ".obsidian"
 function expand(p) {
   const stat = import_fs.default.statSync(p);
   if (stat.isFile()) return [p];
-  return import_fs.default.globSync("**/*.md", {
-    cwd: p,
-    exclude: (name) => EXCLUDED_DIRS.has(name)
-  }).map((f) => import_path.default.join(p, f));
+  return walk(p);
+}
+function walk(dir) {
+  const out = [];
+  for (const dirent of import_fs.default.readdirSync(dir, { withFileTypes: true })) {
+    if (EXCLUDED_DIRS.has(dirent.name)) continue;
+    const full = import_path.default.join(dir, dirent.name);
+    if (dirent.isDirectory()) {
+      out.push(...walk(full));
+    } else if (dirent.name.endsWith(".md")) {
+      out.push(full);
+    }
+  }
+  return out;
 }
 var args = process.argv.slice(2);
 var files = (args.length > 0 ? args : ["."]).flatMap(expand);

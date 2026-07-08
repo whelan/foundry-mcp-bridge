@@ -156,51 +156,6 @@ export interface StatblockData {
 }
 
 /**
- * Statblock field mapping: maps statblock concepts to dnd5e actor system paths.
- * Each entry maps a statblock concept to its Foundry equivalent.
- */
-export const STATBLOCK_FIELD_MAP = {
-  // Basic attributes
-  name: "name",
-  type: "system.details.type.value",
-  size: "system.details.size",
-  alignment: "system.details.alignment",
-  race: "system.details.race.value",
-
-  // Armor and hit points
-  armorClass: "system.attributes.ac.flat",
-  hitPoints: "system.attributes.hp.value",
-  hitPointsMax: "system.attributes.hp.max",
-  hitPointsFormula: "system.attributes.hp.formula",
-
-  // Ability scores
-  strength: "system.abilities.str.value",
-  dexterity: "system.abilities.dex.value",
-  constitution: "system.abilities.con.value",
-  intelligence: "system.abilities.int.value",
-  wisdom: "system.abilities.wis.value",
-  charisma: "system.abilities.cha.value",
-
-  // Skills and saving throws (proficiencies)
-  skillProficiencies: "system.skills",
-  savingThrowProficiencies: "system.abilities.*.save",
-
-  // Traits and senses
-  damageResistances: "system.traits_.damageResistances.value",
-  damageImmunities: "system.traits_.damageImmunities.value",
-  conditionImmunities: "system.traits_.conditionImmunities.value",
-  senses: "system.traits.senses",
-
-  // CR and XP
-  challengeRating: "system.details.cr",
-  experiencePoints: "system.details.xp",
-
-  // Portrait and token images
-  portraitImage: "img",
-  tokenImage: "prototypeToken.texture.src",
-};
-
-/**
  * Schema for parsed ability/skill lines (e.g., "Acrobatics +2, Perception +4").
  */
 export const SkillLineSchema = z.object({

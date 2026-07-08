@@ -374,7 +374,7 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
           for (const entry of index) {
             if (String(entry.name ?? "").toLowerCase().includes(query)) {
               entries.push({
-                uuid: entry.uuid ?? `${pack.collection}.${entry._id}`,
+                uuid: entry.uuid ?? `Compendium.${pack.collection}.${entry._id}`,
                 pack: pack.collection,
                 name: String(entry.name ?? ""),
                 type: String(entry.type ?? documentType),

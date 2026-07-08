@@ -46,10 +46,25 @@ const EXCLUDED_DIRS = new Set(["node_modules", ".git", ".obsidian", "dist"]);
 function expand(p) {
   const stat = fs.statSync(p);
   if (stat.isFile()) return [p];
-  return fs.globSync("**/*.md", {
-    cwd: p,
-    exclude: (name) => EXCLUDED_DIRS.has(name),
-  }).map((f) => path.join(p, f));
+  return walk(p);
+}
+
+// A manual recursive walk instead of fs.globSync: globSync was only added in
+// Node 22 (still experimental for several releases after), which would break
+// this script on Node 20 -- exactly the "bare node, no monorepo" portability
+// goal this file exists for.
+function walk(dir) {
+  const out = [];
+  for (const dirent of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (EXCLUDED_DIRS.has(dirent.name)) continue;
+    const full = path.join(dir, dirent.name);
+    if (dirent.isDirectory()) {
+      out.push(...walk(full));
+    } else if (dirent.name.endsWith(".md")) {
+      out.push(full);
+    }
+  }
+  return out;
 }
 
 const args = process.argv.slice(2);

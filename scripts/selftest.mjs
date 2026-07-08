@@ -189,7 +189,7 @@ async function runNpcLeg(server, opts) {
     async uploadImage(filename, contentBase64, targetFolder) {
       const res = await runUploadAsset(server, { source: "data", target: targetFolder, filename, contentBase64 }, opts);
       if (!res.ok) throw new Error(`uploadAsset failed: ${res.error.code}`);
-      return res.data;
+      return res.data.path;
     },
   }, { filename: "gravemire-stalker.png", contentBase64: imageBase64 });
 
@@ -214,7 +214,18 @@ async function runNpcLeg(server, opts) {
   // Clean up: delete the actor and uploaded assets (selftest must stay non-destructive).
   await runDeleteDocument(server, { documentType: "Actor", id: importResult.actorId }, opts);
 
-  show("import_npc (M6 NPC leg)", { ok: verification.ok, checks: passCount, failed: failCount });
+  show(
+    "import_npc (M6 NPC leg)",
+    verification.ok
+      ? { ok: true, steps: [`verified ${passCount}/${verification.checks.length} checks`] }
+      : {
+          ok: false,
+          error: {
+            code: "VERIFICATION_FAILED",
+            message: verification.checks.filter((c) => !c.pass).map((c) => c.name).join(", "),
+          },
+        },
+  );
 }
 
 if (live) {
