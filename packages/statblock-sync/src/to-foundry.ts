@@ -53,6 +53,27 @@ const DEFAULT_ITEM_ICONS: Record<string, string> = {
   weapon: "icons/svg/sword.svg",
 };
 
+/**
+ * Foundry-core artwork for common monster item names — the same paths the
+ * official dnd5e 2024 monsters use (taken from the schema fixtures, plus a
+ * few verified against Foundry core's bundled icon library). First match
+ * wins; anything unmatched falls back to the per-type svg above.
+ */
+const ITEM_NAME_ICONS: Array<[RegExp, string]> = [
+  [/multiattack/i, "icons/skills/melee/strike-weapons-orange.webp"],
+  [/\bclaws?\b/i, "icons/skills/melee/blood-slash-foam-red.webp"],
+  [/\bbite\b/i, "icons/creatures/abilities/fangs-teeth-bite.webp"],
+  [/\brend\b/i, "icons/skills/melee/shield-damaged-broken-orange.webp"],
+  [/\bbreath\b/i, "icons/creatures/abilities/dragon-breath-purple.webp"],
+  [/\btail\b/i, "icons/creatures/abilities/tail-swipe-green.webp"],
+  [/\bsting(er)?\b/i, "icons/creatures/abilities/stinger-poison-green.webp"],
+];
+
+function itemIcon(name: string, type: "weapon" | "feat"): string {
+  for (const [re, icon] of ITEM_NAME_ICONS) if (re.test(name)) return icon;
+  return DEFAULT_ITEM_ICONS[type]!;
+}
+
 const KNOWN_CONDITIONS = new Set([
   "blinded", "charmed", "deafened", "exhaustion", "frightened", "grappled",
   "incapacitated", "invisible", "paralyzed", "petrified", "poisoned", "prone",
@@ -111,13 +132,22 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
   const prof = getProficiencyBonus(statblock.challenge.cr);
 
   // Skill proficiencies as multipliers; statblock-vs-derived deltas go in bonuses.check.
+  // `ability` must be written explicitly: dnd5e's SkillData default is NOT
+  // per-skill, so omitting it made Perception roll off DEX (found live in M6b —
+  // the sheet showed Perception +4 instead of +3; the wight fixture stores
+  // ability explicitly on every skill).
   const skills: Record<string, Record<string, unknown>> = {};
   for (const p of statblock.skills.proficiencies) {
     const abbrev = skillAbbrev(p.skill);
     if (!abbrev) continue;
-    const mod = getAbilityMod(abilities_, getSkillAbility(p.skill));
+    const ability = getSkillAbility(p.skill);
+    const mod = getAbilityMod(abilities_, ability);
     const delta = p.bonus - (mod + prof);
-    skills[abbrev] = delta === 0 ? { value: 1 } : { value: 1, bonuses: { check: String(delta) } };
+    skills[abbrev] = {
+      value: 1,
+      ability,
+      ...(delta === 0 ? {} : { bonuses: { check: String(delta) } }),
+    };
   }
 
   // Ability scores; save proficiencies live on abilities.<abl>.proficient.
@@ -250,7 +280,7 @@ function featItem(
   if (opts?.uses) system.uses = opts.uses;
   if (opts?.activities) system.activities = opts.activities;
   if (opts?.properties) system.properties = opts.properties;
-  return { name, type: "feat", img: DEFAULT_ITEM_ICONS.feat, system };
+  return { name, type: "feat", img: itemIcon(name, "feat"), system };
 }
 
 /** A zero-damage, typeless base — used when an attack's description had no parseable damage at all. */
@@ -286,7 +316,7 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
     return {
       name: action.name,
       type: "weapon",
-      img: DEFAULT_ITEM_ICONS.weapon,
+      img: itemIcon(action.name, "weapon"),
       system: {
         description: { value: action.description, chat: "" },
         type: { value: "natural", baseItem: "" },

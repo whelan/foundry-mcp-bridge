@@ -150,10 +150,19 @@ actions:
     expect(act?.attack?.bonus).toBe("-1");
   });
 
-  it("assigns default icons per item type", () => {
+  it("assigns Foundry-core icons: named artwork for known monster items, svg fallback otherwise", () => {
     for (const item of gravemireActor.items) {
-      expect(item.img).toMatch(/^icons\/svg\//);
+      // Everything ships a Foundry-core icon path (always present, any install)
+      expect(item.img).toMatch(/^icons\//);
     }
+    const byName = (n: string) => gravemireActor.items.find((i) => i.name === n)!;
+    // Common monster attacks get the same artwork the official 2024 monsters use
+    expect(byName("Claw").img).toBe("icons/skills/melee/blood-slash-foam-red.webp");
+    expect(byName("Multiattack").img).toBe("icons/skills/melee/strike-weapons-orange.webp");
+    expect(byName("Grave Breath").img).toBe("icons/creatures/abilities/dragon-breath-purple.webp");
+    // No named match → per-type svg fallback
+    expect(byName("Stench of the Grave").img).toBe("icons/svg/book.svg");
+    expect(byName("Grasp of the Mire").img).toBe("icons/svg/book.svg");
   });
 });
 
@@ -277,11 +286,13 @@ describe("modern dnd5e actor system shapes (5.3.3)", () => {
     expect(sys.details.size).toBeUndefined();
   });
 
-  it("emits skill proficiencies as multipliers, not totals", () => {
-    // Stealth +4 = dex +2 + prof +2 → multiplier 1, no delta
-    expect(sys.skills.ste).toEqual({ value: 1 });
+  it("emits skill proficiencies as multipliers with an explicit ability", () => {
+    // Stealth +4 = dex +2 + prof +2 → multiplier 1, no delta.
+    // ability must be written: dnd5e's SkillData default is not per-skill, so
+    // omitting it made Perception roll off DEX (+4 instead of +3, found live in M6b).
+    expect(sys.skills.ste).toEqual({ value: 1, ability: "dex" });
     // Perception +3 = wis +1 + prof +2 → multiplier 1, no delta
-    expect(sys.skills.prc).toEqual({ value: 1 });
+    expect(sys.skills.prc).toEqual({ value: 1, ability: "wis" });
   });
 
   it("emits save proficiencies on abilities.<abl>.proficient", () => {

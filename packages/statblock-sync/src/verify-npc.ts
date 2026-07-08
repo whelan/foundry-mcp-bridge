@@ -9,7 +9,7 @@
 import type { StatblockData } from "./schema.js";
 import { getAbilityModifier, getProficiencyBonus } from "./math.js";
 import { parseAttackAction, parseSaveAction } from "./grammar.js";
-import { skillAbbrev, SENSE_RANGE_RE } from "./utils.js";
+import { skillAbbrev, getSkillAbility, SENSE_RANGE_RE } from "./utils.js";
 
 export interface VerificationCheck {
   name: string;
@@ -196,6 +196,17 @@ export function verifyImportedNpc(
       pass: typeof got === "number" && got >= 1,
       got,
       want: ">=1",
+    });
+    // The skill must roll off the right ability — dnd5e's SkillData default
+    // is not per-skill, so an unwritten ability silently rolls off DEX (the
+    // live M6b check showed Perception +4 instead of +3 because of this).
+    const wantAbility = getSkillAbility(p.skill);
+    const gotAbility = skillsRB?.[abbrev]?.ability;
+    checks.push({
+      name: `Skill ${p.skill.toLowerCase()} ability`,
+      pass: gotAbility === wantAbility,
+      got: gotAbility,
+      want: wantAbility,
     });
   }
 
