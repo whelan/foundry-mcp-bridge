@@ -153,6 +153,14 @@ describe("importNpc: Tier 1 compendium match wired into the import pipeline", ()
     expectActivationType(["Detect", "Tail Attack", "Wing Buffet"], "legendary");
     expectActivationType(["Rising Mire", "Grasping Roots"], "lair");
 
+    // Grasping Roots uses the 2024 header save form ("Strength Saving Throw:
+    // DC 18") -- must parse as a mechanical save, not fall through to a
+    // non-rollable utility activity.
+    const roots = created!.items!.find((i) => i.name === "Grasping Roots")!;
+    const rootsAct = Object.values(roots.system!.activities as Record<string, any>)[0];
+    expect(rootsAct.type).toBe("save");
+    expect(rootsAct.save).toEqual({ ability: ["str"], dc: { calculation: "", formula: "18" } });
+
     // The recharge-limited breath weapon still works alongside the legendary/lair actions.
     const breath = created!.items!.find((i) => i.name === "Miasmic Breath");
     expect(breath!.system!.uses).toEqual({

@@ -395,7 +395,7 @@ actions:
     expect(base).toMatchObject({ number: 0, denomination: 0, bonus: "1", types: ["bludgeoning"] });
   });
 
-  it("computes onSave 'half' from the classic 2014-style phrasing (no 'Success:' label)", () => {
+  it("computes onSave 'half' from the flowing 'or half as much on a successful save' phrasing (no 'Success:' label)", () => {
     const markdown = `\`\`\`statblock
 name: Classic Breather
 cr: 5
@@ -464,6 +464,52 @@ ${field}:
     const act = Object.values((item.system as Record<string, any>).activities)[0] as any;
 
     expect(act.activation.type).toBe(expectedType);
+  });
+
+  it("makes a 2024 header-form lair-action save a mechanical save with lair activation", () => {
+    const markdown = `\`\`\`statblock
+name: Test Lair Dragon
+cr: 10
+ac: 18
+hp: 150
+stats: [20, 10, 18, 10, 14, 16]
+lair_actions:
+  - name: Grasping Roots
+    desc: "Strength Saving Throw: DC 18, each creature in a 20-foot-radius sphere. Failure: The creature is restrained."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const roots = actor.items.find((i) => i.name === "Grasping Roots")!;
+    const act = Object.values((roots.system as Record<string, any>).activities)[0] as any;
+
+    expect(act.type).toBe("save");
+    expect(act.save).toEqual({ ability: ["str"], dc: { calculation: "", formula: "18" } });
+    expect(act.activation.type).toBe("lair");
+  });
+
+  it("leaves a 2014-style 'Weapon Attack: +N to hit' action as a description-only feat (2024-only converter)", () => {
+    // 2024-only: 2014 attack grammar must NOT be treated as a rollable attack.
+    // It falls through to a plain feat so it's visibly non-mechanical rather
+    // than silently mis-converted.
+    const markdown = `\`\`\`statblock
+name: Test 2014 Bandit
+cr: 1
+ac: 12
+hp: 20
+stats: [12, 14, 12, 10, 10, 10]
+actions:
+  - name: Scimitar
+    desc: "Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 5 (1d6 + 2) slashing damage."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const scimitar = actor.items.find((i) => i.name === "Scimitar")!;
+
+    expect(scimitar.type).toBe("feat");
+    const act = Object.values((scimitar.system as Record<string, any>).activities)[0] as any;
+    expect(act.type).toBe("utility");
   });
 
   it("keeps the recharge limiter on a purely-descriptive action whose description matches no attack/save grammar", () => {

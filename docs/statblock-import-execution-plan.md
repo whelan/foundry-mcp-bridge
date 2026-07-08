@@ -181,12 +181,17 @@ code tables, speed and senses string ↔ object parsers/renderers.
 
 ## M3 — Action-text grammar (`grammar.ts`)
 
-**Build:** parser + renderer for the statblock action grammar, both 2024
+**Build:** parser + renderer for the **2024** statblock action grammar
 ("Melee Attack Roll: +5, reach 5 ft. Hit: …", "Constitution Saving Throw:
-DC 12, …") and 2014 ("Melee Weapon Attack: +5 to hit…") forms, plus
-`Recharge X-Y`, multi-part damage ("plus 3 (1d6) Necrotic"), and the
-explicit **give-up result**: anything unparsed returns
+DC 12, …"), plus `Recharge X-Y`, multi-part damage ("plus 3 (1d6) Necrotic"),
+and the explicit **give-up result**: anything unparsed returns
 `{ kind: "unparsed", text }` — never guessed numbers (design doc §8).
+
+**Scope decision — 2024-only.** The converter deliberately does **not**
+recognize the 2014 grammar ("Melee Weapon Attack: +5 to hit…", the DC-first
+"…DC 12 Constitution saving throw…" prose). 2014-form text falls through to a
+description-only feat instead of being silently mis-parsed. (The design doc's
+`rulesVersion` flag is therefore unused — there is only the 2024 grammar.)
 
 **Verify (gate):**
 - Unit tests: all four acceptance-NPC actions parse to the expected

@@ -71,6 +71,18 @@ describe("M3: Action Text Grammar Parsing", () => {
 
       expect(attack?.bonus).toBe(-1);
     });
+
+    // This converter is 2024-only: the 2014 "Weapon/Spell Attack: +N to hit"
+    // grammar must NOT be recognized (it would otherwise be silently
+    // mis-parsed as a 2024 attack). Falling through to undefined lets the
+    // caller emit a description-only feat instead of a wrong rollable weapon.
+    it.each([
+      "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 8 (1d10 + 3) slashing damage.",
+      "Ranged Weapon Attack: +6 to hit, range 80/320 ft. Hit: 7 (1d8 + 3) piercing damage.",
+      "Melee Spell Attack: +7 to hit, reach 5 ft. Hit: 10 (3d6) fire damage.",
+    ])("does not parse 2014-style attack grammar: %s", (description) => {
+      expect(parseAttackAction(description)).toBeUndefined();
+    });
   });
 
   describe("Save action parsing", () => {
@@ -100,6 +112,16 @@ describe("M3: Action Text Grammar Parsing", () => {
       const save = parseSaveAction(description);
 
       expect(save).toBeUndefined();
+    });
+
+    // 2024-only: the 2014 DC-first prose form ("...DC 18 Strength saving
+    // throw...") must NOT parse. 2024 statblocks lead with the header
+    // ("Strength Saving Throw: DC 18"); prose-form text falls through to a
+    // description-only feat rather than being silently mis-parsed.
+    it("does not parse the 2014-style DC-first prose form", () => {
+      const description =
+        "Each creature in that area must succeed on a DC 18 Strength saving throw or be restrained.";
+      expect(parseSaveAction(description)).toBeUndefined();
     });
   });
 

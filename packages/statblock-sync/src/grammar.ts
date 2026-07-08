@@ -1,11 +1,15 @@
 /**
  * M3: Action text grammar parser
  *
- * Parses attack, save, and other mechanics from 2024 D&D statblock descriptions.
+ * Parses attack, save, and other mechanics from **2024** D&D statblock
+ * descriptions. This converter is 2024-only: the 2014 grammar
+ * ("Melee Weapon Attack: +N to hit", DC-first "...DC N Ability saving
+ * throw...") is deliberately not recognized, so 2014-form text falls through
+ * to a description-only feat rather than being silently mis-parsed.
  *
  * Example inputs:
- * - "Melee Attack Roll: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage plus 3 (1d6) necrotic damage."
- * - "Wisdom Saving Throw: DC 13. Each creature that can hear it and fails the save takes 22 (4d10) psychic damage, or half as much on a successful one."
+ * - Attack: "Melee Attack Roll: +5, reach 5 ft. Hit: 10 (2d6 + 3) slashing damage plus 3 (1d6) necrotic damage."
+ * - Save: "Wisdom Saving Throw: DC 13. ...takes 22 (4d10) psychic damage, or half as much on a successful one."
  */
 
 import type { StatblockData } from "./schema.js";
@@ -66,17 +70,18 @@ export interface ParsedSave {
 }
 
 /**
- * Try to parse an action as a melee weapon attack (2024 format).
- * Looks for patterns like "Melee Attack Roll: +5" or "Ranged Attack Roll: +5"
+ * Try to parse an action as an attack (2024 grammar only).
+ * Looks for "Melee Attack Roll: +5" / "Ranged Attack Roll: +5".
+ * (melee-vs-ranged is derived from reach/range below, not the prefix word.)
+ * The 2014 "Melee Weapon Attack: +5 to hit" form is intentionally NOT
+ * recognized — this converter is 2024-only.
  */
 export function parseAttackAction(description: string): ParsedAttack | undefined {
   // Strip markdown formatting (asterisks for italics/bold)
   const normalized = stripMarkdown(description);
 
   // 2024 format: "Melee Attack Roll: +5" or "Ranged Attack Roll: +5"
-  const attackMatch = normalized.match(
-    /(?:melee|ranged)\s+attack\s+roll:\s*([+-]\d+)/i
-  );
+  const attackMatch = normalized.match(/(?:melee|ranged)\s+attack\s+roll:\s*([+-]\d+)/i);
 
   if (!attackMatch || !attackMatch[1]) return undefined;
 
@@ -124,18 +129,17 @@ export function parseAttackAction(description: string): ParsedAttack | undefined
 }
 
 /**
- * Try to parse an action as a saving throw (2024 format).
- * Looks for patterns like "Wisdom Saving Throw: DC 12"
+ * Try to parse an action as a saving throw (2024 grammar only).
+ * Looks for the 2024 header form "Ability Saving Throw: DC 12". The 2014
+ * DC-first prose form ("...DC 12 Constitution saving throw...") is
+ * intentionally NOT recognized — this converter is 2024-only.
  */
 export function parseSaveAction(description: string): ParsedSave | undefined {
   // Strip markdown formatting
   const normalized = stripMarkdown(description);
 
-  // 2024 format: "Wisdom Saving Throw: DC 12"
-  const saveMatch = normalized.match(
-    /(\w+)\s+saving\s+throw:\s*dc\s+(\d+)/i
-  );
-
+  // 2024 header format: "Wisdom Saving Throw: DC 12"
+  const saveMatch = normalized.match(/(\w+)\s+saving\s+throw:\s*dc\s+(\d+)/i);
   if (!saveMatch || !saveMatch[1] || !saveMatch[2]) return undefined;
 
   const ability = saveMatch[1];

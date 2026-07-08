@@ -50,7 +50,7 @@ lair_actions:
   - name: Rising Mire
     desc: "Thick, choking mist rises from the bog in a 20-foot-radius sphere centered on a point Duskfang can see within 120 feet of it. The mist heavily obscures its area until initiative count 20 on the next round."
   - name: Grasping Roots
-    desc: "Roots and vines burst from the ground in a 20-foot-radius sphere centered on a point Duskfang can see within 120 feet of it. Each creature in that area must succeed on a DC 18 Strength saving throw or be restrained until the roots are destroyed (AC 15, 20 hit points)."
+    desc: "Strength Saving Throw: DC 18, each creature in a 20-foot-radius sphere centered on a point Duskfang can see within 120 feet of it. Failure: The creature is restrained until the roots are destroyed (AC 15, 20 hit points)."
 ```
 
 A rot-scaled horror said to lair beneath the Duskmire, surfacing only when the marsh itself seems to hunger.
