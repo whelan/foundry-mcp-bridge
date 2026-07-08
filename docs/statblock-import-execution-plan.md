@@ -355,7 +355,7 @@ unnoticed through M0–M5's gates. Fix that (either make the mock enforce the
 same constraint, or add a dedicated test) before trusting `npm test` on this
 again.
 
-**Bug 2 — NOT FIXED, blocks all Tier 3 imports.** `statblockToFoundryActor`
+**Bug 2 — FIXED (see below).** `statblockToFoundryActor`
 (`packages/statblock-sync/src/to-foundry.ts`) targets a dnd5e schema that
 predates the Activities system (dnd5e 3.0+) and diverges from the live
 Actor schema in several places. `create_document` fails immediately at
@@ -403,8 +403,8 @@ Follow-up root cause (confirmed from the Ghast fixture): the exact
 — on NPCs `race` is a LocalDocumentField (an Item reference, officially
 `null`), so a plain object there is rejected at dry-run.
 
-Record the tested version once fixed: dnd5e **5.3.3** on Foundry core
-**14.364** (`statblock-sync/src/compat.ts` — not yet created).
+Tested version recorded: dnd5e **5.3.3** on Foundry core **14.364**
+(`packages/statblock-sync/src/compat.ts`).
 
 **Live-world state left behind:** `worlds/npcs/gravemire-stalker/
 gravemire-stalker.png` and `worlds/test-mcp/scenes/selftest-probe.png` were
