@@ -1,6 +1,6 @@
 ---
 name: generate-and-upload-image
-description: Generate an image with a LOCAL AI (a CLI like stable-diffusion.cpp / ComfyUI, or an Automatic1111/SD-Forge HTTP API) and put it into the running Foundry world via the foundry MCP tools — upload with upload_asset, then set it as an actor portrait, token texture, scene background, or journal image. Use when the user wants to "generate an image/portrait/map/token and add it to Foundry", "make art for this NPC/scene with a local model", or "use a local AI to create and upload a picture".
+description: Generate an image with a LOCAL AI (a CLI like stable-diffusion.cpp / ComfyUI, or an Automatic1111/SD-Forge HTTP API) or with the OpenAI Codex CLI (zero local-model setup), and put it into the running Foundry world via the foundry MCP tools — upload with upload_asset, then set it as an actor portrait, token texture, scene background, or journal image. Use when the user wants to "generate an image/portrait/map/token and add it to Foundry", "make art for this NPC/scene with a local model", "generate an image with codex", or "use a local AI to create and upload a picture".
 ---
 
 # Generate an image with a local AI and upload it into Foundry
@@ -26,13 +26,21 @@ halves, and they stay separate on purpose:
 - The `mcp__foundry__*` tools must be present (Foundry running, GM logged in,
   module enabled, relay URL/token matching). If they aren't, the world isn't
   reachable — say so; don't try to upload.
-- A local backend, selected by `--backend` / `IMAGE_GEN_BACKEND`:
+- A generation backend, selected by `--backend` / `IMAGE_GEN_BACKEND`:
   - **`cli`** (default): set `IMAGE_GEN_CMD` to a command that writes the file,
     with placeholders `{prompt} {out} {width} {height} {steps} {negative}`, e.g.
     `IMAGE_GEN_CMD='sd -p "{prompt}" -o "{out}" --steps {steps}'`.
   - **`a1111`**: an Automatic1111/SD-Forge WebUI started with `--api`; set
     `SD_WEBUI_URL` (default `http://127.0.0.1:7860`).
-- If neither is configured, ask the user which local backend they run and what
+  - **`codex`**: OpenAI Codex CLI (`codex` on PATH, logged in); zero
+    local-model setup. The wrapper drives `codex exec` non-interactively,
+    locates the generated file in codex's cache
+    (`$CODEX_HOME/generated_images/<session>/`) and moves it into place —
+    codex's own sandbox cannot write to the workspace. Model comes from
+    `--codex-model`, `codex.model` in `.imagegen.json`, or
+    `IMAGE_GEN_CODEX_MODEL`. `--steps`/`--negative` are diffusion-specific
+    and don't apply to this backend.
+- If none is configured, ask the user which backend they run and what
   the invocation is — do **not** invent a command.
 
 ### Turnkey macOS setup (Intel, e.g. MacBook Pro 2019)
@@ -75,18 +83,33 @@ It writes the image + `<out>.b64` and prints the JSON summary, exactly like
    keep the extension), and a `source` (`data` local, or `forgevtt` on The Forge
    — ask if unsure).
 
-2. **Generate** into a temp file:
+2. **Generate** into a file:
 
    ```bash
    node scripts/gen-image.mjs \
      --prompt "<vivid prompt for the subject>" \
      --out /tmp/<filename> \
-     [--backend cli|a1111] [--width 768 --height 768 --steps 30 --negative "..."]
+     [--backend cli|a1111|codex] [--width 768 --height 768 --steps 30 --negative "..."]
    ```
+
+   Or with the codex backend and the project's output directory (from
+   `.imagegen.json` `outputDir`, overridable with `--out-dir` /
+   `IMAGE_GEN_OUT_DIR`, default `images/`) instead of an explicit `--out`:
+
+   ```bash
+   node scripts/gen-image.mjs --backend codex \
+     --prompt "a shiba inu wearing sunglasses" --name shiba.png
+   ```
+
+   Note `--steps`/`--negative` don't apply to codex (diffusion-only knobs).
 
    It writes the image, a base64 sidecar `<out>.b64`, and prints a one-line JSON
    summary `{ path, name, bytes, mimeType, b64Path }`. Sanity-check `bytes` (a
    few-hundred-byte file usually means the backend failed).
+
+   **Generate into the project:** when the user wants the image in the repo
+   (not uploaded to Foundry), stop here — the file is already at its final
+   path; report the path from the JSON summary.
 
 3. **Upload** with the MCP tool. Read the sidecar text (`b64Path`) and pass it
    as `contentBase64`:
