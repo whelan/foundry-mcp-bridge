@@ -45,7 +45,7 @@ legendary_actions:
   - name: Tail Attack
     desc: "The wyrm makes a tail attack."
   - name: Wing Buffet
-    desc: "Costs 2 Actions. The wyrm beats its wings. Each creature within 10 feet of it must succeed on a DC 19 Dexterity saving throw or take 13 (2d6 + 6) Bludgeoning damage and be knocked prone."
+    desc: "Costs 2 Actions. Dexterity Saving Throw: DC 19, each creature within 10 feet of the wyrm. Failure: 13 (2d6 + 6) Bludgeoning damage and the creature is knocked prone."
 lair_actions:
   - name: Rising Mire
     desc: "Thick, choking mist rises from the bog in a 20-foot-radius sphere centered on a point Duskfang can see within 120 feet of it. The mist heavily obscures its area until initiative count 20 on the next round."
