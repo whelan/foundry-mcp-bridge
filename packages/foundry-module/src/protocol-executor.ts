@@ -12,10 +12,16 @@ import {
   type CommandResult,
   type DocumentType,
   type ErrorCode,
+  type CompendiumEntry,
   checkEnvelopeGuards,
   ok,
   err,
 } from "@foundry-mcp-bridge/shared";
+
+// Re-exported for existing importers of this module; the shape now lives in
+// packages/shared so foundry-module, mcp-server, and standalone consumers
+// (e.g. statblock-sync) all reference the same definition.
+export type { CompendiumEntry };
 
 export type DocData = Record<string, unknown>;
 
@@ -129,6 +135,18 @@ export interface FoundryDocumentApi {
   createQuest(data: DocData | undefined, parentId: string | undefined, opts: ExecuteOptions): Promise<DocData>;
   updateQuest(id: string, data: DocData, opts: ExecuteOptions): Promise<DocData>;
   deleteQuest(id: string, opts: ExecuteOptions): Promise<void>;
+  searchCompendium(
+    packScope: string | undefined,
+    documentType: DocumentType,
+    nameQuery: string,
+  ): Promise<CompendiumEntry[]>;
+  importFromCompendium(
+    documentType: DocumentType,
+    uuid: string,
+    patch: DocData | undefined,
+    folderId: string | undefined,
+    opts: ExecuteOptions,
+  ): Promise<DocData>;
 }
 
 export interface ExecutorContext {
@@ -242,5 +260,9 @@ async function dispatch(
     case "deleteQuest":
       await api.deleteQuest(command.id, opts);
       return { _id: command.id, deleted: true };
+    case "searchCompendium":
+      return api.searchCompendium(command.packScope, command.documentType, command.nameQuery);
+    case "importFromCompendium":
+      return api.importFromCompendium(command.documentType, command.uuid, command.patch, command.folderId, opts);
   }
 }

@@ -33,6 +33,8 @@ import {
   uploadAssetReliable,
   browseAssetsReliable,
   batchUploadAssetsReliable,
+  searchCompendiumReliable,
+  importFromCompendiumReliable,
   runRead,
   type PipelineOptions,
   type ToolOutcome,
@@ -134,9 +136,15 @@ export async function runUpdateDocument(
 ): Promise<ToolOutcome> {
   // Drop unsafe dot-path keys from the outgoing diff so the live runtime never
   // receives a prototype-pollution path (and stays consistent with the mock,
-  // whose applyUpdate already drops them via expandObject).
-  const safe = { ...args, data: filterUnsafePaths(args.data) };
-  return projectEcho(await updateDocumentReliable(transport, safe, opts), args.fields, args.full);
+  // whose applyUpdate already drops them via expandObject). updateDocumentReliable
+  // rejects an empty-after-filtering diff itself (VALIDATION), so it doesn't
+  // need re-checking here.
+  const data = filterUnsafePaths(args.data);
+  return projectEcho(
+    await updateDocumentReliable(transport, { ...args, data }, opts),
+    args.fields,
+    args.full,
+  );
 }
 
 // --- delete_document --------------------------------------------------------
@@ -368,6 +376,8 @@ export async function runUpdateEmbedded(
 ): Promise<ToolOutcome> {
   // Each embedded diff is dot-notation too — strip unsafe keys (keeping the
   // required _id) before the entries reach the live runtime.
+  // updateEmbeddedReliable rejects any entry left with only `_id` itself
+  // (VALIDATION), so it doesn't need re-checking here.
   const data = args.data.map(
     (d) => filterUnsafePaths(d) as typeof d,
   );
@@ -441,4 +451,50 @@ export function runDeleteQuest(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return deleteQuestReliable(transport, args, opts);
+}
+
+// --- search_compendium -------------------------------------------------------
+
+export const SearchCompendiumShape = {
+  packScope: z.string().optional(),
+  documentType: DocumentType,
+  nameQuery: z.string().min(1),
+};
+const SearchCompendium = z.object(SearchCompendiumShape);
+export type SearchCompendiumArgs = z.infer<typeof SearchCompendium>;
+
+export function runSearchCompendium(
+  transport: RelayTransport,
+  args: SearchCompendiumArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return searchCompendiumReliable(transport, args, opts);
+}
+
+// --- import_from_compendium --------------------------------------------------
+
+export const ImportFromCompendiumShape = {
+  documentType: DocumentType,
+  uuid: z.string().min(1),
+  patch: documentData.optional(),
+  folderId: z.string().optional(),
+  fields: fieldsParam,
+  full: fullParam,
+};
+const ImportFromCompendium = z.object(ImportFromCompendiumShape);
+export type ImportFromCompendiumArgs = z.infer<typeof ImportFromCompendium>;
+
+export async function runImportFromCompendium(
+  transport: RelayTransport,
+  args: ImportFromCompendiumArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  // Drop unsafe dot-path keys from the outgoing patch, consistent with
+  // update_document's data and duplicate_document's overrides.
+  const safe = { ...args, patch: args.patch ? filterUnsafePaths(args.patch) : args.patch };
+  return projectEcho(
+    await importFromCompendiumReliable(transport, safe, opts),
+    args.fields,
+    args.full,
+  );
 }

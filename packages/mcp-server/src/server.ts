@@ -26,6 +26,8 @@ import {
   CreateQuestShape,
   UpdateQuestShape,
   DeleteQuestShape,
+  SearchCompendiumShape,
+  ImportFromCompendiumShape,
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
@@ -42,6 +44,8 @@ import {
   runCreateQuest,
   runUpdateQuest,
   runDeleteQuest,
+  runSearchCompendium,
+  runImportFromCompendium,
 } from "./tools.js";
 import {
   ForgeBrowseAssetsShape,
@@ -135,7 +139,7 @@ export function buildServer(
 
   register(
     "create_document",
-    "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch). The echoed result is slim by default (_id, name, _stats.modifiedTime) to save context — read-back still verifies the whole document server-side; pass full:true for the entire document, or fields:[...] for specific dot-paths.",
+    "Create a Foundry document of the given type. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback on mismatch). Rejects with VALIDATION if data (and verifyData, if given) has no fields to verify on read-back. The echoed result is slim by default (_id, name, _stats.modifiedTime) to save context — read-back still verifies the whole document server-side; pass full:true for the entire document, or fields:[...] for specific dot-paths.",
     CreateDocumentShape,
     runCreateDocument,
   );
@@ -147,7 +151,7 @@ export function buildServer(
   );
   register(
     "update_document",
-    "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true for the whole document or fields:[...] for specific paths.",
+    "Partially update a Foundry document by id (Foundry dot-notation supported). Read-back verifies the changed fields and restores on mismatch. Rejects with VALIDATION if the diff has no safe fields to apply (e.g. empty, or every key stripped as unsafe). Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true for the whole document or fields:[...] for specific paths.",
     UpdateDocumentShape,
     runUpdateDocument,
   );
@@ -159,7 +163,7 @@ export function buildServer(
   );
   register(
     "duplicate_document",
-    "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
+    "Clone an existing Foundry document by id, with optional field overrides (e.g. a new name). Runs the full reliability pipeline; rolls back the copy on read-back failure. Rejects with VALIDATION if overrides is supplied but has no safe fields to apply. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     DuplicateDocumentShape,
     runDuplicateDocument,
   );
@@ -201,7 +205,7 @@ export function buildServer(
   );
   register(
     "update_embedded",
-    "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
+    "Update embedded documents within a parent. Each entry must carry its _id. Read-back verifies against parent; restores parent on mismatch. Rejects with VALIDATION if any entry has no safe fields beyond _id to apply. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     UpdateEmbeddedShape,
     runUpdateEmbedded,
   );
@@ -254,6 +258,19 @@ export function buildServer(
     "Create a folder in The Forge asset bucket via the direct Forge REST API. Requires FORGE_USER_ID + FORGE_API_KEY. Returns { success }.",
     ForgeCreateFolderShape,
     runForgeCreateFolder,
+  );
+
+  register(
+    "search_compendium",
+    "Search compendium entries by name and document type. Returns array of { uuid, pack, name, type, cr? }. Read-only (no dry-run phase).",
+    SearchCompendiumShape,
+    runSearchCompendium,
+  );
+  register(
+    "import_from_compendium",
+    "Clone a compendium entry into the world by UUID, optionally applying a dot-notation patch. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback). Rejects with VALIDATION if patch is supplied but has no safe fields to apply. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
+    ImportFromCompendiumShape,
+    runImportFromCompendium,
   );
 
   return server;

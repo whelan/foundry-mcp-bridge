@@ -93,12 +93,16 @@ describe("RelayServer end-to-end (real WebSocket)", () => {
       setTimeout(() => resolve(false), 300);
     });
     expect(closed).toBe(true);
-    // With no authenticated client, requests time out.
+    // With no authenticated client, requests time out. data must be non-empty
+    // -- an empty diff is now rejected before any transport contact, which
+    // would pass this assertion for the wrong reason without ever exercising
+    // the no-authenticated-client timeout path this test is meant to cover.
     const out = await runCreateDocument(
       server,
-      { documentType: "Actor", data: {} },
+      { documentType: "Actor", data: { name: "Bob" } },
       { token: TOKEN, timeoutMs: 50 },
     );
     expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe("TIMEOUT");
   });
 });

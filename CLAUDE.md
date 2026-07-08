@@ -20,6 +20,8 @@ npm run test:watch    # vitest (watch)
 npm run bundle:module # build + esbuild the Foundry module -> packages/foundry-module/dist/index.js
 npm run selftest      # build + run the real server->relay->module->read-back path end-to-end
 npm run install:foundry  # bundle the module and install it into a local Foundry
+npm run lint:statblock -- path/to/note.md  # check a statblock note against the 2024-only grammar
+npm run bundle:write-statblock-skill  # regenerate .claude/skills/write-statblock/'s portable .cjs bundle
 ```
 
 Run a single test file or test:
@@ -42,6 +44,12 @@ doubles until they're updated). For a change that touches the live path, also ru
   end-to-end. Walks the lockstep across all layers so typecheck and tests stay green.
 - **`verify-bridge`** — the verification gate (build → typecheck → test → selftest) in the
   right order, including why `npm test` alone is insufficient.
+- **`write-statblock`** — writing (or editing) an Obsidian Fantasy Statblocks note and
+  linting it against the 2024-only action grammar (`npm run lint:statblock`) before import,
+  since 2014-style text silently becomes a non-rollable feat with no error. The skill folder
+  ships a bundled, dependency-free `lint-statblock.bundle.cjs` (regenerated via
+  `npm run bundle:write-statblock-skill`) so it can be copied wholesale into another repo
+  (e.g. an Obsidian vault repo) and run with bare `node`, no monorepo required.
 
 ## Architecture
 

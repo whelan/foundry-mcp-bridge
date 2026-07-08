@@ -12,6 +12,9 @@ export default defineConfig({
       "@foundry-mcp-bridge/campaign-sync": fileURLToPath(
         new URL("./packages/campaign-sync/src/index.ts", import.meta.url),
       ),
+      "@foundry-mcp-bridge/statblock-sync": fileURLToPath(
+        new URL("./packages/statblock-sync/src/index.ts", import.meta.url),
+      ),
     },
   },
   test: {

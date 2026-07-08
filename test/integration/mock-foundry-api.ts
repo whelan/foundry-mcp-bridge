@@ -20,6 +20,7 @@ import {
   type FindSelector,
   type FoundryDocumentApi,
   type WorldInfo,
+  type CompendiumEntry,
 } from "../../packages/foundry-module/src/protocol-executor.js";
 
 let seq = 0;
@@ -122,6 +123,18 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
     },
     async deleteQuest(id, opts) {
       await run({ action: "deleteQuest", id }, opts);
+    },
+    async searchCompendium(packScope, documentType, nameQuery) {
+      return (await run(
+        { action: "searchCompendium", packScope, documentType, nameQuery },
+        { dryRun: false },
+      )) as CompendiumEntry[];
+    },
+    async importFromCompendium(documentType, uuid, patch, folderId, opts) {
+      return (await run(
+        { action: "importFromCompendium", documentType, uuid, patch, folderId },
+        opts,
+      )) as DocData;
     },
   } satisfies FoundryDocumentApi;
 }

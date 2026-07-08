@@ -6,7 +6,7 @@
  * protocol logic is tested against the mock. Kept thin and obvious on purpose.
  */
 
-import { COLLECTIONS, getByPath, assetBaseName, type DocumentType } from "@foundry-mcp-bridge/shared";
+import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, type DocumentType } from "@foundry-mcp-bridge/shared";
 import type {
   ExecuteOptions,
   FindSelector,
@@ -14,8 +14,10 @@ import type {
   UploadAssetParams,
   BatchUploadAssetsParams,
   WorldInfo,
+  CompendiumEntry,
 } from "./protocol-executor.js";
 import { CommandExecutionError } from "./protocol-executor.js";
+import { ensureDirectory } from "./ensure-directory.js";
 
 export const MODULE_ID = "foundry-mcp-bridge";
 
@@ -174,6 +176,9 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       const target = params.target.replace(/\/$/, "");
       // Dry-run: don't write the file; return the path it would land at.
       if (opts.dryRun) return { path: `${target}/${params.filename}` };
+      // Unlike the mock, real FilePicker.upload fails silently (no path, no
+      // throw) when target doesn't exist yet — create it first.
+      await ensureDirectory(FilePicker as any, params.source, target);
       const bytes = Uint8Array.from(atob(params.contentBase64), (c) => c.charCodeAt(0));
       const file = new File([bytes], params.filename, params.mimeType ? { type: params.mimeType } : undefined);
       const result = await (FilePicker as any).upload(params.source, target, file, {});
@@ -204,6 +209,9 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       if (opts.dryRun) {
         return params.files.map((f) => ({ filename: f.filename, path: `${target}/${f.filename}` }));
       }
+      // Unlike the mock, real FilePicker.upload/browse fail on a target that
+      // doesn't exist yet — create it first.
+      await ensureDirectory(FilePicker as any, params.source, target);
       // Optional skip: pre-browse the directory to find existing files. Match by
       // basename, not full path: on The Forge `FilePicker.browse("forgevtt", …)`
       // returns absolute CDN URLs (with the user-id prefix / query strings) rather
@@ -347,6 +355,69 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
           await entry.delete();
         }
       }
+    },
+
+    async searchCompendium(packScope, documentType, nameQuery) {
+      // Search in world and compendium packs (default to dnd5e if not specified).
+      // `pack.metadata.name` is the pack's own short slug (e.g. "actors24"); the
+      // fully-qualified `<package>.<name>` id used for scoping is `pack.collection`.
+      const scope = packScope ?? "dnd5e";
+      const query = nameQuery.toLowerCase();
+      const matchingPacks = game.packs.filter(
+        (pack: any) => pack.collection.startsWith(`${scope}.`) && pack.metadata.type === documentType,
+      );
+      // Each pack's index fetch is an independent I/O call; run them concurrently.
+      const results = await Promise.all(
+        matchingPacks.map(async (pack: any) => {
+          const index = await pack.getIndex();
+          const entries: CompendiumEntry[] = [];
+          for (const entry of index) {
+            if (String(entry.name ?? "").toLowerCase().includes(query)) {
+              entries.push({
+                uuid: entry.uuid ?? `Compendium.${pack.collection}.${entry._id}`,
+                pack: pack.collection,
+                name: String(entry.name ?? ""),
+                type: String(entry.type ?? documentType),
+                cr: typeof entry.cr === "number" ? entry.cr : undefined,
+              });
+            }
+          }
+          return entries;
+        }),
+      );
+      return results.flat();
+    },
+
+    async importFromCompendium(documentType, uuid, patch, folderId, opts) {
+      let source;
+      try {
+        source = await fromUuid(uuid);
+      } catch (e) {
+        // fromUuid can throw for reasons other than "doesn't exist" (a
+        // malformed uuid, an unindexed pack) -- keep NOT_FOUND as the code
+        // (still the most useful default) but preserve the real message
+        // instead of discarding it, so a genuine failure is diagnosable.
+        // (e isn't guaranteed to be an Error instance -- a thrown string or
+        // plain object would silently yield `.message === undefined`.)
+        throw new CommandExecutionError(
+          "NOT_FOUND",
+          `compendium entry ${uuid} not found`,
+          { cause: e instanceof Error ? e.message : String(e) },
+        );
+      }
+      if (!source) {
+        throw new CommandExecutionError("NOT_FOUND", `compendium entry ${uuid} not found`);
+      }
+      const data = patch ? applyUpdate(source.toObject(), patch) : source.toObject();
+      if (folderId) {
+        data.folder = folderId;
+      }
+      const cls = getDocumentClass(documentType);
+      if (opts.dryRun) {
+        return new cls(data).toObject();
+      }
+      const doc = await cls.create(data);
+      return doc.toObject();
     },
   } satisfies FoundryDocumentApi;
 }

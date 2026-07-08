@@ -11,4 +11,5 @@ declare const FilePicker: any;
 declare const CONFIG: any;
 declare const ui: any;
 declare function getDocumentClass(name: string): any;
+declare function fromUuid(uuid: string): Promise<any>;
 declare const WebSocket: { new (url: string): any };

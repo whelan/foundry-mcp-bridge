@@ -1,12 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { PROTOCOL_VERSION } from "@foundry-mcp-bridge/shared";
-import type { Command, CommandEnvelope, CommandError } from "@foundry-mcp-bridge/shared";
+import type { Command, CommandError } from "@foundry-mcp-bridge/shared";
 import { MockFoundry } from "./mock-foundry.js";
-import {
-  type RelayTransport,
-  type RequestOptions,
-  withTimeout,
-} from "../../packages/mcp-server/src/relay-transport.js";
+import { MockTransport } from "./mock-transport.js";
 import type { ToolOutcome } from "../../packages/mcp-server/src/reliability.js";
 import {
   runCreateDocument,
@@ -23,58 +19,9 @@ import {
   runDeleteEmbedded,
   runCreateQuest,
   runUpdateQuest,
+  runSearchCompendium,
+  runImportFromCompendium,
 } from "../../packages/mcp-server/src/tools.js";
-
-/** Transport that drives the mock-foundry, with hooks to exercise the pipeline. */
-class MockTransport implements RelayTransport {
-  corruptReadBack = false;
-  /** Fail the Nth `find` (1-indexed) with NOT_FOUND; null disables. Lets tests
-   *  target the read-back find specifically (e.g. after an update's pre-read). */
-  failFindAtCall: number | null = null;
-  /** Strip the Nth `find` result to just `{_id}`, so read-back verification fails
-   *  even though the find succeeded (e.g. an embedded change that didn't land). */
-  corruptFindAtCall: number | null = null;
-  /** Strip quest write echoes to `{_id}`, simulating module normalization — a
-   *  content-verify (if it existed) would then false-fail. */
-  corruptQuestWrite = false;
-  private findCalls = 0;
-  constructor(private readonly mock: MockFoundry) {}
-
-  async request(envelope: CommandEnvelope, opts?: RequestOptions) {
-    const exec = (async () => {
-      const action = envelope.command.action;
-      const isFind = action === "find";
-      if (isFind) {
-        this.findCalls += 1;
-        if (this.findCalls === this.failFindAtCall) {
-          return {
-            id: envelope.id,
-            ok: false as const,
-            error: { code: "NOT_FOUND" as const, message: "read-back failed" },
-          };
-        }
-      }
-      // Clone like the real WebSocket transport serializes results, so callers
-      // never alias the mock's live store (e.g. an update's pre-read snapshot).
-      const res = structuredClone(await this.mock.execute(envelope));
-      const isQuestWrite =
-        !envelope.dryRun && (action === "createQuest" || action === "updateQuest");
-      const corrupt =
-        res.ok &&
-        ((isFind && (this.corruptReadBack || this.findCalls === this.corruptFindAtCall)) ||
-          (isQuestWrite && this.corruptQuestWrite));
-      if (corrupt) {
-        this.corruptReadBack = false;
-        // Strip everything but the id; a content read-back/verify would fail here.
-        return { id: res.id, ok: true as const, data: { _id: (res.data as { _id: string })._id } };
-      }
-      return res;
-    })();
-    return opts?.timeoutMs ? withTimeout(exec, opts.timeoutMs) : exec;
-  }
-
-  close(): void {}
-}
 
 function setup() {
   const mock = new MockFoundry();
@@ -194,6 +141,18 @@ describe("create_document pipeline", () => {
     );
     expectErr(out, "TIMEOUT");
   });
+
+  it("rejects an empty data instead of a vacuously-verified create", async () => {
+    // Regression test: create's data isn't run through filterUnsafePaths, so
+    // an empty object can only be the caller's own doing. Unlike
+    // duplicate/import, there's no weaker name/type fallback available for a
+    // document created from nothing, so this must be rejected before any
+    // write happens -- confirmed below by asserting nothing was created.
+    const { mock, transport } = setup();
+    const out = await runCreateDocument(transport, { documentType: "Actor", data: {} });
+    expectErr(out, "VALIDATION");
+    expect(mock.documents("Actor").length).toBe(0);
+  });
 });
 
 describe("create_scene pipeline", () => {
@@ -253,6 +212,28 @@ describe("update_document pipeline", () => {
     const actor = mock.documents("Actor")[0] as { name: string };
     expect(actor.name).toBe("Renamed"); // safe key applied
     expect(({} as Record<string, unknown>).polluted).toBeUndefined(); // unsafe key never sent
+  });
+
+  it("rejects a diff with no safe fields instead of silently no-op succeeding", async () => {
+    // Regression test: if every key is stripped as unsafe (or the diff was
+    // empty to begin with), the write is a no-op and read-back trivially
+    // "verifies" it -- reporting success while discarding the caller's
+    // actual intent. This must fail loudly instead.
+    const { mock, transport } = setup();
+    await seed(mock, {
+      action: "create",
+      documentType: "Actor",
+      data: { _id: "a1", name: "Bob" },
+      keepId: true,
+    });
+    const out = await runUpdateDocument(transport, {
+      documentType: "Actor",
+      id: "a1",
+      data: { "__proto__.polluted": "x" },
+    });
+    expectErr(out, "VALIDATION");
+    const actor = mock.documents("Actor")[0] as { name: string };
+    expect(actor.name).toBe("Bob"); // untouched
   });
 });
 
@@ -423,6 +404,23 @@ describe("update_embedded pipeline", () => {
     const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
     expect(scene.tokens[0]!.x).toBe(250); // safe key applied
     expect(({} as Record<string, unknown>).polluted).toBeUndefined(); // unsafe key never sent
+  });
+
+  it("rejects an entry with no safe fields beyond _id instead of silently no-op succeeding", async () => {
+    // Regression test: an entry stripped down to just {_id} is found by that
+    // same _id on read-back, so isSubset(actual, {_id}) trivially passes --
+    // reporting success while nothing was actually changed. Must fail loudly.
+    const { mock, transport } = setup();
+    await seedSceneWithToken(mock);
+    const out = await runUpdateEmbedded(transport, {
+      parentType: "Scene",
+      parentId: "s1",
+      embeddedName: "Token",
+      data: [{ _id: "t1", "__proto__.polluted": "x" }],
+    });
+    expectErr(out, "VALIDATION");
+    const scene = mock.documents("Scene")[0] as { tokens: Array<{ x: number }> };
+    expect(scene.tokens[0]!.x).toBe(0); // untouched
   });
 
   it("restores the prior embedded state when parent read-back fails", async () => {
@@ -732,6 +730,187 @@ describe("duplicate_document pipeline", () => {
     expect(out.steps).toContain("rollback");
     // Only the original survives; the rolled-back copy is gone.
     expect(mock.documents("Actor").length).toBe(1);
+  });
+
+  it("rejects overrides with no safe fields instead of silently cloning as-is", async () => {
+    // Regression test: overrides is optional (undefined = clone as-is is fine),
+    // but if the caller explicitly supplied overrides and every key was
+    // stripped as unsafe, silently falling back to a plain clone would drop
+    // the caller's actual intent with no error.
+    const { mock, transport } = setup();
+    await seedGoblin(mock);
+    const out = await runDuplicateDocument(transport, {
+      documentType: "Actor",
+      id: "g1",
+      overrides: { "__proto__.polluted": "x" },
+    });
+    expectErr(out, "VALIDATION");
+    // No clone was created -- rejected before the pipeline ever ran.
+    expect(mock.documents("Actor").length).toBe(1);
+  });
+
+  it("rejects a literal empty overrides object the same way", async () => {
+    // A caller-supplied {} (not something filterUnsafePaths stripped down to
+    // empty) must be rejected identically -- isEmptyDiff doesn't care why the
+    // object is empty, and both are equally "supplied but nothing to apply".
+    const { mock, transport } = setup();
+    await seedGoblin(mock);
+    const out = await runDuplicateDocument(transport, { documentType: "Actor", id: "g1", overrides: {} });
+    expectErr(out, "VALIDATION");
+    expect(mock.documents("Actor").length).toBe(1);
+  });
+});
+
+describe("search_compendium / import_from_compendium pipeline", () => {
+  const GRAVEMIRE_UUID = "Compendium.dnd5e.actors24.gravemire-stalker";
+
+  it("finds a fixture by name and document type", async () => {
+    const { transport } = setup();
+    const out = await runSearchCompendium(transport, { documentType: "Actor", nameQuery: "Gravemire" });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const results = out.data as Array<{ uuid: string; pack: string; name: string; type: string; cr?: number }>;
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      uuid: GRAVEMIRE_UUID,
+      pack: "dnd5e.actors24",
+      name: "Gravemire Stalker",
+      // The result's `type` is the fixture's real game-system subtype, not the
+      // top-level DocumentType ("Actor") — guards against the two being conflated.
+      type: "npc",
+      // Lives at system.details.cr on the actor doc, not a top-level field —
+      // guards against reading the wrong path and always getting undefined.
+      cr: 3,
+    });
+  });
+
+  it("excludes matches of the wrong document type", async () => {
+    const { transport } = setup();
+    const out = await runSearchCompendium(transport, { documentType: "Item", nameQuery: "Gravemire" });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.data).toEqual([]);
+  });
+
+  it("excludes matches outside the requested pack scope", async () => {
+    const { transport } = setup();
+    const out = await runSearchCompendium(transport, {
+      documentType: "Actor",
+      nameQuery: "Gravemire",
+      packScope: "pf2e",
+    });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.data).toEqual([]);
+  });
+
+  it("imports a compendium fixture into the world with a fresh id", async () => {
+    const { mock, transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: GRAVEMIRE_UUID,
+      fields: ["_id", "name", "type"],
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write", "read-back"]);
+    if (!out.ok) return;
+    const imported = out.data as { _id: string; name: string; type: string };
+    expect(imported.name).toBe("Gravemire Stalker");
+    expect(imported.type).toBe("npc");
+    expect(imported._id).not.toBe("gravemire-stalker");
+    expect(mock.documents("Actor").some((a) => (a as { _id: string })._id === imported._id)).toBe(true);
+  });
+
+  it("applies a patch and verifies it survives read-back", async () => {
+    const { transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: GRAVEMIRE_UUID,
+      patch: { name: "Patched Stalker" },
+    });
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect((out.data as { name: string }).name).toBe("Patched Stalker");
+  });
+
+  it("applies a dot-notation patch without a false READBACK_MISMATCH", async () => {
+    // Regression test: the read-back check must expand a dot-notation patch
+    // before comparing against the (nested) read-back document, or every
+    // multi-segment patch key spuriously fails and the import gets rolled back.
+    const { transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: GRAVEMIRE_UUID,
+      patch: { "system.attributes.hp.value": 1 },
+      fields: ["_id", "system.attributes.hp.value"],
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write", "read-back"]);
+    if (!out.ok) return;
+    const data = out.data as { system: { attributes: { hp: { value: number } } } };
+    expect(data.system.attributes.hp.value).toBe(1);
+  });
+
+  it("returns NOT_FOUND for an unknown uuid", async () => {
+    const { transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: "Compendium.dnd5e.actors24.does-not-exist",
+    });
+    expectErr(out, "NOT_FOUND");
+  });
+
+  it("rejects a patch with no safe fields instead of silently importing as-is", async () => {
+    // Regression test: patch is optional (undefined = clone as-is is fine),
+    // but if the caller explicitly supplied a patch and every key was
+    // stripped as unsafe, silently falling back to a plain import would drop
+    // the caller's actual intent with no error.
+    const { mock, transport } = setup();
+    const out = await runImportFromCompendium(transport, {
+      documentType: "Actor",
+      uuid: GRAVEMIRE_UUID,
+      patch: { "__proto__.polluted": "x" },
+    });
+    expectErr(out, "VALIDATION");
+    // No import happened -- rejected before the pipeline ever ran.
+    expect(mock.documents("Actor").length).toBe(0);
+  });
+
+  it("rejects a literal empty patch object the same way", async () => {
+    // A caller-supplied {} (not something filterUnsafePaths stripped down to
+    // empty) must be rejected identically -- isEmptyDiff doesn't care why the
+    // object is empty, and both are equally "supplied but nothing to apply".
+    const { mock, transport } = setup();
+    const out = await runImportFromCompendium(transport, { documentType: "Actor", uuid: GRAVEMIRE_UUID, patch: {} });
+    expectErr(out, "VALIDATION");
+    expect(mock.documents("Actor").length).toBe(0);
+  });
+
+  it("does not leak embedded-item mutations back into the compendium fixture", async () => {
+    const { mock, transport } = setup();
+    const first = await runImportFromCompendium(transport, { documentType: "Actor", uuid: GRAVEMIRE_UUID });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const firstId = (first.data as { _id: string })._id;
+
+    const embed = await runCreateEmbedded(transport, {
+      parentType: "Actor",
+      parentId: firstId,
+      embeddedName: "Item",
+      data: [{ name: "Phantom Item", type: "weapon" }],
+    });
+    expect(embed.ok).toBe(true);
+
+    // A second, independent import from the same fixture must be unaffected
+    // by the first import's later mutation.
+    const second = await runImportFromCompendium(transport, { documentType: "Actor", uuid: GRAVEMIRE_UUID });
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    const secondId = (second.data as { _id: string })._id;
+    const secondDoc = mock.documents("Actor").find((a) => (a as { _id: string })._id === secondId) as {
+      items?: unknown[];
+    };
+    expect(secondDoc.items).toHaveLength(5);
   });
 });
 

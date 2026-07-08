@@ -1,0 +1,15 @@
+/**
+ * Public API for the statblock-sync module.
+ */
+
+export * from "./schema.js";
+export * from "./parse.js";
+export * from "./math.js";
+export * from "./grammar.js";
+export * from "./activities.js";
+export * from "./to-foundry.js";
+export * from "./utils.js";
+export * from "./match.js";
+export * from "./import-npc.js";
+export * from "./verify-npc.js";
+export * from "./compat.js";

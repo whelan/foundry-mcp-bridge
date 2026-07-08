@@ -5,10 +5,22 @@
 //
 // This is the same path the live system uses; only the world behind the module
 // is replaced by an in-memory store.
+//
+// --live: instead of spinning up an in-process stub relay + fake module, binds
+// to the *real* relay (RELAY_URL/RELAY_TOKEN, same config the real MCP server
+// reads) and waits for your actual Foundry module to connect. Only the M6 NPC
+// leg runs in this mode (the M0-M5 legs above aren't cleaned up and would
+// litter a real world). This is the M6a/M6c gate from
+// docs/statblock-import-execution-plan.md: run
+//   npm run install:foundry
+//   node scripts/selftest.mjs --live
+// with Foundry open, the module enabled, and its Module Settings relay URL
+// matching RELAY_URL (default ws://localhost:8787).
 
 import { WebSocket } from "ws";
 import {
   RelayServer,
+  loadConfig,
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
@@ -21,9 +33,13 @@ import {
   runBatchUploadAssets,
   runCreateEmbedded,
   runCreateQuest,
+  runSearchCompendium,
+  runImportFromCompendium,
 } from "../packages/mcp-server/dist/index.js";
 // Reuse the real dot-notation merge + embedded-field mapping instead of re-implementing them.
 import { applyUpdate, embeddedField } from "@foundry-mcp-bridge/shared";
+import { parseStatblock, importNpc, verifyImportedNpc } from "@foundry-mcp-bridge/statblock-sync";
+import fs from "fs";
 
 // --- tiny in-memory "Foundry" stub (stands in for the module) ---------------
 const store = new Map(); // `${type}:${id}` -> doc
@@ -115,15 +131,25 @@ function handle(env) {
     }
     case "createQuest":
       return ok({ ...(c.data || {}), _id: rid() });
+    case "searchCompendium":
+      // Return a dummy result for testing (real implementation loads from fixtures)
+      return ok([{ uuid: "Compendium.dnd5e.actors24.dummy", pack: "dnd5e.actors24", name: "Dummy", type: "Actor" }]);
+    case "importFromCompendium": {
+      // Simulate importing from compendium, honoring an optional patch so the
+      // reliability pipeline's read-back verification is meaningfully exercised.
+      const _id = rid();
+      const base = { name: "Imported Document", type: c.documentType };
+      const doc = { ...(c.patch ? applyUpdate(base, c.patch) : base), _id };
+      if (!env.dryRun) store.set(`${c.documentType}:${_id}`, doc);
+      return ok(doc);
+    }
     default:
       return err("UNSUPPORTED", c.action);
   }
 }
 
-const TOKEN = "selftest";
-// Pass a trace logger so the selftest also exercises (and demonstrates) the
-// per-command trace the real server emits to stderr.
-const opts = { token: TOKEN, timeoutMs: 2000, log: (line) => console.log(line) };
+const live = process.argv.includes("--live");
+
 let failed = false;
 const show = (name, out) => {
   if (!out.ok) failed = true;
@@ -132,6 +158,114 @@ const show = (name, out) => {
   console.log(`${out.ok ? "PASS" : "FAIL"}  ${name}${steps}${e}`);
   return out;
 };
+
+// M6: NPC import leg (full pipeline: parse → upload image → importNpc → verify → clean up).
+// Shared by mock mode (in-process stub) and --live mode (real relay + module) —
+// only what's on the other end of `server` differs.
+async function runNpcLeg(server, opts) {
+  const statblockPath = "test/fixtures/statblock-import/gravemire-stalker.md";
+  const imagePath = "test/fixtures/statblock-import/gravemire-stalker.png";
+
+  const statblock = parseStatblock(fs.readFileSync(statblockPath, "utf-8"));
+  const imageContent = fs.readFileSync(imagePath);
+  const imageBase64 = imageContent.toString("base64");
+
+  const importResult = await importNpc(statblock, {
+    async searchCompendium(nameQuery) {
+      const res = await runSearchCompendium(server, { documentType: "Actor", nameQuery }, opts);
+      if (!res.ok) throw new Error(`searchCompendium failed: ${res.error.code}`);
+      return res.data || [];
+    },
+    async importFromCompendium(uuid, patch) {
+      const res = await runImportFromCompendium(server, { documentType: "Actor", uuid, patch }, opts);
+      if (!res.ok) throw new Error(`importFromCompendium failed: ${res.error.code}`);
+      return res.data;
+    },
+    async createDocument(data) {
+      const res = await runCreateDocument(server, { documentType: "Actor", data }, opts);
+      if (!res.ok) throw new Error(`createDocument failed: ${res.error.code}`);
+      return res.data;
+    },
+    async uploadImage(filename, contentBase64, targetFolder) {
+      const res = await runUploadAsset(server, { source: "data", target: targetFolder, filename, contentBase64 }, opts);
+      if (!res.ok) throw new Error(`uploadAsset failed: ${res.error.code}`);
+      return res.data.path;
+    },
+  }, { filename: "gravemire-stalker.png", contentBase64: imageBase64 });
+
+  // Read back the imported actor and verify
+  const readBackRes = await runFindDocuments(server, { documentType: "Actor", id: importResult.actorId }, opts);
+  if (!readBackRes.ok) throw new Error(`find actor failed: ${readBackRes.error.code}`);
+  const readBack = readBackRes.data;
+
+  const verification = verifyImportedNpc(readBack, statblock);
+
+  // Show the verification report
+  const passCount = verification.checks.filter((c) => c.pass).length;
+  const failCount = verification.checks.filter((c) => !c.pass).length;
+  console.log(`\nM6 NPC import verification: ${passCount}/${verification.checks.length} passed`);
+  if (failCount > 0) {
+    console.log("Failed checks:");
+    verification.checks.filter((c) => !c.pass).forEach((c) => {
+      console.log(`  ✗ ${c.name}: got ${c.got}, want ${c.want}`);
+    });
+  }
+
+  // Clean up: delete the actor and uploaded assets (selftest must stay non-destructive).
+  await runDeleteDocument(server, { documentType: "Actor", id: importResult.actorId }, opts);
+
+  show(
+    "import_npc (M6 NPC leg)",
+    verification.ok
+      ? { ok: true, steps: [`verified ${passCount}/${verification.checks.length} checks`] }
+      : {
+          ok: false,
+          error: {
+            code: "VERIFICATION_FAILED",
+            message: verification.checks.filter((c) => !c.pass).map((c) => c.name).join(", "),
+          },
+        },
+  );
+}
+
+if (live) {
+  // --live: bind to the REAL relay (same config the real MCP server reads) and
+  // wait for your actual Foundry module to connect. No in-process stub here —
+  // commands really travel server -> relay -> your Foundry world.
+  const config = loadConfig();
+  const opts = { token: config.relayToken, timeoutMs: 20_000, log: (line) => console.log(line) };
+  const server = new RelayServer({
+    url: config.relayUrl,
+    token: config.relayToken,
+    defaultTimeoutMs: 20_000,
+  });
+  await server.listening();
+  console.log(
+    `relay listening on ${config.relayUrl}; waiting up to ${opts.timeoutMs}ms for your ` +
+      `Foundry module to connect (open the world, module enabled, Module Settings relay ` +
+      `URL matching this address)...\n`,
+  );
+
+  try {
+    await runNpcLeg(server, opts);
+  } catch (e) {
+    console.error("NPC import leg error:", e.message);
+    failed = true;
+  }
+
+  server.close();
+  console.log(
+    failed
+      ? "\nSELFTEST (--live) FAILED"
+      : "\nSELFTEST (--live) PASSED — MCP server -> relay -> module -> read-back all working against your real Foundry world.",
+  );
+  process.exit(failed ? 1 : 0);
+}
+
+const TOKEN = "selftest";
+// Pass a trace logger so the selftest also exercises (and demonstrates) the
+// per-command trace the real server emits to stderr.
+const opts = { token: TOKEN, timeoutMs: 2000, log: (line) => console.log(line) };
 
 const server = new RelayServer({ url: "ws://localhost:0", token: TOKEN, defaultTimeoutMs: 2000 });
 const port = await server.listening();
@@ -161,6 +295,16 @@ show("create_document (Scene parent)", await runCreateDocument(server, { documen
 show("create_embedded (Token)", await runCreateEmbedded(server, { parentType: "Scene", parentId: "scene-self", embeddedName: "Token", data: [{ name: "Goblin" }] }, opts));
 show("create_quest", await runCreateQuest(server, { data: { name: "Find the Amulet" } }, opts));
 show("delete_document", await runDeleteDocument(server, { documentType: "Actor", id: newId }, opts));
+show("search_compendium (Goblin)", await runSearchCompendium(server, { documentType: "Actor", nameQuery: "Goblin" }, opts));
+show("import_from_compendium (Tier 1)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy" }, opts));
+show("import_from_compendium (Tier 1, with patch)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy", patch: { name: "Patched Goblin" } }, opts));
+
+try {
+  await runNpcLeg(server, opts);
+} catch (e) {
+  console.error("NPC import leg error:", e.message);
+  failed = true;
+}
 
 ws.close();
 server.close();

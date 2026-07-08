@@ -98,6 +98,10 @@ function commandSummary(c: Command): string {
       return `batch-upload ${c.files.length} → ${c.target}`;
     case "getWorldInfo":
       return "";
+    case "searchCompendium":
+      return `${c.documentType} nameQuery=${c.nameQuery}`;
+    case "importFromCompendium":
+      return `uuid=${c.uuid.slice(0, 20)}...`;
   }
 }
 
@@ -122,12 +126,68 @@ function fail(steps: string[], error: CommandError): ToolOutcome {
   return { ok: false, error, steps };
 }
 
+/**
+ * Structured VALIDATION failure for input rejected before the pipeline runs
+ * at all — no transport contact, nothing to roll back. Used to reject a
+ * caller-supplied diff/patch/overrides/data object that's empty (see
+ * `isEmptyDiff`): for update/duplicate/import/updateEmbedded that would
+ * otherwise be a no-op write reading back as "unchanged" and reporting
+ * success; for create, an empty `expected` would make `isSubset` vacuously
+ * pass regardless of what was actually written. Either way the caller's
+ * intent is silently dropped without this guard. Enforced inside each
+ * `xxxReliable` function itself (not just at the tools.ts boundary) so any
+ * future direct caller gets the guard for free, instead of a raw
+ * `ToolOutcome` object literal duplicated at every call site.
+ */
+function validationFailure(message: string): ToolOutcome {
+  return fail(["validate"], { code: "VALIDATION", message });
+}
+
+/** True when a dot-notation object was supplied but has nothing safe left to
+ * apply beyond `ignoreKeys` (e.g. every real key was stripped by
+ * `filterUnsafePaths`, or the caller passed `{}` outright). `undefined`
+ * itself is not empty in this sense — it means "not supplied", which is
+ * legitimate wherever the field is optional (duplicate's overrides, import's
+ * patch); only a *supplied-but-empty* object is the caller-intent-silently-
+ * dropped case this predicate exists to catch. `ignoreKeys` lets a per-entry
+ * check (e.g. an embedded diff's required `_id`) share this same predicate
+ * instead of hand-rolling its own threshold. */
+function isEmptyDiff(data: Json | undefined, ignoreKeys: string[] = []): boolean {
+  if (data === undefined) return false;
+  return Object.keys(data).filter((k) => !ignoreKeys.includes(k)).length === 0;
+}
+
 function idOf(data: unknown): string | undefined {
   if (data && typeof data === "object" && "_id" in data) {
     const id = (data as { _id: unknown })._id;
     if (typeof id === "string" && id) return id;
   }
   return undefined;
+}
+
+/**
+ * Fallback read-back check for clone-shaped mutations (duplicate, import) that
+ * have no caller-supplied data to verify against: confirm the write's own
+ * name (or, failing that, type) survived the read-back. An empty object would
+ * make `isSubset` vacuously pass, silently disabling the mismatch/rollback
+ * safety net, so this only degrades to `{}` when neither field is present.
+ */
+function nameOrTypeFallback(written: unknown): Json {
+  const w = written as { name?: unknown; type?: unknown } | null;
+  if (typeof w?.name === "string") return { name: w.name };
+  if (typeof w?.type === "string") return { type: w.type };
+  return {};
+}
+
+/**
+ * Resolves a clone-shaped mutation's `expected`: expands a non-empty
+ * caller-supplied dot-notation object (so `isSubset` matches the nested
+ * read-back document instead of a literal "a.b.c" key), or falls back to
+ * `nameOrTypeFallback` when absent or empty — see its doc comment for why
+ * empty must never be used directly as `expected`.
+ */
+function expectedFromOverrides(overrides: Json | undefined): Json | ((written: unknown) => Json) {
+  return overrides && !isEmptyDiff(overrides) ? expandObject(overrides) : nameOrTypeFallback;
 }
 
 /**
@@ -175,8 +235,13 @@ async function runTerminal(
 interface Mutation {
   documentType: DocumentType;
   mutate: Command;
-  /** Fields the read-back must contain (subset match). */
-  expected: Json;
+  /**
+   * Fields the read-back must contain (subset match). Most callers know this
+   * up front (the data they sent); a few (e.g. import) only know it depends on
+   * what the write actually echoed back, so a function of the write result is
+   * also accepted.
+   */
+  expected: Json | ((written: unknown) => Json);
   /** Known target id (updates); creates derive it from the write result. */
   knownId?: string;
   /** Rollback command run when read-back fails. */
@@ -198,6 +263,8 @@ async function runMutation(
   const id = m.knownId ?? idOf(written);
   if (!id) return fail(steps, { code: "INTERNAL", message: "write returned no _id" });
 
+  const expected = typeof m.expected === "function" ? m.expected(written) : m.expected;
+
   steps.push("read-back");
   const readBack = await send(
     transport,
@@ -205,13 +272,13 @@ async function runMutation(
     false,
     opts,
   );
-  if (!readBack.ok || !isSubset(readBack.data, m.expected)) {
+  if (!readBack.ok || !isSubset(readBack.data, expected)) {
     steps.push("rollback");
     await send(transport, m.rollback(id), false, opts);
     return fail(steps, {
       code: "READBACK_MISMATCH",
       message: m.mismatchMessage,
-      details: { id, expected: m.expected, actual: readBack.ok ? readBack.data : null },
+      details: { id, expected, actual: readBack.ok ? readBack.data : null },
     });
   }
 
@@ -227,11 +294,19 @@ export interface CreateDocumentInput {
   keepId?: boolean;
 }
 
-export function createDocumentReliable(
+export async function createDocumentReliable(
   transport: RelayTransport,
   input: CreateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // Unlike duplicate/import, a document created from nothing has no
+  // name/type for nameOrTypeFallback to degrade to, so an empty data/
+  // verifyData must be rejected outright (see validationFailure/isEmptyDiff).
+  const expected = input.verifyData ?? input.data;
+  if (isEmptyDiff(expected)) {
+    return validationFailure("create data has no fields to verify on read-back");
+  }
+
   return runMutation(
     transport,
     {
@@ -242,7 +317,7 @@ export function createDocumentReliable(
         data: input.data,
         keepId: input.keepId,
       },
-      expected: input.verifyData ?? input.data,
+      expected,
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "created document did not match the requested data; rolled back",
     },
@@ -262,6 +337,12 @@ export async function updateDocumentReliable(
   input: UpdateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // data is required, so empty here always means "nothing safe survived
+  // filtering" (see validationFailure/isEmptyDiff).
+  if (isEmptyDiff(input.data)) {
+    return validationFailure("update data has no safe fields to apply");
+  }
+
   const steps: string[] = [];
 
   // Pre-read for existence and as the rollback baseline.
@@ -329,11 +410,17 @@ export interface DuplicateDocumentInput {
   overrides?: Json;
 }
 
-export function duplicateDocumentReliable(
+export async function duplicateDocumentReliable(
   transport: RelayTransport,
   input: DuplicateDocumentInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // overrides is optional (undefined = clone as-is); only reject when
+  // explicitly supplied but empty (see isEmptyDiff).
+  if (isEmptyDiff(input.overrides)) {
+    return validationFailure("duplicate overrides has no safe fields to apply");
+  }
+
   return runMutation(
     transport,
     {
@@ -345,8 +432,9 @@ export function duplicateDocumentReliable(
         overrides: input.overrides,
       },
       // The copy's _id comes from the write; read-back confirms it exists and
-      // that any requested overrides took effect.
-      expected: input.overrides ? expandObject(input.overrides) : {},
+      // that any requested overrides took effect (or falls back to a name/type
+      // check when there's nothing override-specific to verify).
+      expected: expectedFromOverrides(input.overrides),
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "duplicated document did not match the requested overrides; rolled back",
     },
@@ -485,6 +573,14 @@ export async function updateEmbeddedReliable(
   input: UpdateEmbeddedInput,
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
+  // Each entry always carries _id, so exclude it from the emptiness check
+  // (see validationFailure/isEmptyDiff) -- an entry with nothing else would
+  // trivially "verify" on read-back, since it's found by that same _id.
+  const emptyIds = input.data.filter((d) => isEmptyDiff(d, ["_id"])).map((d) => d._id);
+  if (emptyIds.length > 0) {
+    return validationFailure(`update data for _id=${emptyIds.join(", ")} has no safe fields to apply`);
+  }
+
   const steps: string[] = [];
 
   // Pre-read snapshot is the rollback baseline.
@@ -711,5 +807,70 @@ export function batchUploadAssetsReliable(
       skipExisting: input.skipExisting ?? false,
     },
     opts,
+  );
+}
+
+export interface SearchCompendiumInput {
+  packScope?: string;
+  documentType: DocumentType;
+  nameQuery: string;
+}
+
+export function searchCompendiumReliable(
+  transport: RelayTransport,
+  input: SearchCompendiumInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runRead(
+    transport,
+    {
+      action: "searchCompendium",
+      packScope: input.packScope,
+      documentType: input.documentType,
+      nameQuery: input.nameQuery,
+    },
+    "search-compendium",
+    opts,
+  );
+}
+
+export interface ImportFromCompendiumInput {
+  documentType: DocumentType;
+  uuid: string;
+  patch?: Json;
+  folderId?: string;
+}
+
+export async function importFromCompendiumReliable(
+  transport: RelayTransport,
+  input: ImportFromCompendiumInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  // patch is optional (undefined = clone as-is); only reject when explicitly
+  // supplied but empty (see isEmptyDiff).
+  if (isEmptyDiff(input.patch)) {
+    return validationFailure("import patch has no safe fields to apply");
+  }
+
+  return runMutation(
+    transport,
+    {
+      documentType: input.documentType,
+      mutate: {
+        action: "importFromCompendium",
+        documentType: input.documentType,
+        uuid: input.uuid,
+        patch: input.patch,
+        folderId: input.folderId,
+      },
+      // A patch names concrete fields to verify (expanded from dot-notation
+      // to match the nested read-back document); without one, fall back to
+      // confirming the write's own name/type survived the read-back.
+      expected: expectedFromOverrides(input.patch),
+      rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
+      mismatchMessage: "imported document did not match expected after read-back; rolled back",
+    },
+    opts,
+    [],
   );
 }

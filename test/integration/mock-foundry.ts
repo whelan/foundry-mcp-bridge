@@ -25,7 +25,20 @@ import {
   getByPath,
   applyUpdate,
 } from "@foundry-mcp-bridge/shared";
-import type { WorldInfo } from "../../packages/foundry-module/src/protocol-executor.js";
+import type { WorldInfo, CompendiumEntry } from "../../packages/foundry-module/src/protocol-executor.js";
+import { loadSrdFixtures, PACK_NAME_BY_TYPE } from "../fixtures/dnd5e-srd/loader.js";
+
+/**
+ * A compendium entry as the mock stores it: `documentType`/`pack` are kept
+ * separate from `data` so filtering by document type never clobbers the
+ * fixture's own game-system subtype (`data.type`, e.g. "npc"), matching how
+ * real Foundry compendium index entries distinguish the two.
+ */
+interface CompendiumRecord {
+  documentType: DocumentType;
+  pack: string;
+  data: Json;
+}
 
 // ---------------------------------------------------------------------------
 // Foundry key conventions
@@ -182,6 +195,8 @@ export class MockFoundry {
   readonly quests = new Map<string, Json>();
   /** World snapshot returned by getWorldInfo (overridable for tests). */
   readonly worldInfo: WorldInfo;
+  /** Compendium entries loaded from fixtures. */
+  readonly compendium = new Map<string, CompendiumRecord>();
 
   constructor(options: MockFoundryOptions = {}) {
     this.isGM = options.isGM ?? true;
@@ -194,6 +209,24 @@ export class MockFoundry {
       forge: { active: false, userId: null },
       ...options.worldInfo,
     };
+    // Load SRD fixtures into compendium
+    this.loadFixtures();
+  }
+
+  private loadFixtures(): void {
+    const fixtures = loadSrdFixtures();
+    for (const [type, byId] of fixtures) {
+      const pack = `dnd5e.${PACK_NAME_BY_TYPE[type]}`;
+      for (const [, fixture] of byId) {
+        const uuid = `Compendium.${pack}.${fixture.id}`;
+        // Deep-clone off the shared, memoized fixture cache (loader.ts) so
+        // later mutations to an imported document's embedded collections
+        // (createEmbedded/updateEmbedded/deleteEmbedded) can never leak back
+        // into the fixture data other MockFoundry instances read.
+        const data = structuredClone({ ...fixture.data, _id: fixture.id, name: fixture.name });
+        this.compendium.set(uuid, { documentType: type as DocumentType, pack, data });
+      }
+    }
   }
 
   /** Queue a one-shot injected failure consumed by the next execute(). */
@@ -297,6 +330,10 @@ export class MockFoundry {
         return this.updateQuest(id, command, dryRun);
       case "deleteQuest":
         return this.deleteQuest(id, command, dryRun);
+      case "searchCompendium":
+        return this.searchCompendium(id, command);
+      case "importFromCompendium":
+        return this.importFromCompendium(id, command, dryRun);
     }
   }
 
@@ -509,5 +546,54 @@ export class MockFoundry {
     }
 
     return ok(id, { _id: cmd.id, deleted: true });
+  }
+
+  private searchCompendium(
+    id: string,
+    cmd: Extract<Command, { action: "searchCompendium" }>,
+  ): CommandResult {
+    const query = cmd.nameQuery.toLowerCase();
+    const scope = cmd.packScope ?? "dnd5e";
+    const results: CompendiumEntry[] = [];
+    for (const [uuid, record] of this.compendium) {
+      if (record.documentType !== cmd.documentType) continue;
+      if (!record.pack.startsWith(`${scope}.`)) continue;
+      const name = String(record.data.name ?? "");
+      if (name.toLowerCase().includes(query)) {
+        const system = record.data.system as Record<string, any> | undefined;
+        const cr = system?.details?.cr;
+        results.push({
+          uuid,
+          pack: record.pack,
+          name,
+          type: String(record.data.type ?? record.documentType),
+          cr: typeof cr === "number" ? cr : undefined,
+        });
+      }
+    }
+    return ok(id, results);
+  }
+
+  private importFromCompendium(
+    id: string,
+    cmd: Extract<Command, { action: "importFromCompendium" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const record = this.compendium.get(cmd.uuid);
+    if (!record) {
+      return err(id, "NOT_FOUND", `compendium entry ${cmd.uuid} not found`);
+    }
+    // Deep-clone (not a shallow spread) so mutating the imported world
+    // document's embedded collections can never reach back into the
+    // compendium record's own data.
+    const data = cmd.patch ? applyUpdate(record.data, cmd.patch) : structuredClone(record.data);
+    if (cmd.folderId) {
+      data.folder = cmd.folderId;
+    }
+    const _id = randomID();
+    const doc = { ...data, _id };
+    if (dryRun) return ok(id, { ...doc, _id: null, _dryRun: true });
+    this.store.set(documentKey(cmd.documentType, _id), doc);
+    return ok(id, doc);
   }
 }
