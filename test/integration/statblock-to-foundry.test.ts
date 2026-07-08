@@ -42,10 +42,10 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
     expect(system.attributes.hp.formula).toBe("7d8+14");
   });
 
-  it("sets movement from the parsed speed", () => {
+  it("sets movement from the parsed speed (strings — dnd5e coerces numbers on write)", () => {
     const system = gravemireActor.system as Record<string, any>;
-    expect(system.attributes.movement.walk).toBe(30);
-    expect(system.attributes.movement.swim).toBe(20);
+    expect(system.attributes.movement.walk).toBe("30");
+    expect(system.attributes.movement.swim).toBe("20");
     expect(system.attributes.movement.units).toBe("ft");
   });
 
@@ -291,8 +291,10 @@ describe("modern dnd5e actor system shapes (5.3.3)", () => {
   });
 
   it("emits only the speeds the statblock defines", () => {
-    // gravemire-stalker.md: "speed: 30 ft., swim 20 ft." — no climb: 0 noise
-    expect(sys.attributes.movement).toEqual({ walk: 30, swim: 20, units: "ft", hover: false });
+    // gravemire-stalker.md: "speed: 30 ft., swim 20 ft." — no climb: 0 noise.
+    // String values: dnd5e 5.3.3 stores speeds as strings (read-back verify
+    // fails on numeric 30 vs "30"; found live in M6a).
+    expect(sys.attributes.movement).toEqual({ walk: "30", swim: "20", units: "ft", hover: false });
   });
 
   it("does not emit details.race (LocalDocumentField) or details.xp (derived)", () => {

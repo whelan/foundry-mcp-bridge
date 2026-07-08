@@ -154,10 +154,14 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
       movement: {
         // Only the speeds the statblock has — officials omit absent speeds
         // entirely (ghast: walk only; wyrmling: walk/fly/swim/burrow).
+        // Values as strings: dnd5e 5.3.3 stores speeds as strings (ghast
+        // walk: "30") and coerces numbers on write, so a numeric 30 reads
+        // back as "30" and fails the pipeline's strict read-back verify
+        // (found live in M6a; the mock stores writes verbatim and can't see it).
         ...Object.fromEntries(
-          Object.entries(statblock.attributes.speed).filter(
-            ([, v]) => typeof v === "number" && v > 0,
-          ),
+          Object.entries(statblock.attributes.speed)
+            .filter(([, v]) => typeof v === "number" && v > 0)
+            .map(([k, v]) => [k, String(v)]),
         ),
         units: "ft",
         hover: false,
