@@ -14,7 +14,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import type { CompendiumEntry } from "@foundry-mcp-bridge/shared";
-import { parseStatblock, importNpc, type ImportNpcDeps } from "@foundry-mcp-bridge/statblock-sync";
+import { parseStatblock, importNpc, verifyImportedNpc, type ImportNpcDeps } from "@foundry-mcp-bridge/statblock-sync";
 import { MockFoundry } from "./mock-foundry.js";
 import { MockTransport } from "./mock-transport.js";
 import type { RelayTransport } from "../../packages/mcp-server/src/relay-transport.js";
@@ -22,7 +22,9 @@ import type { ToolOutcome } from "../../packages/mcp-server/src/reliability.js";
 import {
   runSearchCompendium,
   runImportFromCompendium,
+  runImportEmbeddedFromCompendium,
   runCreateDocument,
+  runCreateEmbedded,
   runUploadAsset,
 } from "../../packages/mcp-server/src/tools.js";
 
@@ -71,6 +73,36 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
         "uploadAsset",
       );
       return path;
+    },
+    async searchSpellCompendium(nameQuery) {
+      return unwrap<CompendiumEntry[]>(
+        await runSearchCompendium(transport, { documentType: "Item", nameQuery }),
+        "searchSpellCompendium",
+      );
+    },
+    async importEmbeddedFromCompendium(parentId, uuid) {
+      const created = unwrap<Array<{ _id: string }>>(
+        await runImportEmbeddedFromCompendium(transport, {
+          parentType: "Actor",
+          parentId,
+          embeddedName: "Item",
+          uuids: [{ uuid }],
+        }),
+        "importEmbeddedFromCompendium",
+      );
+      return created[0]!;
+    },
+    async createEmbeddedItem(parentId, data) {
+      const created = unwrap<Array<{ _id: string }>>(
+        await runCreateEmbedded(transport, {
+          parentType: "Actor",
+          parentId,
+          embeddedName: "Item",
+          data: [data],
+        }),
+        "createEmbeddedItem",
+      );
+      return created[0]!;
     },
   };
 }

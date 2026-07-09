@@ -3,6 +3,11 @@
  * mock) world: Tier 1 clones the matched compendium entry via
  * `import_from_compendium`; anything else falls back to synthesizing an
  * actor with `statblockToFoundryActor` (Tier 3) and creating it directly.
+ * After the actor exists (either tier), a spellcasting statblock's spell
+ * list is resolved against the official `dnd5e.spells24` compendium (falling
+ * back to the 2014 `dnd5e.spells` pack) and attached as embedded Items;
+ * unmatched names get a minimal placeholder item instead of failing the
+ * import (see docs/statblock-legendary-lair-spellcasting-plan.md, Part B).
  *
  * Kept decoupled from the bridge's transport/relay types (injected `deps`
  * instead) so this package stays usable standalone and mock-first testable —
@@ -36,6 +41,12 @@ export interface ImportNpcDeps {
   createDocument(data: Dnd5eActorDocument): Promise<{ _id: string }>;
   /** Upload an image file and return the resolved remote path. */
   uploadImage?(filename: string, contentBase64: string, targetFolder?: string): Promise<string>;
+  /** Search Item compendia (all packs) for a spell by name. */
+  searchSpellCompendium(nameQuery: string): Promise<CompendiumEntry[]>;
+  /** Clone a compendium Item as an embedded Item on the given actor. */
+  importEmbeddedFromCompendium(parentId: string, uuid: string): Promise<{ _id: string }>;
+  /** Create a literal (non-compendium) embedded Item on the given actor. */
+  createEmbeddedItem(parentId: string, data: Record<string, unknown>): Promise<{ _id: string }>;
 }
 
 /**
@@ -52,22 +63,63 @@ export async function importNpc(
   const index = await deps.searchCompendium(statblock.data.name);
   const plan = matchStatblock(statblock, index);
 
+  let result: ImportNpcResult;
   if (plan.tier === 1) {
     const doc = await deps.importFromCompendium(plan.uuid, plan.patch);
-    return { actorId: doc._id, tier: 1, matchedUuid: plan.uuid };
+    result = { actorId: doc._id, tier: 1, matchedUuid: plan.uuid };
+  } else {
+    // For Tier 3: upload image if provided, then use resolved path in actor data
+    let resolvedImagePath: string | undefined;
+    if (imageContent && deps.uploadImage) {
+      resolvedImagePath = await deps.uploadImage(
+        imageContent.filename,
+        imageContent.contentBase64,
+        `worlds/npcs/${statblock.data.name.replace(/\s+/g, "-").toLowerCase()}`
+      );
+    }
+
+    const actorData = statblockToFoundryActor(statblock, resolvedImagePath);
+    const doc = await deps.createDocument(actorData);
+    result = { actorId: doc._id, tier: 3 };
   }
 
-  // For Tier 3: upload image if provided, then use resolved path in actor data
-  let resolvedImagePath: string | undefined;
-  if (imageContent && deps.uploadImage) {
-    resolvedImagePath = await deps.uploadImage(
-      imageContent.filename,
-      imageContent.contentBase64,
-      `worlds/npcs/${statblock.data.name.replace(/\s+/g, "-").toLowerCase()}`
-    );
+  if (statblock.spellcasting) {
+    await attachSpells(statblock.spellcasting, result.actorId, deps);
   }
 
-  const actorData = statblockToFoundryActor(statblock, resolvedImagePath);
-  const doc = await deps.createDocument(actorData);
-  return { actorId: doc._id, tier: 3 };
+  return result;
+}
+
+/**
+ * Resolve and attach each spell name in a parsed spellcasting block as an
+ * embedded Item on the actor: exact-match (case-insensitive) against the
+ * official `dnd5e.spells24` pack first, falling back to the 2014 `dnd5e.spells`
+ * pack, and finally a minimal placeholder item (name only, default icon) so
+ * a typo'd or homebrew spell name never fails the whole import.
+ */
+async function attachSpells(
+  spellcasting: NonNullable<StatblockData["spellcasting"]>,
+  actorId: string,
+  deps: ImportNpcDeps
+): Promise<void> {
+  for (const level of spellcasting.levels) {
+    for (const spellName of level.spellNames) {
+      const results = await deps.searchSpellCompendium(spellName);
+      const exactIn = (pack: string) =>
+        results.find(
+          (r) => r.pack === pack && r.name.toLowerCase() === spellName.toLowerCase()
+        );
+      const match = exactIn("dnd5e.spells24") ?? exactIn("dnd5e.spells");
+
+      if (match) {
+        await deps.importEmbeddedFromCompendium(actorId, match.uuid);
+      } else {
+        await deps.createEmbeddedItem(actorId, {
+          name: spellName,
+          type: "spell",
+          img: "icons/svg/book.svg",
+        });
+      }
+    }
+  }
 }
