@@ -160,7 +160,14 @@ async function backendA1111(args) {
   if (!b64) fail("SD WebUI response had no images");
   // A1111 may prefix a data URL; strip it.
   const clean = b64.includes(",") ? b64.slice(b64.indexOf(",") + 1) : b64;
-  await writeFile(args.out, Buffer.from(clean, "base64"));
+  // txt2img always returns PNG regardless of the requested destination's
+  // extension (the same constraint Codex's built-in tool has) — decode to a
+  // PNG temp file and let convertImage handle any extension mismatch, same
+  // as backendCodex. Without this, --name foo.webp would silently write raw
+  // PNG bytes to a .webp path.
+  const tempSrc = `${args.out}.a1111-source.png`;
+  await writeFile(tempSrc, Buffer.from(clean, "base64"));
+  await convertImage(tempSrc, args.out);
 }
 
 // --- codex backend helpers (pure; unit-tested in test/unit/gen-image.test.mjs) ---
@@ -248,12 +255,28 @@ async function moveFile(src, dest) {
   }
 }
 
-// Codex's built-in image tool has no format option — it always writes PNG.
-// If the caller asked for a different extension (typically --name foo.webp,
-// e.g. to keep an Obsidian vault's images small), convert with whichever of
-// ImageMagick's binaries is on PATH; otherwise just move the bytes as-is.
-// A mismatched extension left unconverted would silently mislabel the file
-// (a .webp that's actually PNG), so this is not optional when extensions differ.
+// Spawn an argv-form command (no shell); resolve on exit 0, reject with an
+// Error naming the exit code otherwise. Distinct from runShell above: that one
+// takes a single user-supplied template string and needs a shell to expand
+// quoting the way IMAGE_GEN_CMD authors write it; this one runs a fixed argv
+// array we constructed ourselves, so no shell is involved.
+function spawnPromise(bin, argv) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, argv, { stdio: ["ignore", "ignore", "inherit"] });
+    child.on("error", reject);
+    child.on("close", (code) =>
+      code === 0 ? resolve() : reject(new Error(`${bin} exited with code ${code}`)),
+    );
+  });
+}
+
+// Codex's built-in image tool has no format option — it always writes PNG
+// (A1111's txt2img has the same constraint). If the caller asked for a
+// different extension (typically --name foo.webp, e.g. to keep an Obsidian
+// vault's images small), convert with whichever of ImageMagick's binaries is
+// on PATH; otherwise just move the bytes as-is. A mismatched extension left
+// unconverted would silently mislabel the file (a .webp that's actually PNG),
+// so this is not optional when extensions differ.
 const IMAGE_CONVERTERS = ["magick", "convert"];
 
 async function convertImage(src, dest) {
@@ -261,26 +284,37 @@ async function convertImage(src, dest) {
     await moveFile(src, dest);
     return;
   }
+  // Convert into a same-directory temp file, not `dest` directly: if the
+  // converter is killed or crashes mid-write, only the temp file is left
+  // corrupt — `dest` (which may already hold a good, previously-generated
+  // image) is untouched until the rename below, which is atomic since both
+  // paths are on the same filesystem by construction.
+  const tempDest = `${dest}.converting${extname(dest)}`;
+  let converted = false;
   for (const bin of IMAGE_CONVERTERS) {
     try {
-      await new Promise((res, rej) => {
-        const child = spawn(bin, [src, dest], { stdio: ["ignore", "ignore", "inherit"] });
-        child.on("error", rej);
-        child.on("close", (code) =>
-          code === 0 ? res() : rej(new Error(`${bin} exited with code ${code}`)),
-        );
-      });
-      await unlink(src);
-      return;
+      await spawnPromise(bin, [src, tempDest]);
+      converted = true;
+      break;
     } catch (e) {
       if (e?.code === "ENOENT") continue; // this binary isn't installed, try the next
+      await unlink(tempDest).catch(() => {}); // best-effort: clean up a partial write
       throw e;
     }
   }
-  fail(
-    `no image converter on PATH to turn ${extname(src)} into ${extname(dest)} ` +
-      `(install ImageMagick: \`brew install imagemagick\`), or request a matching --name extension`,
-  );
+  if (!converted) {
+    fail(
+      `no image converter on PATH to turn ${extname(src)} into ${extname(dest)} ` +
+        `(install ImageMagick: \`brew install imagemagick\`), or request a matching --name extension`,
+    );
+    return;
+  }
+  await rename(tempDest, dest);
+  // Cleanup is independent of which binary succeeded — an unlink failure here
+  // is a "couldn't remove the source" problem, not "no converter is
+  // installed", so it must not feed back into the ENOENT retry loop above
+  // (that would misreport a successful conversion as a missing binary).
+  await unlink(src);
 }
 
 function outputTail(lines) {
