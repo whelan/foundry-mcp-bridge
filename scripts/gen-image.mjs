@@ -345,8 +345,9 @@ async function backendCodex(args, config) {
         mtimeMs: (await stat(join(sessionDir, name))).mtimeMs,
       })),
     );
-  } catch {
-    // Missing dir is handled below as "no image".
+  } catch (e) {
+    // Missing dir is handled below as "no image"; other errors propagate.
+    if (e?.code !== "ENOENT") throw e;
   }
   const { chosen, extras } = pickGeneratedImage(entries);
   if (!chosen) {
@@ -368,7 +369,10 @@ async function backendCodex(args, config) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.prompt) fail("missing --prompt");
-  if (args.name && (args.name !== basename(args.name) || args.name === "..")) {
+  if (
+    args.name &&
+    (args.name !== basename(args.name) || args.name === ".." || args.name === ".")
+  ) {
     fail(`--name must be a bare filename, got '${args.name}'`);
   }
   const cwd = process.cwd();
