@@ -30,7 +30,13 @@ export interface FoundryActorReadBack {
   img?: string;
   prototypeToken?: { texture?: { src?: string } };
   system: Record<string, unknown>;
-  items?: Array<{ name: string; type: string; system?: Record<string, unknown> }>;
+  items?: Array<{
+    name: string;
+    type: string;
+    img?: string;
+    system?: Record<string, unknown>;
+    _stats?: Record<string, unknown>;
+  }>;
 }
 
 /**
@@ -84,6 +90,41 @@ export function verifyImportedNpc(
     got: cr,
     want: statblock.challenge.cr,
   });
+
+  // Legendary actions / legendary resistance / lair-action resources
+  const legendaryCount = statblock.actions.filter((a) => a.type === "legendary").length;
+  const wantLegact = statblock.data.legendary_action_count ?? legendaryCount;
+  if (wantLegact > 0) {
+    const gotLegact = system.resources?.legact?.max;
+    checks.push({
+      name: "Legendary action count (resources.legact.max)",
+      pass: gotLegact === wantLegact,
+      got: gotLegact,
+      want: wantLegact,
+    });
+  }
+
+  const legendaryResistance = statblock.abilities.find((a) => a.legendaryResistanceUses !== undefined);
+  if (legendaryResistance) {
+    const gotLegres = system.resources?.legres?.max;
+    checks.push({
+      name: "Legendary Resistance uses (resources.legres.max)",
+      pass: gotLegres === legendaryResistance.legendaryResistanceUses,
+      got: gotLegres,
+      want: legendaryResistance.legendaryResistanceUses,
+    });
+  }
+
+  const hasLairActions = statblock.actions.some((a) => a.type === "lair");
+  if (hasLairActions) {
+    const gotInitiative = system.resources?.lair?.initiative;
+    checks.push({
+      name: "Lair action initiative (resources.lair.initiative)",
+      pass: gotInitiative === 20,
+      got: gotInitiative,
+      want: 20,
+    });
+  }
 
   // Ability scores
   const abilities = system.abilities as Record<string, any>;
@@ -182,6 +223,78 @@ export function verifyImportedNpc(
         got,
         want: String(action.recharge.value),
       });
+    }
+  }
+
+  // Spellcasting: ability/DC/attack-bonus are always *derived* by dnd5e from
+  // attributes.spellcasting + proficiency bonus (there is no stored DC/bonus
+  // field) — so these checks assert the derivation, not a stored value.
+  if (statblock.spellcasting) {
+    const sc = statblock.spellcasting;
+    const gotAbility = system.attributes?.spellcasting;
+    checks.push({
+      name: "Spellcasting ability",
+      pass: gotAbility === sc.ability,
+      got: gotAbility,
+      want: sc.ability,
+    });
+
+    const prof = getProficiencyBonus(statblock.challenge.cr);
+    const abilityScore = (statblock.abilities_ as Record<string, number>)[sc.ability];
+    const abilityMod = abilityScore !== undefined ? getAbilityModifier(abilityScore) : 0;
+    const expectedDc = 8 + prof + abilityMod;
+    checks.push({
+      name: "Spellcasting DC (derived from ability + proficiency)",
+      pass: expectedDc === sc.dc,
+      got: expectedDc,
+      want: sc.dc,
+    });
+    const expectedAttackBonus = prof + abilityMod;
+    checks.push({
+      name: "Spellcasting attack bonus (derived from ability + proficiency)",
+      pass: expectedAttackBonus === sc.attackBonus,
+      got: expectedAttackBonus,
+      want: sc.attackBonus,
+    });
+
+    const spellsRB = system.spells as Record<string, any> | undefined;
+    for (const lvl of sc.levels) {
+      if (lvl.level === 0 || !lvl.slots) continue;
+      const got = spellsRB?.[`spell${lvl.level}`]?.value;
+      checks.push({
+        name: `Spell slots level ${lvl.level} (spells.spell${lvl.level}.value)`,
+        pass: got === lvl.slots,
+        got,
+        want: lvl.slots,
+      });
+    }
+
+    for (const lvl of sc.levels) {
+      for (const spellName of lvl.spellNames) {
+        const item = readBack.items?.find((i) => i.name.toLowerCase() === spellName.toLowerCase());
+        if (!item) {
+          checks.push({
+            name: `Spell "${spellName}" attached`,
+            pass: false,
+            got: undefined,
+            want: "item",
+          });
+          continue;
+        }
+        // Proves it's the official compendium item (mechanics + icon came
+        // free), not a synthesized placeholder — a placeholder has no
+        // _stats.compendiumSource, so this fails exactly for the cases the
+        // plan wants surfaced as an explicit check, not a silent gap.
+        const compendiumSource = item._stats?.compendiumSource;
+        const fromOfficialPack =
+          typeof compendiumSource === "string" && compendiumSource.includes("spells24");
+        checks.push({
+          name: `Spell "${spellName}" is the official dnd5e.spells24 item`,
+          pass: fromOfficialPack,
+          got: compendiumSource,
+          want: "dnd5e.spells24",
+        });
+      }
     }
   }
 

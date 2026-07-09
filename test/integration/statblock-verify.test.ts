@@ -174,3 +174,148 @@ describe("verifyImportedNpc against modern shapes", () => {
     expect(report.checks.find((c) => c.name === "Senses: darkvision 60 ft")?.pass).toBe(false);
   });
 });
+
+describe("M5: verifyImportedNpc - legendary/lair resources", () => {
+  function readBackWithLegendaryLair() {
+    const sb = parseStatblock(`\`\`\`statblock
+name: Test Dragon
+cr: 10
+ac: 18
+hp: 150
+stats: [20, 10, 18, 10, 14, 16]
+traits:
+  - name: Legendary Resistance (3/Day)
+    desc: "If the dragon fails a saving throw, it can choose to succeed instead."
+legendary_actions:
+  - name: Detect
+    desc: "The dragon makes a Wisdom (Perception) check."
+lair_actions:
+  - name: Volcanic Fissure
+    desc: "Dexterity Saving Throw: DC 16, each creature standing in the new fissure. Failure: 10 (3d6) Fire damage."
+\`\`\`
+`);
+    const rb: FoundryActorReadBack = {
+      _id: "test000000000000",
+      ...(statblockToFoundryActor(sb) as any),
+    };
+    return { statblock: sb, readBack: rb };
+  }
+
+  it("passes legact/legres/lair checks when resources match the statblock", () => {
+    const { statblock, readBack } = readBackWithLegendaryLair();
+    const report = verifyImportedNpc(readBack, statblock);
+    expect(report.checks.find((c) => c.name.includes("legact"))?.pass).toBe(true);
+    expect(report.checks.find((c) => c.name.includes("legres"))?.pass).toBe(true);
+    expect(report.checks.find((c) => c.name.includes("lair"))?.pass).toBe(true);
+  });
+
+  it("fails the legact check when resources.legact.max is wrong", () => {
+    const { statblock, readBack } = readBackWithLegendaryLair();
+    (readBack.system as any).resources.legact.max = 0;
+    const report = verifyImportedNpc(readBack, statblock);
+    expect(report.ok).toBe(false);
+    expect(report.checks.find((c) => c.name.includes("legact"))?.pass).toBe(false);
+  });
+
+  it("fails the legres check when resources.legres.max is wrong", () => {
+    const { statblock, readBack } = readBackWithLegendaryLair();
+    (readBack.system as any).resources.legres.max = 0;
+    const report = verifyImportedNpc(readBack, statblock);
+    expect(report.ok).toBe(false);
+    expect(report.checks.find((c) => c.name.includes("legres"))?.pass).toBe(false);
+  });
+
+  it("fails the lair-initiative check when it isn't 20", () => {
+    const { statblock, readBack } = readBackWithLegendaryLair();
+    (readBack.system as any).resources.lair.initiative = null;
+    const report = verifyImportedNpc(readBack, statblock);
+    expect(report.ok).toBe(false);
+    expect(report.checks.find((c) => c.name.includes("lair"))?.pass).toBe(false);
+  });
+
+  it("does not add legact/legres/lair checks for a statblock with none of these features", () => {
+    const sb = parseStatblock(`\`\`\`statblock
+name: Test Beast
+cr: 1
+ac: 12
+hp: 20
+stats: [14, 12, 14, 4, 10, 6]
+\`\`\`
+`);
+    const rb: FoundryActorReadBack = {
+      _id: "test000000000000",
+      ...(statblockToFoundryActor(sb) as any),
+    };
+    const report = verifyImportedNpc(rb, sb);
+    expect(report.checks.some((c) => c.name.includes("legact"))).toBe(false);
+    expect(report.checks.some((c) => c.name.includes("legres"))).toBe(false);
+    expect(report.checks.some((c) => c.name.includes("lair"))).toBe(false);
+  });
+});
+
+describe("M5: verifyImportedNpc - spellcasting", () => {
+  // CR 12 -> proficiency +4; Intelligence 20 -> mod +5; 8+4+5=17 (DC), 4+5=9 (attack) —
+  // matches the trait text below, so the derivation checks pass on an internally-consistent statblock.
+  const spellcasterStatblock = parseStatblock(`\`\`\`statblock
+name: Test Archmage
+cr: 12
+ac: 12
+hp: 100
+stats: [10, 14, 12, 20, 15, 16]
+traits:
+  - name: Spellcasting
+    desc: "The archmage is a level 18 spellcaster. Its spellcasting ability is Intelligence (spell save DC 17, +9 to hit with spell attacks). The archmage has the following wizard spells prepared: Cantrips (at will): fire bolt, light 1st level (4 slots): detect magic, shield"
+\`\`\`
+`);
+
+  function readBackWithSpells(): FoundryActorReadBack {
+    const converted = statblockToFoundryActor(spellcasterStatblock) as any;
+    return {
+      _id: "test000000000000",
+      ...converted,
+      items: [
+        ...converted.items,
+        {
+          name: "Fire Bolt",
+          type: "spell",
+          img: "icons/magic/fire.webp",
+          _stats: { compendiumSource: "Compendium.dnd5e.spells24.fire-bolt" },
+        },
+        { name: "Light", type: "spell", img: "icons/svg/book.svg" }, // placeholder: no _stats
+        {
+          name: "Detect Magic",
+          type: "spell",
+          img: "icons/magic/detect.webp",
+          _stats: { compendiumSource: "Compendium.dnd5e.spells24.detect-magic" },
+        },
+        {
+          name: "Shield",
+          type: "spell",
+          img: "icons/magic/shield.webp",
+          _stats: { compendiumSource: "Compendium.dnd5e.spells24.shield" },
+        },
+      ],
+    };
+  }
+
+  it("passes ability/DC/attack-bonus/slot checks for an internally-consistent statblock", () => {
+    const report = verifyImportedNpc(readBackWithSpells(), spellcasterStatblock);
+    expect(report.checks.find((c) => c.name === "Spellcasting ability")?.pass).toBe(true);
+    expect(report.checks.find((c) => c.name.includes("DC"))?.pass).toBe(true);
+    expect(report.checks.find((c) => c.name.includes("attack bonus"))?.pass).toBe(true);
+    expect(report.checks.find((c) => c.name.includes("level 1"))?.pass).toBe(true);
+  });
+
+  it("passes the official-item check for a compendium-sourced spell and fails it for a placeholder", () => {
+    const report = verifyImportedNpc(readBackWithSpells(), spellcasterStatblock);
+    expect(report.checks.find((c) => c.name.includes('"fire bolt"'))?.pass).toBe(true);
+    expect(report.checks.find((c) => c.name.includes('"light"'))?.pass).toBe(false);
+  });
+
+  it("fails the attached check when a spell name has no matching item at all", () => {
+    const rb = readBackWithSpells();
+    rb.items = rb.items!.filter((i) => i.name !== "Detect Magic");
+    const report = verifyImportedNpc(rb, spellcasterStatblock);
+    expect(report.checks.find((c) => c.name === 'Spell "detect magic" attached')?.pass).toBe(false);
+  });
+});
