@@ -106,6 +106,12 @@ It writes the image + `<out>.b64` and prints the JSON summary, exactly like
      --prompt "a shiba inu wearing sunglasses" --name shiba.png
    ```
 
+   **Committing into a repo (e.g. an Obsidian vault)?** Use `--name foo.webp`.
+   Codex's built-in tool always writes PNG, so `gen-image.mjs` converts to
+   whatever extension `--name`/`--out` asks for via `magick`/`convert`
+   (install ImageMagick if neither is on PATH) — typically ~95%+ smaller than
+   the source PNG, which matters once images are checked into git history.
+
 3. **Upload** with the MCP tool. Read the sidecar text (`b64Path`) and pass it
    as `contentBase64`:
 

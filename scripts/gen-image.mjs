@@ -38,6 +38,10 @@
 //            --steps/--negative are diffusion-specific and ignored; --width/
 //            --height become a size hint in the prompt. Timeout:
 //            $IMAGE_GEN_TIMEOUT_MS (default 300000).
+//            Codex's built-in tool always writes PNG; if --out/--name asks for
+//            a different extension (e.g. --name portrait.webp — smaller files
+//            for committing into a repo/Obsidian vault), this script converts
+//            with `magick`/`convert` (install ImageMagick if neither is on PATH).
 //
 // Output: writes the image to the destination, writes "<out>.b64" (raw base64,
 // no newlines) unless --no-sidecar, and prints a one-line JSON summary to stdout
@@ -244,6 +248,41 @@ async function moveFile(src, dest) {
   }
 }
 
+// Codex's built-in image tool has no format option — it always writes PNG.
+// If the caller asked for a different extension (typically --name foo.webp,
+// e.g. to keep an Obsidian vault's images small), convert with whichever of
+// ImageMagick's binaries is on PATH; otherwise just move the bytes as-is.
+// A mismatched extension left unconverted would silently mislabel the file
+// (a .webp that's actually PNG), so this is not optional when extensions differ.
+const IMAGE_CONVERTERS = ["magick", "convert"];
+
+async function convertImage(src, dest) {
+  if (extname(src).toLowerCase() === extname(dest).toLowerCase()) {
+    await moveFile(src, dest);
+    return;
+  }
+  for (const bin of IMAGE_CONVERTERS) {
+    try {
+      await new Promise((res, rej) => {
+        const child = spawn(bin, [src, dest], { stdio: ["ignore", "ignore", "inherit"] });
+        child.on("error", rej);
+        child.on("close", (code) =>
+          code === 0 ? res() : rej(new Error(`${bin} exited with code ${code}`)),
+        );
+      });
+      await unlink(src);
+      return;
+    } catch (e) {
+      if (e?.code === "ENOENT") continue; // this binary isn't installed, try the next
+      throw e;
+    }
+  }
+  fail(
+    `no image converter on PATH to turn ${extname(src)} into ${extname(dest)} ` +
+      `(install ImageMagick: \`brew install imagemagick\`), or request a matching --name extension`,
+  );
+}
+
 function outputTail(lines) {
   return lines.slice(-20).join("\n");
 }
@@ -313,7 +352,7 @@ async function backendCodex(args, config) {
         `leaving in ${sessionDir}: ${picked.extras.map((e) => e.name).join(", ")}`,
     );
   }
-  await moveFile(join(sessionDir, picked.chosen.name), args.out);
+  await convertImage(join(sessionDir, picked.chosen.name), args.out);
 }
 
 async function main() {
