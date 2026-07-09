@@ -229,8 +229,9 @@ async function loadProjectConfig(cwd) {
   let text;
   try {
     text = await readFile(path, "utf8");
-  } catch {
-    return null;
+  } catch (e) {
+    if (e?.code === "ENOENT") return null;
+    throw e;
   }
   try {
     return JSON.parse(text);
@@ -311,6 +312,11 @@ async function backendCodex(args, config) {
   const model =
     args["codex-model"] ?? config?.codex?.model ?? process.env.IMAGE_GEN_CODEX_MODEL;
   const timeoutMs = Number(process.env.IMAGE_GEN_TIMEOUT_MS ?? 300_000);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    fail(
+      `IMAGE_GEN_TIMEOUT_MS must be a positive number, got '${process.env.IMAGE_GEN_TIMEOUT_MS}'`,
+    );
+  }
   // -s read-only: codex must not write to the workspace at all; this script
   // does the move. --json: the first event carries the session/thread id.
   const argv = ["exec", "--json", "-s", "read-only", "--skip-git-repo-check"];
@@ -362,6 +368,9 @@ async function backendCodex(args, config) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.prompt) fail("missing --prompt");
+  if (args.name && (args.name !== basename(args.name) || args.name === "..")) {
+    fail(`--name must be a bare filename, got '${args.name}'`);
+  }
   const cwd = process.cwd();
   const config = await loadProjectConfig(cwd);
   const out = resolveOutPath(args, config, process.env, cwd);
@@ -393,6 +402,6 @@ async function main() {
 
 // Only run when executed directly — the pure helpers above are imported by
 // the unit tests, which must not trigger a generation.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch((e) => fail(e?.message ?? String(e)));
 }
