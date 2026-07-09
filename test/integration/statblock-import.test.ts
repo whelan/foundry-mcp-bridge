@@ -169,4 +169,40 @@ describe("importNpc: Tier 1 compendium match wired into the import pipeline", ()
       recovery: [{ period: "recharge", formula: "5", type: "recoverAll" }],
     });
   });
+
+  it("imports a homebrew legendary+lair+resistance NPC end-to-end with resources set", async () => {
+    const mock = new MockFoundry();
+    const transport = new MockTransport(mock);
+    const statblock = loadStatblock("young-ash-wyrm.md");
+
+    const result = await importNpc(statblock, realDeps(transport));
+
+    expect(result.tier).toBe(3); // no compendium entry for a homebrew dragon
+    const actors = mock.documents("Actor") as Array<{
+      _id: string;
+      name: string;
+      system: Record<string, any>;
+      items?: Array<{ name: string; type: string; system?: Record<string, any> }>;
+    }>;
+    const created = actors.find((a) => a._id === result.actorId)!;
+    expect(created.name).toBe("Young Ash Wyrm");
+
+    expect(created.system.resources.legact).toEqual({ max: 3, spent: 0 });
+    expect(created.system.resources.legres).toEqual({ max: 3, spent: 0 });
+    expect(created.system.resources.lair).toEqual({ value: true, initiative: 20, inside: false });
+
+    const legres = created.items!.find((i) => i.name === "Legendary Resistance")!;
+    expect(legres.system!.uses).toEqual({
+      spent: 0,
+      max: "3",
+      recovery: [{ period: "day", formula: "", type: "recoverAll" }],
+    });
+
+    // "Wing Attack (Costs 2 Actions)" is a known limitation (see plan doc's
+    // non-goals): dnd5e's sheet tracks total legendary-action budget, not a
+    // per-action cost, so the "Costs 2 Actions" text is parse-and-ignore for
+    // now (it stays in the item name; only "(Recharge N-M)" is stripped).
+    const wingAttack = created.items!.find((i) => i.name === "Wing Attack (Costs 2 Actions)");
+    expect(wingAttack).toBeDefined();
+  });
 });
