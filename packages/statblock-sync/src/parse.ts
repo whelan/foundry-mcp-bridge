@@ -12,6 +12,7 @@ import { parse as parseYaml } from "yaml";
 import type { Statblock, StatblockData } from "./schema.js";
 import { StatblockSchema } from "./schema.js";
 import { SIZE_TO_ABBREVIATION_MAP } from "./utils.js";
+import { parseSpellcastingTrait } from "./grammar.js";
 
 /**
  * Regex to match a ```statblock fenced code block anywhere in a note,
@@ -114,7 +115,14 @@ export function parseStatblock(raw: string): StatblockData {
     creatureType: buildCreatureType(sb),
     abilities: buildAbilities(sb),
     actions: buildActions(sb),
+    spellcasting: buildSpellcasting(sb),
   };
+}
+
+/** The "Spellcasting" trait (if any) becomes the actor-level spellcasting shape. */
+function buildSpellcasting(sb: Statblock): StatblockData["spellcasting"] {
+  const trait = (sb.traits ?? []).find((t) => /^spellcasting$/i.test(t.name));
+  return trait ? parseSpellcastingTrait(trait.desc) : undefined;
 }
 
 /**
@@ -261,13 +269,30 @@ function buildCreatureType(sb: Statblock): StatblockData["creatureType"] {
   };
 }
 
+/**
+ * Extract a "(N/Day)" suffix from a trait named "Legendary Resistance" (case-
+ * insensitive prefix match), returning the clean name and the parsed count.
+ * Same shape as `extractRecharge` below: a name-embedded suffix is stripped
+ * and turned into structured data the caller attaches separately.
+ */
+function extractLegendaryResistanceUses(name: string): { name: string; uses?: number } {
+  if (!/^Legendary Resistance\b/i.test(name)) return { name };
+  const match = name.match(/\((\d+)\/Day\)/i);
+  if (!match?.[1]) return { name };
+  return { name: name.replace(match[0], "").trim(), uses: parseInt(match[1], 10) };
+}
+
 /** The `traits` list becomes passive ability/feature entries. */
 function buildAbilities(sb: Statblock): StatblockData["abilities"] {
-  return (sb.traits ?? []).map((t) => ({
-    name: t.name,
-    description: t.desc,
-    passive: true,
-  }));
+  return (sb.traits ?? []).map((t) => {
+    const { name, uses } = extractLegendaryResistanceUses(t.name);
+    return {
+      name,
+      description: t.desc,
+      passive: true,
+      ...(uses !== undefined ? { legendaryResistanceUses: uses } : {}),
+    };
+  });
 }
 
 /** Extract a "(Recharge X-Y)" suffix from an action name, returning the clean name and recharge info. */

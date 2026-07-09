@@ -50,6 +50,8 @@ export const StatblockSchema = z
     reactions: z.array(NamedEntrySchema).optional(),
     legendary_actions: z.array(NamedEntrySchema).optional(),
     lair_actions: z.array(NamedEntrySchema).optional(),
+    /** Explicit legendary-action budget override; defaults to legendary_actions.length when absent. */
+    legendary_action_count: z.number().int().nonnegative().optional(),
   })
   .passthrough();
 
@@ -75,6 +77,8 @@ export interface StatblockData {
     name: string;
     description: string;
     passive?: boolean;
+    /** Parsed "(N/Day)" count from a "Legendary Resistance" trait name, if present. */
+    legendaryResistanceUses?: number;
   }[];
 
   /** Parsed actions, reactions, and legendary actions */
@@ -152,6 +156,21 @@ export interface StatblockData {
   challenge: {
     cr: number;
     xp: number;
+  };
+
+  /** Parsed from a "Spellcasting" trait's raw text, if present (innate spellcasting is out of scope). */
+  spellcasting?: {
+    /** Three-letter ability key, e.g. "int". */
+    ability: string;
+    dc: number;
+    attackBonus: number;
+    levels: Array<{
+      /** 0 = cantrips. */
+      level: number;
+      /** Absent for cantrips (at will). */
+      slots?: number;
+      spellNames: string[];
+    }>;
   };
 }
 

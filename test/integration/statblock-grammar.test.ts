@@ -6,7 +6,7 @@ import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { parseStatblock, parseAttackAction, parseSaveAction, parseAllActionGrammar } from "@foundry-mcp-bridge/statblock-sync";
+import { parseStatblock, parseAttackAction, parseSaveAction, parseAllActionGrammar, parseSpellcastingTrait } from "@foundry-mcp-bridge/statblock-sync";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -176,6 +176,53 @@ describe("M3: Action Text Grammar Parsing", () => {
       const save = parseSaveAction(description);
 
       expect(save?.successEffect).toMatch(/half/i);
+    });
+  });
+
+  describe("Spellcasting trait parsing", () => {
+    it("parses a 2024-style Spellcasting trait into ability/dc/attackBonus/levels", () => {
+      const desc =
+        "The archmage is a level 18 spellcaster. Its spellcasting ability is Intelligence " +
+        "(spell save DC 17, +9 to hit with spell attacks). The archmage has the following wizard " +
+        "spells prepared: Cantrips (at will): fire bolt, light, mage hand, prestidigitation " +
+        "1st level (4 slots): detect magic, mage armor, magic missile, shield " +
+        "2nd level (3 slots): misty step, suggestion " +
+        "3rd level (3 slots): counterspell, fireball, fly " +
+        "4th level (3 slots): dimension door, greater invisibility " +
+        "5th level (1 slot): cone of cold";
+
+      const parsed = parseSpellcastingTrait(desc);
+      expect(parsed).toBeDefined();
+      expect(parsed?.ability).toBe("int");
+      expect(parsed?.dc).toBe(17);
+      expect(parsed?.attackBonus).toBe(9);
+      expect(parsed?.levels).toEqual([
+        { level: 0, slots: undefined, spellNames: ["fire bolt", "light", "mage hand", "prestidigitation"] },
+        { level: 1, slots: 4, spellNames: ["detect magic", "mage armor", "magic missile", "shield"] },
+        { level: 2, slots: 3, spellNames: ["misty step", "suggestion"] },
+        { level: 3, slots: 3, spellNames: ["counterspell", "fireball", "fly"] },
+        { level: 4, slots: 3, spellNames: ["dimension door", "greater invisibility"] },
+        { level: 5, slots: 1, spellNames: ["cone of cold"] },
+      ]);
+    });
+
+    it("also parses correctly when the trait text has real embedded newlines", () => {
+      // Guards against a parser that only works when YAML's double-quoted
+      // folding has collapsed everything to one line.
+      const desc =
+        "Spellcasting ability is Wisdom (spell save DC 15, +7 to hit with spell attacks).\n" +
+        "Cantrips (at will): guidance, sacred flame\n" +
+        "1st level (4 slots): bless, cure wounds\n";
+      const parsed = parseSpellcastingTrait(desc);
+      expect(parsed?.ability).toBe("wis");
+      expect(parsed?.levels).toEqual([
+        { level: 0, slots: undefined, spellNames: ["guidance", "sacred flame"] },
+        { level: 1, slots: 4, spellNames: ["bless", "cure wounds"] },
+      ]);
+    });
+
+    it("returns undefined for text with no spellcasting DC/attack/ability markers", () => {
+      expect(parseSpellcastingTrait("The creature can breathe fire.")).toBeUndefined();
     });
   });
 });

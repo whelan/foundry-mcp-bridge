@@ -262,6 +262,56 @@ export function parseActionGrammar(
 }
 
 /**
+ * Parse a "Spellcasting" trait's raw text into ability/DC/attack-bonus and
+ * per-level spell lists. Header-anchored (not line-anchored): YAML's
+ * double-quoted folded scalars collapse real line breaks into single spaces
+ * when parsed, so a level list may arrive as one long space-separated string
+ * with no newlines at all — this must work whether or not newlines survive.
+ * Innate spellcasting ("1/day each: ...") is a different trait shape and is
+ * intentionally NOT recognized here (see
+ * docs/statblock-legendary-lair-spellcasting-plan.md, "Non-goals").
+ */
+export function parseSpellcastingTrait(
+  desc: string
+): StatblockData["spellcasting"] | undefined {
+  const normalized = stripMarkdown(desc).replace(/\s+/g, " ").trim();
+
+  const dcMatch = normalized.match(/spell save DC\s*(\d+)/i);
+  const bonusMatch = normalized.match(/\+(\d+)\s+to hit with spell attacks/i);
+  const abilityMatch = normalized.match(/spellcasting ability is (\w+)/i);
+  if (!dcMatch?.[1] || !bonusMatch?.[1] || !abilityMatch?.[1]) return undefined;
+
+  const HEADER_RE = /(Cantrips\s*\(at will\)|(\d)(?:st|nd|rd|th)\s*level(?:\s*\((\d+)\s*slots?\))?)\s*:\s*/gi;
+  const headers: Array<{ index: number; end: number; level: number; slots?: number }> = [];
+  let hm: RegExpExecArray | null;
+  while ((hm = HEADER_RE.exec(normalized)) !== null) {
+    headers.push({
+      index: hm.index,
+      end: hm.index + hm[0].length,
+      level: hm[2] ? parseInt(hm[2], 10) : 0,
+      slots: hm[3] ? parseInt(hm[3], 10) : undefined,
+    });
+  }
+
+  const levels = headers.map((h, i) => {
+    const stop = i + 1 < headers.length ? headers[i + 1]!.index : normalized.length;
+    const body = normalized.slice(h.end, stop).replace(/\.\s*$/, "").trim();
+    return {
+      level: h.level,
+      slots: h.slots,
+      spellNames: body.split(",").map((s) => s.trim()).filter(Boolean),
+    };
+  });
+
+  return {
+    ability: abilityMatch[1].toLowerCase().substring(0, 3),
+    dc: parseInt(dcMatch[1], 10),
+    attackBonus: parseInt(bonusMatch[1], 10),
+    levels,
+  };
+}
+
+/**
  * Parse all actions and reactions from a statblock, extracting mechanical details.
  */
 export function parseAllActionGrammar(statblock: StatblockData): {

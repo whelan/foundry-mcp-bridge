@@ -140,6 +140,71 @@ lair_actions:
     expect(lair?.type).toBe("lair");
   });
 
+  it("extracts (N/Day) uses from a Legendary Resistance trait and strips it from the name", () => {
+    const markdown = `\`\`\`statblock
+name: Test Dragon
+cr: 10
+ac: 18
+hp: 150
+stats: [20, 10, 18, 10, 14, 16]
+traits:
+  - name: Legendary Resistance (3/Day)
+    desc: "If the dragon fails a saving throw, it can choose to succeed instead."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const legres = statblock.abilities.find((a) => a.name === "Legendary Resistance");
+    expect(legres).toBeDefined();
+    expect(legres?.legendaryResistanceUses).toBe(3);
+  });
+
+  it("leaves an ordinary trait's legendaryResistanceUses undefined", () => {
+    const markdown = `\`\`\`statblock
+name: Test Beast
+cr: 1
+ac: 12
+hp: 20
+stats: [14, 12, 14, 4, 10, 6]
+traits:
+  - name: Keen Smell
+    desc: "The beast has advantage on Wisdom (Perception) checks that rely on smell."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const keenSmell = statblock.abilities.find((a) => a.name === "Keen Smell");
+    expect(keenSmell?.legendaryResistanceUses).toBeUndefined();
+  });
+
+  it("parses a Spellcasting trait into statblock.spellcasting", () => {
+    const markdown = `\`\`\`statblock
+name: Test Archmage
+cr: 12
+ac: 12
+hp: 100
+stats: [10, 14, 12, 20, 15, 16]
+traits:
+  - name: Spellcasting
+    desc: "The archmage is a level 18 spellcaster. Its spellcasting ability is Intelligence (spell save DC 17, +9 to hit with spell attacks). The archmage has the following wizard spells prepared: Cantrips (at will): fire bolt, light 1st level (4 slots): detect magic, shield"
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    expect(statblock.spellcasting).toBeDefined();
+    expect(statblock.spellcasting?.ability).toBe("int");
+    expect(statblock.spellcasting?.levels[0]).toEqual({ level: 0, slots: undefined, spellNames: ["fire bolt", "light"] });
+  });
+
+  it("leaves statblock.spellcasting undefined with no Spellcasting trait", () => {
+    const statblock = parseStatblock(`\`\`\`statblock
+name: Test Beast
+cr: 1
+ac: 12
+hp: 20
+stats: [14, 12, 14, 4, 10, 6]
+\`\`\`
+`);
+    expect(statblock.spellcasting).toBeUndefined();
+  });
+
   it("throws when the fence is missing required fields", () => {
     const markdown = `\`\`\`statblock
 ac: 10
