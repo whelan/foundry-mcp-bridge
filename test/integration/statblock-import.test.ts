@@ -238,3 +238,74 @@ describe("importNpc: Tier 1 compendium match wired into the import pipeline", ()
     expect(wingAttack).toBeDefined();
   });
 });
+
+describe("importNpc: spellcasting", () => {
+  function seedSpells(mock: MockFoundry) {
+    const spells24: Array<[string, string]> = [
+      ["fire-bolt", "Fire Bolt"],
+      ["light", "Light"],
+      ["mage-hand", "Mage Hand"],
+      ["prestidigitation", "Prestidigitation"],
+      ["detect-magic", "Detect Magic"],
+      ["mage-armor", "Mage Armor"],
+      ["magic-missile", "Magic Missile"],
+      ["shield", "Shield"],
+      ["misty-step", "Misty Step"],
+      ["suggestion", "Suggestion"],
+      ["counterspell", "Counterspell"],
+      ["fireball", "Fireball"],
+      // deliberately no "Fly" entry — exercises the placeholder-fallback path
+      ["dimension-door", "Dimension Door"],
+      ["greater-invisibility", "Greater Invisibility"],
+      ["cone-of-cold", "Cone of Cold"],
+    ];
+    for (const [slug, name] of spells24) {
+      mock.compendium.set(`Compendium.dnd5e.spells24.${slug}`, {
+        documentType: "Item",
+        pack: "dnd5e.spells24",
+        data: { name, type: "spell", system: { level: 0 } },
+      });
+    }
+  }
+
+  it("imports a spellcasting NPC, attaching real spells and a placeholder for the misspelled one", async () => {
+    const mock = new MockFoundry();
+    seedSpells(mock);
+    const transport = new MockTransport(mock);
+    const statblock = loadStatblock("test-archmage.md");
+
+    const result = await importNpc(statblock, realDeps(transport));
+
+    expect(result.tier).toBe(3);
+    const actors = mock.documents("Actor") as Array<{
+      _id: string;
+      name: string;
+      system: Record<string, any>;
+      items: Array<{ name: string; type: string; _stats?: Record<string, any> }>;
+    }>;
+    const created = actors.find((a) => a._id === result.actorId)!;
+
+    expect(created.system.attributes.spellcasting).toBe("int");
+    expect(created.system.spells.spell1).toEqual({ value: 4, override: 4 });
+    expect(created.system.spells.spell5).toEqual({ value: 1, override: 1 });
+
+    const fireball = created.items.find((i) => i.name === "Fireball")!;
+    expect(fireball._stats?.compendiumSource).toBe("Compendium.dnd5e.spells24.fireball");
+
+    // "fli" (the misspelled "fly") has no compendium match -> placeholder item.
+    const placeholder = created.items.find((i) => i.name === "fli")!;
+    expect(placeholder).toBeDefined();
+    expect(placeholder._stats?.compendiumSource).toBeUndefined();
+
+    const report = verifyImportedNpc(
+      { _id: created._id, name: created.name, type: "npc", system: created.system, items: created.items },
+      statblock,
+    );
+    // The misspelled spell's failed check must surface explicitly, not pass silently.
+    expect(report.ok).toBe(false);
+    expect(report.checks.some((c) => c.name.includes('"fli"') && !c.pass)).toBe(true);
+    // Everything else about spellcasting should still check out.
+    expect(report.checks.find((c) => c.name === "Spellcasting ability")?.pass).toBe(true);
+    expect(report.checks.find((c) => c.name.includes("DC"))?.pass).toBe(true);
+  });
+});
