@@ -12,8 +12,14 @@
 //
 // Usage:
 //   node scripts/gen-image.mjs --prompt "a red dragon portrait, dramatic light" \
-//       --out /tmp/dragon.png [--backend cli|a1111] [--width 768] [--height 768] \
+//       (--out /tmp/dragon.png | --name dragon.png [--out-dir images]) \
+//       [--backend cli|a1111|codex] [--width 768] [--height 768] \
 //       [--steps 30] [--negative "blurry, text"] [--no-sidecar]
+//
+// Destination: --out is used verbatim. Otherwise --name lands in the first of
+// --out-dir, $IMAGE_GEN_OUT_DIR, "outputDir" from ./.imagegen.json, or
+// ./images — so each project can carry its own image location in a small
+// committed .imagegen.json: { "outputDir": "images", "codex": { "model": "..." } }
 //
 // Backends (pick with --backend or IMAGE_GEN_BACKEND, default "cli"):
 //   cli    — run a local CLI that writes the image file itself. Provide the
@@ -23,14 +29,34 @@
 //              IMAGE_GEN_CMD='python comfy_cli.py --prompt "{prompt}" --out "{out}"'
 //   a1111  — POST to an Automatic1111 / SD-Forge WebUI HTTP API (it returns
 //            base64 directly). Set SD_WEBUI_URL (default http://127.0.0.1:7860).
+//   codex  — drive the OpenAI Codex CLI (`codex exec`) non-interactively. Codex
+//            saves into its own cache ($CODEX_HOME/generated_images/<session>/)
+//            and its sandbox cannot copy into the workspace, so this script
+//            locates the file via the session id and moves it to the
+//            destination itself. Model: --codex-model, "codex.model" in
+//            .imagegen.json, or $IMAGE_GEN_CODEX_MODEL (else codex's default).
+//            --steps/--negative are diffusion-specific and ignored; --width/
+//            --height become a size hint in the prompt. Timeout:
+//            $IMAGE_GEN_TIMEOUT_MS (default 300000).
 //
-// Output: writes the image to --out, writes "<out>.b64" (raw base64, no
-// newlines) unless --no-sidecar, and prints a one-line JSON summary to stdout
+// Output: writes the image to the destination, writes "<out>.b64" (raw base64,
+// no newlines) unless --no-sidecar, and prints a one-line JSON summary to stdout
 // (path, bytes, mimeType, b64Path) — never the base64 itself, to keep logs sane.
 
 import { spawn } from "node:child_process";
-import { readFile, writeFile, stat } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 function parseArgs(argv) {
   const out = { sidecar: true };
@@ -133,15 +159,177 @@ async function backendA1111(args) {
   await writeFile(args.out, Buffer.from(clean, "base64"));
 }
 
+// --- codex backend helpers (pure; unit-tested in test/unit/gen-image.test.mjs) ---
+
+// `codex exec --json` emits JSONL whose first event is
+// {"type":"thread.started","thread_id":"<uuid>"} — and that uuid is exactly the
+// directory name under $CODEX_HOME/generated_images/. Without --json the
+// banner has a "session id: <uuid>" line; keep it as a fallback for drift.
+export function parseCodexSessionId(lines) {
+  for (const line of lines) {
+    try {
+      const event = JSON.parse(line);
+      if (event?.type === "thread.started" && typeof event.thread_id === "string") {
+        return event.thread_id;
+      }
+    } catch {
+      // not JSON (banner/progress line) — keep scanning
+    }
+  }
+  const m = lines.join("\n").match(/session id:\s*([0-9a-f-]{36})/i);
+  return m ? m[1] : null;
+}
+
+const GENERATED_IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+
+// From the session dir's entries ({ name, mtimeMs }), pick the newest image;
+// anything else generated in the same session is reported, not silently lost.
+export function pickGeneratedImage(entries) {
+  const images = entries
+    .filter((e) => GENERATED_IMAGE_EXTS.has(extname(e.name).toLowerCase()))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  if (images.length === 0) return null;
+  return { chosen: images[0], extras: images.slice(1) };
+}
+
+// Destination precedence: --out verbatim; else --name inside the first of
+// --out-dir, $IMAGE_GEN_OUT_DIR, config outputDir, "images". Null if neither
+// --out nor --name was given.
+export function resolveOutPath(args, config, env, cwd) {
+  if (args.out) return args.out;
+  if (!args.name) return null;
+  const dir =
+    args["out-dir"] ?? env.IMAGE_GEN_OUT_DIR ?? config?.outputDir ?? "images";
+  return resolve(cwd, dir, args.name);
+}
+
+// Codex's own copy attempts fail in its sandbox (unsupported exec_command), so
+// tell it up front not to try — we move the file ourselves afterwards.
+export function buildCodexPrompt(args) {
+  let prompt =
+    "Use the image generation tool to generate exactly one image:\n\n" +
+    `${args.prompt}\n\n` +
+    "Do not attempt to save, copy, move, or verify the file — only generate it.";
+  if (args.width && args.height) {
+    prompt += ` Target size: ${args.width}x${args.height}.`;
+  }
+  return prompt;
+}
+
+async function readImagegenConfig(cwd) {
+  let raw;
+  try {
+    raw = await readFile(join(cwd, ".imagegen.json"), "utf8");
+  } catch {
+    return null;
+  }
+  try {
+    const config = JSON.parse(raw);
+    return typeof config === "object" && config !== null ? config : null;
+  } catch (e) {
+    console.error(`gen-image: ignoring invalid .imagegen.json: ${e.message}`);
+    return null;
+  }
+}
+
+// rename() fails with EXDEV across filesystems (codex's cache lives under
+// $HOME; the project may be on another volume) — fall back to copy + unlink.
+async function moveFile(src, dest) {
+  try {
+    await rename(src, dest);
+  } catch (e) {
+    if (e?.code !== "EXDEV") throw e;
+    await copyFile(src, dest);
+    await unlink(src);
+  }
+}
+
+function outputTail(lines) {
+  return lines.slice(-20).join("\n");
+}
+
+function runCodex(argv) {
+  return new Promise((resolvePromise, reject) => {
+    // stdin must be ignored: `codex exec` reads a piped stdin as extra prompt.
+    const child = spawn("codex", argv, { stdio: ["ignore", "pipe", "inherit"] });
+    const timeoutMs = Number(process.env.IMAGE_GEN_TIMEOUT_MS ?? 300_000);
+    let out = "";
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`codex timed out after ${timeoutMs}ms (IMAGE_GEN_TIMEOUT_MS)`));
+    }, timeoutMs);
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+      process.stderr.write(chunk); // progress visibility; stdout stays JSON-only
+    });
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      reject(
+        e?.code === "ENOENT"
+          ? new Error("backend 'codex' needs the OpenAI Codex CLI (`codex`) on PATH")
+          : e,
+      );
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const lines = out.split(/\r?\n/);
+      if (code === 0) resolvePromise(lines);
+      else reject(new Error(`codex exited with code ${code}\n${outputTail(lines)}`));
+    });
+  });
+}
+
+async function backendCodex(args, config) {
+  const model =
+    args["codex-model"] ?? config?.codex?.model ?? process.env.IMAGE_GEN_CODEX_MODEL;
+  const argv = ["exec", "--json", "-s", "read-only", "--skip-git-repo-check"];
+  if (model) argv.push("-m", model);
+  argv.push(buildCodexPrompt(args));
+  console.error("gen-image: running codex exec (this can take a minute)...");
+  const lines = await runCodex(argv);
+
+  const sessionId = parseCodexSessionId(lines);
+  if (!sessionId) {
+    fail(`no codex session id found in the output (CLI format drift?)\n${outputTail(lines)}`);
+  }
+  const codexHome = process.env.CODEX_HOME ?? join(homedir(), ".codex");
+  const sessionDir = join(codexHome, "generated_images", sessionId);
+  const names = await readdir(sessionDir).catch(() => []);
+  const entries = [];
+  for (const name of names) {
+    const s = await stat(join(sessionDir, name)).catch(() => null);
+    if (s?.isFile()) entries.push({ name, mtimeMs: s.mtimeMs });
+  }
+  const picked = pickGeneratedImage(entries);
+  if (!picked) {
+    fail(
+      `codex completed but produced no image in ${sessionDir} ` +
+        `(did it answer in text or refuse?)\n${outputTail(lines)}`,
+    );
+  }
+  if (picked.extras.length > 0) {
+    console.error(
+      `gen-image: codex produced ${picked.extras.length + 1} images; using the newest, ` +
+        `leaving in ${sessionDir}: ${picked.extras.map((e) => e.name).join(", ")}`,
+    );
+  }
+  await moveFile(join(sessionDir, picked.chosen.name), args.out);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.prompt) fail("missing --prompt");
-  if (!args.out) fail("missing --out");
+  const config = await readImagegenConfig(process.cwd());
+  const outPath = resolveOutPath(args, config, process.env, process.cwd());
+  if (!outPath) fail("missing --out or --name");
+  args.out = outPath;
+  await mkdir(dirname(resolve(outPath)), { recursive: true });
   const backend = args.backend ?? process.env.IMAGE_GEN_BACKEND ?? "cli";
 
   if (backend === "cli") await backendCli(args);
   else if (backend === "a1111") await backendA1111(args);
-  else fail(`unknown backend '${backend}' (expected cli | a1111)`);
+  else if (backend === "codex") await backendCodex(args, config);
+  else fail(`unknown backend '${backend}' (expected cli | a1111 | codex)`);
 
   const bytes = await readFile(args.out);
   const summary = {
@@ -159,4 +347,8 @@ async function main() {
   console.log(JSON.stringify(summary));
 }
 
-main().catch((e) => fail(e?.message ?? String(e)));
+// Only run when executed directly — the pure helpers above are imported by
+// the unit tests.
+const isMain =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) main().catch((e) => fail(e?.message ?? String(e)));
