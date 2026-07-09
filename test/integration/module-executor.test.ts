@@ -126,4 +126,36 @@ describe("module executeCommand against mock-foundry", () => {
     expect(res.ok).toBe(true);
     if (res.ok) expect((res.data as any).system.id).toBe("dnd5e");
   });
+
+  it("clones a compendium item as an embedded Item via importEmbeddedFromCompendium", async () => {
+    const { mock, api, context } = setup();
+    mock.compendium.set("Compendium.dnd5e.spells24.fire-bolt", {
+      documentType: "Item",
+      pack: "dnd5e.spells24",
+      data: { name: "Fire Bolt", type: "spell", system: { level: 0 } },
+    });
+    await mock.execute(
+      env({ command: { action: "create", documentType: "Actor", data: { _id: "a1", name: "Wizard" }, keepId: true } }),
+    );
+
+    const res = await executeCommand(
+      env({
+        command: {
+          action: "importEmbeddedFromCompendium",
+          parentType: "Actor",
+          parentId: "a1",
+          embeddedName: "Item",
+          uuids: [{ uuid: "Compendium.dnd5e.spells24.fire-bolt" }],
+        },
+      }),
+      api,
+      context,
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect((res.data as Array<{ name: string }>)).toHaveLength(1);
+    expect((res.data as Array<{ name: string }>)[0]!.name).toBe("Fire Bolt");
+    const actor = mock.documents("Actor")[0] as { items: unknown[] };
+    expect(actor.items).toHaveLength(1);
+  });
 });

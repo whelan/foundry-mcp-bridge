@@ -21,6 +21,7 @@ import {
   runUpdateQuest,
   runSearchCompendium,
   runImportFromCompendium,
+  runImportEmbeddedFromCompendium,
 } from "../../packages/mcp-server/src/tools.js";
 
 function setup() {
@@ -911,6 +912,77 @@ describe("search_compendium / import_from_compendium pipeline", () => {
       items?: unknown[];
     };
     expect(secondDoc.items).toHaveLength(5);
+  });
+});
+
+describe("import_embedded_from_compendium pipeline", () => {
+  const SPELL_UUID = "Compendium.dnd5e.spells24.fire-bolt";
+
+  function seedSpellAndActor(mock: MockFoundry) {
+    mock.compendium.set(SPELL_UUID, {
+      documentType: "Item",
+      pack: "dnd5e.spells24",
+      data: { name: "Fire Bolt", type: "spell", system: { level: 0 } },
+    });
+    return seed(mock, { action: "create", documentType: "Actor", data: { _id: "a1", name: "Wizard" }, keepId: true });
+  }
+
+  it("clones a compendium spell as an embedded Item on the actor", async () => {
+    const { mock, transport } = setup();
+    await seedSpellAndActor(mock);
+    const out = await runImportEmbeddedFromCompendium(transport, {
+      parentType: "Actor",
+      parentId: "a1",
+      embeddedName: "Item",
+      uuids: [{ uuid: SPELL_UUID }],
+      fields: ["_id", "name", "type"],
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["dry-run", "write", "read-back"]);
+    if (!out.ok) return;
+    const created = out.data as Array<{ name: string; type: string }>;
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ name: "Fire Bolt", type: "spell" });
+  });
+
+  it("returns NOT_FOUND for an unknown uuid", async () => {
+    const { mock, transport } = setup();
+    await seedSpellAndActor(mock);
+    const out = await runImportEmbeddedFromCompendium(transport, {
+      parentType: "Actor",
+      parentId: "a1",
+      embeddedName: "Item",
+      uuids: [{ uuid: "Compendium.dnd5e.spells24.nonexistent" }],
+    });
+    expectErr(out, "NOT_FOUND");
+  });
+
+  it("rejects a supplied-but-empty patch with VALIDATION", async () => {
+    const { mock, transport } = setup();
+    await seedSpellAndActor(mock);
+    const out = await runImportEmbeddedFromCompendium(transport, {
+      parentType: "Actor",
+      parentId: "a1",
+      embeddedName: "Item",
+      uuids: [{ uuid: SPELL_UUID, patch: {} }],
+    });
+    expectErr(out, "VALIDATION");
+  });
+
+  it("rolls back the created embedded items when parent read-back fails", async () => {
+    const { mock, transport } = setup();
+    await seedSpellAndActor(mock);
+    transport.failFindAtCall = 1;
+    const out = await runImportEmbeddedFromCompendium(transport, {
+      parentType: "Actor",
+      parentId: "a1",
+      embeddedName: "Item",
+      uuids: [{ uuid: SPELL_UUID }],
+    });
+    expectErr(out, "READBACK_MISMATCH");
+    expect(out.steps).toContain("rollback");
+    const actor = mock.documents("Actor").find((a: any) => a._id === "a1") as { items: unknown[] };
+    expect(actor.items.length).toBe(0);
   });
 });
 

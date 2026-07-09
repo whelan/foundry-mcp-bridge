@@ -219,6 +219,59 @@ describe("embedded documents", () => {
   });
 });
 
+describe("importEmbeddedFromCompendium", () => {
+  it("clones a compendium entry as a new embedded document on the parent", async () => {
+    const f = new MockFoundry();
+    f.compendium.set("Compendium.dnd5e.spells24.fire-bolt", {
+      documentType: "Item",
+      pack: "dnd5e.spells24",
+      data: { name: "Fire Bolt", type: "spell", system: { level: 0 } },
+    });
+    await f.execute(
+      envelope({ action: "create", documentType: "Actor", data: { _id: "a1", name: "Wizard" }, keepId: true }),
+    );
+
+    const result = await f.execute(
+      envelope({
+        action: "importEmbeddedFromCompendium",
+        parentType: "Actor",
+        parentId: "a1",
+        embeddedName: "Item",
+        uuids: [{ uuid: "Compendium.dnd5e.spells24.fire-bolt" }],
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const created = result.data as Array<{ _id: string; name: string }>;
+    expect(created).toHaveLength(1);
+    expect(created[0]!.name).toBe("Fire Bolt");
+
+    const actor = f.store.get(documentKey("Actor", "a1")) as { items: Array<{ _id: string; name: string }> };
+    expect(actor.items).toHaveLength(1);
+    expect(actor.items[0]!._id).toBe(created[0]!._id);
+  });
+
+  it("returns NOT_FOUND for an unknown compendium uuid", async () => {
+    const f = new MockFoundry();
+    await f.execute(
+      envelope({ action: "create", documentType: "Actor", data: { _id: "a1", name: "Wizard" }, keepId: true }),
+    );
+    const result = await f.execute(
+      envelope({
+        action: "importEmbeddedFromCompendium",
+        parentType: "Actor",
+        parentId: "a1",
+        embeddedName: "Item",
+        uuids: [{ uuid: "Compendium.dnd5e.spells24.nonexistent" }],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("NOT_FOUND");
+  });
+});
+
 describe("uploadAsset", () => {
   it("uploads via FilePicker and returns the stored path", async () => {
     const f = new MockFoundry();
