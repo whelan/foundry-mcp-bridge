@@ -162,7 +162,12 @@ const show = (name, out) => {
 // M6: NPC import leg (full pipeline: parse → upload image → importNpc → verify → clean up).
 // Shared by mock mode (in-process stub) and --live mode (real relay + module) —
 // only what's on the other end of `server` differs.
-async function runNpcLeg(server, opts) {
+//
+// assetSource: "data" (local worlds) or "forgevtt" (Forge — FilePicker takes the
+// source verbatim, no auto-detection, so the caller must know which host it's
+// talking to; see docs/statblock-import-execution-plan.md M6c and the
+// forge-live-test-setup note).
+async function runNpcLeg(server, opts, assetSource = "data") {
   const statblockPath = "test/fixtures/statblock-import/gravemire-stalker.md";
   const imagePath = "test/fixtures/statblock-import/gravemire-stalker.png";
 
@@ -187,7 +192,7 @@ async function runNpcLeg(server, opts) {
       return res.data;
     },
     async uploadImage(filename, contentBase64, targetFolder) {
-      const res = await runUploadAsset(server, { source: "data", target: targetFolder, filename, contentBase64 }, opts);
+      const res = await runUploadAsset(server, { source: assetSource, target: targetFolder, filename, contentBase64 }, opts);
       if (!res.ok) throw new Error(`uploadAsset failed: ${res.error.code}`);
       return res.data.path;
     },
@@ -247,7 +252,16 @@ if (live) {
   );
 
   try {
-    await runNpcLeg(server, opts);
+    // Forge worlds need uploadAsset called with source: "forgevtt" — the
+    // module passes source straight to FilePicker, no auto-detection — so
+    // this leg must know which host it's talking to before it uploads.
+    const worldInfo = await runGetWorldInfo(server, {}, opts);
+    if (!worldInfo.ok) throw new Error(`get_world_info failed: ${worldInfo.error.code}`);
+    const onForge = worldInfo.data.forge.active;
+    const assetSource = onForge ? "forgevtt" : "data";
+    console.log(`world: ${onForge ? "Forge" : "local"} (asset source: ${assetSource})\n`);
+
+    await runNpcLeg(server, opts, assetSource);
   } catch (e) {
     console.error("NPC import leg error:", e.message);
     failed = true;
