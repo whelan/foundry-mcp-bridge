@@ -456,6 +456,144 @@ actions:
     ]);
   });
 
+  it("sets resources.legact.max from the count of legendary_actions entries", () => {
+    const markdown = `\`\`\`statblock
+name: Test Dragon
+cr: 10
+ac: 18
+hp: 150
+stats: [20, 10, 18, 10, 14, 16]
+legendary_actions:
+  - name: Detect
+    desc: "The dragon makes a Wisdom (Perception) check."
+  - name: Tail Attack
+    desc: "Melee Attack Roll: +8, reach 15 ft. Hit: 13 (2d6 + 4) Bludgeoning damage."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const system = actor.system as Record<string, any>;
+    expect(system.resources.legact.max).toBe(2);
+    expect(system.resources.legact.spent).toBe(0);
+  });
+
+  it("honors an explicit legendary_action_count override instead of counting entries", () => {
+    const markdown = `\`\`\`statblock
+name: Test Dragon
+cr: 10
+ac: 18
+hp: 150
+stats: [20, 10, 18, 10, 14, 16]
+legendary_action_count: 3
+legendary_actions:
+  - name: Detect
+    desc: "The dragon makes a Wisdom (Perception) check."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const system = actor.system as Record<string, any>;
+    expect(system.resources.legact.max).toBe(3);
+  });
+
+  it("sets resources.legres.max and a daily-recovery uses block from a Legendary Resistance trait", () => {
+    const markdown = `\`\`\`statblock
+name: Test Dragon
+cr: 10
+ac: 18
+hp: 150
+stats: [20, 10, 18, 10, 14, 16]
+traits:
+  - name: Legendary Resistance (3/Day)
+    desc: "If the dragon fails a saving throw, it can choose to succeed instead."
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const system = actor.system as Record<string, any>;
+    expect(system.resources.legres.max).toBe(3);
+    expect(system.resources.legres.spent).toBe(0);
+
+    const legres = actor.items.find((i) => i.name === "Legendary Resistance")!;
+    expect((legres.system as Record<string, any>).uses).toEqual({
+      spent: 0,
+      max: "3",
+      recovery: [{ period: "day", formula: "", type: "recoverAll" }],
+    });
+  });
+
+  it("sets resources.lair.initiative to 20 when lair_actions are present, else null", () => {
+    const withLair = parseStatblock(`\`\`\`statblock
+name: Test Dragon
+cr: 10
+ac: 18
+hp: 150
+stats: [20, 10, 18, 10, 14, 16]
+lair_actions:
+  - name: Volcanic Fissure
+    desc: "Dexterity Saving Throw: DC 16, each creature standing in the new fissure. Failure: 10 (3d6) Fire damage."
+\`\`\`
+`);
+    const actorWithLair = statblockToFoundryActor(withLair);
+    expect((actorWithLair.system as Record<string, any>).resources.lair).toEqual({
+      value: true,
+      initiative: 20,
+      inside: false,
+    });
+
+    const withoutLair = parseStatblock(`\`\`\`statblock
+name: Test Beast
+cr: 1
+ac: 12
+hp: 20
+stats: [14, 12, 14, 4, 10, 6]
+\`\`\`
+`);
+    const actorWithoutLair = statblockToFoundryActor(withoutLair);
+    expect((actorWithoutLair.system as Record<string, any>).resources.lair).toEqual({
+      value: false,
+      initiative: null,
+      inside: false,
+    });
+  });
+
+  it("sets attributes.spellcasting and spells.spellN.{value,override} from statblock.spellcasting", () => {
+    const markdown = `\`\`\`statblock
+name: Test Archmage
+cr: 12
+ac: 12
+hp: 100
+stats: [10, 14, 12, 20, 15, 16]
+traits:
+  - name: Spellcasting
+    desc: "The archmage is a level 18 spellcaster. Its spellcasting ability is Intelligence (spell save DC 17, +9 to hit with spell attacks). The archmage has the following wizard spells prepared: Cantrips (at will): fire bolt, light 1st level (4 slots): detect magic, shield 2nd level (3 slots): misty step, suggestion"
+\`\`\`
+`;
+    const statblock = parseStatblock(markdown);
+    const actor = statblockToFoundryActor(statblock);
+    const system = actor.system as Record<string, any>;
+
+    expect(system.attributes.spellcasting).toBe("int");
+    expect(system.spells.spell1).toEqual({ value: 4, override: 4 });
+    expect(system.spells.spell2).toEqual({ value: 3, override: 3 });
+    expect(system.spells.spell0).toBeUndefined();
+  });
+
+  it("omits spellcasting fields entirely for a non-caster", () => {
+    const statblock = parseStatblock(`\`\`\`statblock
+name: Test Beast
+cr: 1
+ac: 12
+hp: 20
+stats: [14, 12, 14, 4, 10, 6]
+\`\`\`
+`);
+    const actor = statblockToFoundryActor(statblock);
+    const system = actor.system as Record<string, any>;
+    expect(system.attributes.spellcasting).toBeUndefined();
+    expect(system.spells).toBeUndefined();
+  });
+
   it.each([
     ["legendary_actions", "legendary"],
     ["lair_actions", "lair"],

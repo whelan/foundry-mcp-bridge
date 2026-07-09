@@ -169,6 +169,19 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
   const ci = splitKnown(statblock.traits.conditionImmunities, KNOWN_CONDITIONS);
   const langs = splitKnown(statblock.traits.languages, KNOWN_LANGUAGES);
 
+  const legendaryCount = statblock.actions.filter((a) => a.type === "legendary").length;
+  const legendaryActionMax = statblock.data.legendary_action_count ?? legendaryCount;
+  const legendaryResistance = statblock.abilities.find((a) => a.legendaryResistanceUses !== undefined);
+  const hasLairActions = statblock.actions.some((a) => a.type === "lair");
+
+  const spellSlots: Record<string, { value: number; override: number }> = {};
+  if (statblock.spellcasting) {
+    for (const lvl of statblock.spellcasting.levels) {
+      if (lvl.level === 0 || !lvl.slots) continue; // cantrips have no slot bucket
+      spellSlots[`spell${lvl.level}`] = { value: lvl.slots, override: lvl.slots };
+    }
+  }
+
   // Build system object
   const system: Record<string, unknown> = {
     attributes: {
@@ -197,6 +210,7 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
         hover: false,
       },
       senses: buildSenses(statblock.traits.senses),
+      ...(statblock.spellcasting ? { spellcasting: statblock.spellcasting.ability } : {}),
     },
     details: {
       biography: { value: "" },
@@ -221,6 +235,12 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
     },
     abilities,
     skills,
+    resources: {
+      legact: { max: legendaryActionMax, spent: 0 },
+      legres: { max: legendaryResistance?.legendaryResistanceUses ?? 0, spent: 0 },
+      lair: { value: hasLairActions, initiative: hasLairActions ? 20 : null, inside: false },
+    },
+    ...(statblock.spellcasting ? { spells: spellSlots } : {}),
   };
 
   // Create embedded items from abilities and actions
@@ -228,7 +248,14 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
 
   // Add trait features (passive: the "trait" property, no activity)
   for (const ability of statblock.abilities) {
-    items.push(featItem(ability.name, ability.description, { properties: ["trait"] }));
+    items.push(
+      featItem(ability.name, ability.description, {
+        properties: ["trait"],
+        ...(ability.legendaryResistanceUses !== undefined
+          ? { uses: dailyUses(ability.legendaryResistanceUses) }
+          : {}),
+      }),
+    );
   }
 
   // Add actions (weapons and special actions)
@@ -255,6 +282,15 @@ function itemUses(recharge?: { value: number; charged: boolean }): Record<string
     spent: 0,
     max: "1",
     recovery: [{ period: "recharge", formula: String(recharge.value), type: "recoverAll" }],
+  };
+}
+
+/** Item-level `uses` for a daily-recovery feature (e.g. Legendary Resistance), else the empty default. */
+function dailyUses(max: number): Record<string, unknown> {
+  return {
+    spent: 0,
+    max: String(max),
+    recovery: [{ period: "day", formula: "", type: "recoverAll" }],
   };
 }
 
