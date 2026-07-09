@@ -35,6 +35,7 @@ import {
   runCreateQuest,
   runSearchCompendium,
   runImportFromCompendium,
+  runImportEmbeddedFromCompendium,
 } from "../packages/mcp-server/dist/index.js";
 // Reuse the real dot-notation merge + embedded-field mapping instead of re-implementing them.
 import { applyUpdate, embeddedField } from "@foundry-mcp-bridge/shared";
@@ -44,6 +45,31 @@ import fs from "fs";
 // --- tiny in-memory "Foundry" stub (stands in for the module) ---------------
 const store = new Map(); // `${type}:${id}` -> doc
 const rid = () => Math.random().toString(36).slice(2, 18).padEnd(16, "x");
+
+// A handful of dnd5e.spells24 stand-ins so the Test Archmage NPC leg's
+// spell-name resolution (search + importEmbeddedFromCompendium) has
+// something real to resolve against. Deliberately missing "fly" (the
+// archmage fixture's spell list has a typo, "fli") so the leg also proves
+// the placeholder-fallback path.
+const SPELL_COMPENDIUM = new Map(
+  [
+    ["fire-bolt", "Fire Bolt"],
+    ["light", "Light"],
+    ["mage-hand", "Mage Hand"],
+    ["prestidigitation", "Prestidigitation"],
+    ["detect-magic", "Detect Magic"],
+    ["mage-armor", "Mage Armor"],
+    ["magic-missile", "Magic Missile"],
+    ["shield", "Shield"],
+    ["misty-step", "Misty Step"],
+    ["suggestion", "Suggestion"],
+    ["counterspell", "Counterspell"],
+    ["fireball", "Fireball"],
+    ["dimension-door", "Dimension Door"],
+    ["greater-invisibility", "Greater Invisibility"],
+    ["cone-of-cold", "Cone of Cold"],
+  ].map(([slug, name]) => [`Compendium.dnd5e.spells24.${slug}`, { name, type: "spell", system: { level: 0 } }]),
+);
 function handle(env) {
   const c = env.command;
   const id = env.id;
@@ -132,6 +158,17 @@ function handle(env) {
     case "createQuest":
       return ok({ ...(c.data || {}), _id: rid() });
     case "searchCompendium":
+      if (c.documentType === "Item") {
+        // Real search: name-substring match against the spell stand-ins,
+        // so the archmage NPC leg's spell resolution (and its deliberate
+        // "fli" typo -> placeholder fallback) is meaningfully exercised.
+        const query = c.nameQuery.toLowerCase();
+        return ok(
+          [...SPELL_COMPENDIUM.entries()]
+            .filter(([, entry]) => entry.name.toLowerCase().includes(query))
+            .map(([uuid, entry]) => ({ uuid, pack: "dnd5e.spells24", name: entry.name, type: "spell" })),
+        );
+      }
       // Return a dummy result for testing (real implementation loads from fixtures)
       return ok([{ uuid: "Compendium.dnd5e.actors24.dummy", pack: "dnd5e.actors24", name: "Dummy", type: "Actor" }]);
     case "importFromCompendium": {
@@ -142,6 +179,25 @@ function handle(env) {
       const doc = { ...(c.patch ? applyUpdate(base, c.patch) : base), _id };
       if (!env.dryRun) store.set(`${c.documentType}:${_id}`, doc);
       return ok(doc);
+    }
+    case "importEmbeddedFromCompendium": {
+      const k = `${c.parentType}:${c.parentId}`;
+      const parent = store.get(k);
+      if (!parent) return err("NOT_FOUND", `${c.parentType} ${c.parentId}`);
+      const created = [];
+      for (const entry of c.uuids) {
+        const source = SPELL_COMPENDIUM.get(entry.uuid);
+        if (!source) return err("NOT_FOUND", `compendium entry ${entry.uuid} not found`);
+        const data = entry.patch ? applyUpdate(source, entry.patch) : structuredClone(source);
+        data._stats = { compendiumSource: entry.uuid };
+        created.push({ ...data, _id: rid() });
+      }
+      if (!env.dryRun) {
+        const field = embeddedField(c.embeddedName);
+        parent[field] = [...(parent[field] || []), ...created];
+        store.set(k, parent);
+      }
+      return ok(created);
     }
     default:
       return err("UNSUPPORTED", c.action);
@@ -167,13 +223,15 @@ const show = (name, out) => {
 // source verbatim, no auto-detection, so the caller must know which host it's
 // talking to; see docs/statblock-import-execution-plan.md M6c and the
 // forge-live-test-setup note).
-async function runNpcLeg(server, opts, assetSource = "data") {
-  const statblockPath = "test/fixtures/statblock-import/gravemire-stalker.md";
-  const imagePath = "test/fixtures/statblock-import/gravemire-stalker.png";
-
+async function runNpcLeg(server, opts, assetSource = "data", fixture = { name: "gravemire-stalker", hasImage: true }) {
+  const statblockPath = `test/fixtures/statblock-import/${fixture.name}.md`;
   const statblock = parseStatblock(fs.readFileSync(statblockPath, "utf-8"));
-  const imageContent = fs.readFileSync(imagePath);
-  const imageBase64 = imageContent.toString("base64");
+
+  let imageContent;
+  if (fixture.hasImage) {
+    const imagePath = `test/fixtures/statblock-import/${fixture.name}.png`;
+    imageContent = { filename: `${fixture.name}.png`, contentBase64: fs.readFileSync(imagePath).toString("base64") };
+  }
 
   const importResult = await importNpc(statblock, {
     async searchCompendium(nameQuery) {
@@ -196,7 +254,30 @@ async function runNpcLeg(server, opts, assetSource = "data") {
       if (!res.ok) throw new Error(`uploadAsset failed: ${res.error.code}`);
       return res.data.path;
     },
-  }, { filename: "gravemire-stalker.png", contentBase64: imageBase64 });
+    async searchSpellCompendium(nameQuery) {
+      const res = await runSearchCompendium(server, { documentType: "Item", nameQuery }, opts);
+      if (!res.ok) throw new Error(`searchSpellCompendium failed: ${res.error.code}`);
+      return res.data || [];
+    },
+    async importEmbeddedFromCompendium(parentId, uuid) {
+      const res = await runImportEmbeddedFromCompendium(
+        server,
+        { parentType: "Actor", parentId, embeddedName: "Item", uuids: [{ uuid }] },
+        opts,
+      );
+      if (!res.ok) throw new Error(`importEmbeddedFromCompendium failed: ${res.error.code}`);
+      return res.data[0];
+    },
+    async createEmbeddedItem(parentId, data) {
+      const res = await runCreateEmbedded(
+        server,
+        { parentType: "Actor", parentId, embeddedName: "Item", data: [data] },
+        opts,
+      );
+      if (!res.ok) throw new Error(`createEmbeddedItem failed: ${res.error.code}`);
+      return res.data[0];
+    },
+  }, imageContent);
 
   // Read back the imported actor and verify
   const readBackRes = await runFindDocuments(server, { documentType: "Actor", id: importResult.actorId }, opts);
@@ -207,31 +288,54 @@ async function runNpcLeg(server, opts, assetSource = "data") {
 
   // Show the verification report
   const passCount = verification.checks.filter((c) => c.pass).length;
-  const failCount = verification.checks.filter((c) => !c.pass).length;
+  const failedChecks = verification.checks.filter((c) => !c.pass);
   console.log(`\nM6 NPC import verification: ${passCount}/${verification.checks.length} passed`);
-  if (failCount > 0) {
+  if (failedChecks.length > 0) {
     console.log("Failed checks:");
-    verification.checks.filter((c) => !c.pass).forEach((c) => {
+    failedChecks.forEach((c) => {
       console.log(`  ✗ ${c.name}: got ${c.got}, want ${c.want}`);
     });
   }
+
+  // A failure is only a real problem if it isn't one of this fixture's known,
+  // intentional failures (see NPC_LEGS's expectedFailures doc comment).
+  const expectedFailures = fixture.expectedFailures ?? [];
+  const unexpectedFailures = failedChecks.filter(
+    (c) => !expectedFailures.some((substr) => c.name.includes(substr)),
+  );
 
   // Clean up: delete the actor and uploaded assets (selftest must stay non-destructive).
   await runDeleteDocument(server, { documentType: "Actor", id: importResult.actorId }, opts);
 
   show(
-    "import_npc (M6 NPC leg)",
-    verification.ok
-      ? { ok: true, steps: [`verified ${passCount}/${verification.checks.length} checks`] }
+    `import_npc (M6 NPC leg: ${fixture.name})`,
+    unexpectedFailures.length === 0
+      ? { ok: true, steps: [`verified ${passCount}/${verification.checks.length} checks (${expectedFailures.length} known-expected failures)`] }
       : {
           ok: false,
           error: {
             code: "VERIFICATION_FAILED",
-            message: verification.checks.filter((c) => !c.pass).map((c) => c.name).join(", "),
+            message: unexpectedFailures.map((c) => c.name).join(", "),
           },
         },
   );
 }
+
+// M6a/M6b: run every acceptance NPC back to back — Gravemire Stalker (baseline),
+// Young Ash Wyrm (legendary + lair + legendary resistance, Part A), and Test
+// Archmage (spellcasting + placeholder fallback, Part B).
+//
+// expectedFailures: substrings of check names that are KNOWN, intentional
+// failures (not bugs) -- e.g. Test Archmage's spell list has a deliberate
+// typo ("fli" for "fly") specifically to prove the placeholder-fallback path
+// attaches instead of crashing; its "is the official item" check is SUPPOSED
+// to fail. A leg still counts as PASS if every failing check matches one of
+// these substrings.
+const NPC_LEGS = [
+  { name: "gravemire-stalker", hasImage: true, expectedFailures: [] },
+  { name: "young-ash-wyrm", hasImage: false, expectedFailures: [] },
+  { name: "test-archmage", hasImage: false, expectedFailures: ['Spell "fli"'] },
+];
 
 if (live) {
   // --live: bind to the REAL relay (same config the real MCP server reads) and
@@ -261,7 +365,9 @@ if (live) {
     const assetSource = onForge ? "forgevtt" : "data";
     console.log(`world: ${onForge ? "Forge" : "local"} (asset source: ${assetSource})\n`);
 
-    await runNpcLeg(server, opts, assetSource);
+    for (const fixture of NPC_LEGS) {
+      await runNpcLeg(server, opts, assetSource, fixture);
+    }
   } catch (e) {
     console.error("NPC import leg error:", e.message);
     failed = true;
@@ -314,7 +420,9 @@ show("import_from_compendium (Tier 1)", await runImportFromCompendium(server, { 
 show("import_from_compendium (Tier 1, with patch)", await runImportFromCompendium(server, { documentType: "Actor", uuid: "Compendium.dnd5e.actors24.dummy", patch: { name: "Patched Goblin" } }, opts));
 
 try {
-  await runNpcLeg(server, opts);
+  for (const fixture of NPC_LEGS) {
+    await runNpcLeg(server, opts, "data", fixture);
+  }
 } catch (e) {
   console.error("NPC import leg error:", e.message);
   failed = true;
