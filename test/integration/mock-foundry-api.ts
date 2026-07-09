@@ -136,5 +136,11 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
         opts,
       )) as DocData;
     },
+    async importEmbeddedFromCompendium(parentType, parentId, embeddedName, uuids, opts) {
+      return (await run(
+        { action: "importEmbeddedFromCompendium", parentType, parentId, embeddedName, uuids },
+        opts,
+      )) as DocData[];
+    },
   } satisfies FoundryDocumentApi;
 }

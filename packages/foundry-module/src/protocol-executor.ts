@@ -147,6 +147,13 @@ export interface FoundryDocumentApi {
     folderId: string | undefined,
     opts: ExecuteOptions,
   ): Promise<DocData>;
+  importEmbeddedFromCompendium(
+    parentType: DocumentType,
+    parentId: string,
+    embeddedName: string,
+    uuids: Array<{ uuid: string; patch?: DocData }>,
+    opts: ExecuteOptions,
+  ): Promise<DocData[]>;
 }
 
 export interface ExecutorContext {
@@ -264,5 +271,13 @@ async function dispatch(
       return api.searchCompendium(command.packScope, command.documentType, command.nameQuery);
     case "importFromCompendium":
       return api.importFromCompendium(command.documentType, command.uuid, command.patch, command.folderId, opts);
+    case "importEmbeddedFromCompendium":
+      return api.importEmbeddedFromCompendium(
+        command.parentType,
+        command.parentId,
+        command.embeddedName,
+        command.uuids,
+        opts,
+      );
   }
 }

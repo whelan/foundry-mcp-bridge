@@ -8,6 +8,7 @@
 
 import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, type DocumentType } from "@foundry-mcp-bridge/shared";
 import type {
+  DocData,
   ExecuteOptions,
   FindSelector,
   FoundryDocumentApi,
@@ -418,6 +419,30 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       }
       const doc = await cls.create(data);
       return doc.toObject();
+    },
+
+    async importEmbeddedFromCompendium(parentType, parentId, embeddedName, uuids, opts) {
+      const parent = requireDoc(parentType, parentId);
+      const datas: DocData[] = [];
+      for (const entry of uuids) {
+        let source;
+        try {
+          source = await fromUuid(entry.uuid);
+        } catch (e) {
+          throw new CommandExecutionError(
+            "NOT_FOUND",
+            `compendium entry ${entry.uuid} not found`,
+            { cause: e instanceof Error ? e.message : String(e) },
+          );
+        }
+        if (!source) {
+          throw new CommandExecutionError("NOT_FOUND", `compendium entry ${entry.uuid} not found`);
+        }
+        datas.push(entry.patch ? applyUpdate(source.toObject(), entry.patch) : source.toObject());
+      }
+      if (opts.dryRun) return datas;
+      const created = await parent.createEmbeddedDocuments(embeddedName, datas);
+      return created.map((d: any) => d.toObject());
     },
   } satisfies FoundryDocumentApi;
 }

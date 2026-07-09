@@ -102,6 +102,8 @@ function commandSummary(c: Command): string {
       return `${c.documentType} nameQuery=${c.nameQuery}`;
     case "importFromCompendium":
       return `uuid=${c.uuid.slice(0, 20)}...`;
+    case "importEmbeddedFromCompendium":
+      return `${c.parentType}/${c.embeddedName} parent=${c.parentId} n=${c.uuids.length}`;
   }
 }
 
@@ -869,6 +871,65 @@ export async function importFromCompendiumReliable(
       expected: expectedFromOverrides(input.patch),
       rollback: (id) => ({ action: "delete", documentType: input.documentType, id }),
       mismatchMessage: "imported document did not match expected after read-back; rolled back",
+    },
+    opts,
+    [],
+  );
+}
+
+export interface ImportEmbeddedFromCompendiumInput {
+  parentType: DocumentType;
+  parentId: string;
+  embeddedName: string;
+  uuids: Array<{ uuid: string; patch?: Json }>;
+}
+
+export async function importEmbeddedFromCompendiumReliable(
+  transport: RelayTransport,
+  input: ImportEmbeddedFromCompendiumInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  // Same emptiness guard as importFromCompendiumReliable, applied per-entry:
+  // an entry's patch is optional (undefined = clone as-is), but a supplied-
+  // and-empty patch silently drops caller intent (see isEmptyDiff).
+  const badEntry = input.uuids.find((u) => isEmptyDiff(u.patch));
+  if (badEntry) {
+    return validationFailure(`patch for uuid ${badEntry.uuid} has no safe fields to apply`);
+  }
+
+  return runEmbeddedMutation(
+    transport,
+    {
+      write: {
+        action: "importEmbeddedFromCompendium",
+        parentType: input.parentType,
+        parentId: input.parentId,
+        embeddedName: input.embeddedName,
+        uuids: input.uuids,
+      },
+      parentType: input.parentType,
+      parentId: input.parentId,
+      noun: "created",
+      verify: (parent, written) => {
+        const entries = embeddedEntries(parent, input.embeddedName);
+        if (!entries) return true;
+        const ids = written.map(idOf).filter((id): id is string => !!id);
+        if (ids.length === 0) return true;
+        const present = new Set(entries.map(idOf));
+        return ids.every((id) => present.has(id));
+      },
+      deriveRollback: (written) => {
+        const ids = written.map(idOf).filter((id): id is string => !!id);
+        return ids.length
+          ? {
+              action: "deleteEmbedded",
+              parentType: input.parentType,
+              parentId: input.parentId,
+              embeddedName: input.embeddedName,
+              ids,
+            }
+          : null;
+      },
     },
     opts,
     [],

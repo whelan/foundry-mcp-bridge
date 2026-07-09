@@ -28,6 +28,7 @@ import {
   DeleteQuestShape,
   SearchCompendiumShape,
   ImportFromCompendiumShape,
+  ImportEmbeddedFromCompendiumShape,
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
@@ -46,6 +47,7 @@ import {
   runDeleteQuest,
   runSearchCompendium,
   runImportFromCompendium,
+  runImportEmbeddedFromCompendium,
 } from "./tools.js";
 import {
   ForgeBrowseAssetsShape,
@@ -271,6 +273,12 @@ export function buildServer(
     "Clone a compendium entry into the world by UUID, optionally applying a dot-notation patch. Runs the full reliability pipeline (validate, dry-run, write, read-back verify, rollback). Rejects with VALIDATION if patch is supplied but has no safe fields to apply. Echo is slim by default (_id, name, _stats.modifiedTime); pass full:true or fields:[...] to change what's returned.",
     ImportFromCompendiumShape,
     runImportFromCompendium,
+  );
+  register(
+    "import_embedded_from_compendium",
+    "Clone one or more compendium entries as embedded documents on a parent (e.g. spells onto an actor). Runs the full reliability pipeline with read-back of the parent. Rejects with VALIDATION if any entry's patch is supplied but has no safe fields to apply. Echo (the created entries) is slim by default; pass full:true or fields:[...] to change what's returned.",
+    ImportEmbeddedFromCompendiumShape,
+    runImportEmbeddedFromCompendium,
   );
 
   return server;

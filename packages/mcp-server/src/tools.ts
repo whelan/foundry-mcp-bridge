@@ -35,6 +35,7 @@ import {
   batchUploadAssetsReliable,
   searchCompendiumReliable,
   importFromCompendiumReliable,
+  importEmbeddedFromCompendiumReliable,
   runRead,
   type PipelineOptions,
   type ToolOutcome,
@@ -494,6 +495,37 @@ export async function runImportFromCompendium(
   const safe = { ...args, patch: args.patch ? filterUnsafePaths(args.patch) : args.patch };
   return projectEcho(
     await importFromCompendiumReliable(transport, safe, opts),
+    args.fields,
+    args.full,
+  );
+}
+
+// --- import_embedded_from_compendium ----------------------------------------
+
+export const ImportEmbeddedFromCompendiumShape = {
+  parentType: DocumentType,
+  parentId: z.string().min(1),
+  embeddedName: z.string().min(1),
+  uuids: z.array(z.object({ uuid: z.string().min(1), patch: documentData.optional() })).min(1),
+  fields: fieldsParam,
+  full: fullParam,
+};
+const ImportEmbeddedFromCompendium = z.object(ImportEmbeddedFromCompendiumShape);
+export type ImportEmbeddedFromCompendiumArgs = z.infer<typeof ImportEmbeddedFromCompendium>;
+
+export async function runImportEmbeddedFromCompendium(
+  transport: RelayTransport,
+  args: ImportEmbeddedFromCompendiumArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  // Drop unsafe dot-path keys from each entry's patch, consistent with
+  // import_from_compendium's single patch.
+  const uuids = args.uuids.map((u) => ({
+    ...u,
+    patch: u.patch ? filterUnsafePaths(u.patch) : u.patch,
+  }));
+  return projectEcho(
+    await importEmbeddedFromCompendiumReliable(transport, { ...args, uuids }, opts),
     args.fields,
     args.full,
   );

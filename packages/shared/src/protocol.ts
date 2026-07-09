@@ -263,6 +263,24 @@ export const ImportFromCompendiumCommand = z.object({
 });
 export type ImportFromCompendiumCommand = z.infer<typeof ImportFromCompendiumCommand>;
 
+export const ImportEmbeddedFromCompendiumEntry = z.object({
+  uuid: z.string().min(1),
+  /** Optional dot-notation patch applied to this entry's cloned data. */
+  patch: DocumentData.optional(),
+});
+export type ImportEmbeddedFromCompendiumEntry = z.infer<typeof ImportEmbeddedFromCompendiumEntry>;
+
+export const ImportEmbeddedFromCompendiumCommand = z.object({
+  action: z.literal("importEmbeddedFromCompendium"),
+  parentType: DocumentType,
+  parentId: z.string().min(1),
+  /** e.g. "Item" (spells cloned onto an actor). */
+  embeddedName: z.string().min(1),
+  /** Batched so a whole spell list attaches in one round-trip. */
+  uuids: z.array(ImportEmbeddedFromCompendiumEntry).min(1),
+});
+export type ImportEmbeddedFromCompendiumCommand = z.infer<typeof ImportEmbeddedFromCompendiumCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -281,6 +299,7 @@ export const Command = z.discriminatedUnion("action", [
   BatchUploadAssetsCommand,
   SearchCompendiumCommand,
   ImportFromCompendiumCommand,
+  ImportEmbeddedFromCompendiumCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

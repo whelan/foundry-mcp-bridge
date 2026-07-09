@@ -334,6 +334,8 @@ export class MockFoundry {
         return this.searchCompendium(id, command);
       case "importFromCompendium":
         return this.importFromCompendium(id, command, dryRun);
+      case "importEmbeddedFromCompendium":
+        return this.importEmbeddedFromCompendium(id, command, dryRun);
     }
   }
 
@@ -595,5 +597,30 @@ export class MockFoundry {
     if (dryRun) return ok(id, { ...doc, _id: null, _dryRun: true });
     this.store.set(documentKey(cmd.documentType, _id), doc);
     return ok(id, doc);
+  }
+
+  private importEmbeddedFromCompendium(
+    id: string,
+    cmd: Extract<Command, { action: "importEmbeddedFromCompendium" }>,
+    dryRun: boolean,
+  ): CommandResult {
+    const resolved = this.resolveEmbedded(id, cmd);
+    if ("error" in resolved) return resolved.error;
+    const created: Json[] = [];
+    for (const entry of cmd.uuids) {
+      const record = this.compendium.get(entry.uuid);
+      if (!record) return err(id, "NOT_FOUND", `compendium entry ${entry.uuid} not found`);
+      // Deep-clone for the same reason importFromCompendium does: mutating the
+      // embedded copy must never reach back into the shared compendium record.
+      const data = entry.patch ? applyUpdate(record.data, entry.patch) : structuredClone(record.data);
+      // Real Foundry stamps _stats.compendiumSource from the source UUID on
+      // createEmbeddedDocuments; the mock replicates it so verify-npc.ts's
+      // "is the official item" check is exercisable against the mock too.
+      data._stats = { ...(data._stats as Record<string, unknown> | undefined), compendiumSource: entry.uuid };
+      created.push({ ...data, _id: randomID() });
+    }
+    if (dryRun) return ok(id, created.map((c) => ({ ...c, _dryRun: true })));
+    resolved.arr.push(...created);
+    return ok(id, created);
   }
 }
