@@ -29,6 +29,7 @@ import {
   SearchCompendiumShape,
   ImportFromCompendiumShape,
   ImportEmbeddedFromCompendiumShape,
+  ImportNpcShape,
   runCreateDocument,
   runCreateScene,
   runUpdateDocument,
@@ -48,6 +49,7 @@ import {
   runSearchCompendium,
   runImportFromCompendium,
   runImportEmbeddedFromCompendium,
+  runImportNpc,
 } from "./tools.js";
 import {
   ForgeBrowseAssetsShape,
@@ -279,6 +281,12 @@ export function buildServer(
     "Clone one or more compendium entries as embedded documents on a parent (e.g. spells onto an actor). Runs the full reliability pipeline with read-back of the parent. Rejects with VALIDATION if any entry's patch is supplied but has no safe fields to apply. Echo (the created entries) is slim by default; pass full:true or fields:[...] to change what's returned.",
     ImportEmbeddedFromCompendiumShape,
     runImportEmbeddedFromCompendium,
+  );
+  register(
+    "import_npc",
+    "Import a Fantasy Statblocks note into a Foundry world as an NPC actor with rollable actions, spells, and optional folder placement.",
+    ImportNpcShape,
+    runImportNpc,
   );
 
   return server;

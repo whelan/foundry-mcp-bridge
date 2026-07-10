@@ -534,7 +534,7 @@ export async function runImportEmbeddedFromCompendium(
 
 // --- import_npc ---------------------------------------------------------
 
-export const ImportNpcShape = z.object({
+export const ImportNpcShape = {
   markdown: z.string().min(1),
   image: z.object({
     filename: z.string().min(1),
@@ -542,8 +542,9 @@ export const ImportNpcShape = z.object({
   }).optional(),
   assetSource: z.enum(["data", "forgevtt"]).default("data"),
   folder: z.string().optional(),
-});
-export type ImportNpcShape = z.infer<typeof ImportNpcShape>;
+};
+const ImportNpc = z.object(ImportNpcShape);
+export type ImportNpcArgs = z.infer<typeof ImportNpc>;
 
 /**
  * Resolve or create an Actor folder by name.
@@ -592,7 +593,7 @@ async function resolveFolder(
  */
 export async function runImportNpc(
   transport: RelayTransport,
-  input: ImportNpcShape,
+  input: ImportNpcArgs,
 ): Promise<ToolOutcome> {
   const steps: string[] = [];
 
