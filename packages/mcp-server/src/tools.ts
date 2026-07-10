@@ -542,6 +542,7 @@ export const ImportNpcShape = {
   }).optional(),
   assetSource: z.enum(["data", "forgevtt"]).default("data"),
   folder: z.string().optional(),
+  mode: z.enum(["upsert", "create", "update"]).default("upsert").optional(),
 };
 const ImportNpc = z.object(ImportNpcShape);
 export type ImportNpcArgs = z.infer<typeof ImportNpc>;
@@ -834,6 +835,7 @@ export async function runImportNpc(
         deps,
         input.image,
         folderId,
+        input.mode,
       );
     } catch (e) {
       const err = e as any;
