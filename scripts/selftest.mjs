@@ -36,6 +36,7 @@ import {
   runSearchCompendium,
   runImportFromCompendium,
   runImportEmbeddedFromCompendium,
+  runImportNpc,
 } from "../packages/mcp-server/dist/index.js";
 // Reuse the real dot-notation merge + embedded-field mapping instead of re-implementing them.
 import { applyUpdate, embeddedField } from "@foundry-mcp-bridge/shared";
@@ -322,8 +323,9 @@ async function runNpcLeg(server, opts, assetSource = "data", fixture = { name: "
 }
 
 // M6a/M6b: run every acceptance NPC back to back — Gravemire Stalker (baseline),
-// Young Ash Wyrm (legendary + lair + legendary resistance, Part A), and Test
-// Archmage (spellcasting + placeholder fallback, Part B).
+// Young Ash Wyrm (legendary + lair + legendary resistance, Part A), Test
+// Archmage (spellcasting + placeholder fallback, Part B), and tool-level
+// import_npc (proves the MCP tool entry point works over the wire).
 //
 // expectedFailures: substrings of check names that are KNOWN, intentional
 // failures (not bugs) -- e.g. Test Archmage's spell list has a deliberate
@@ -335,6 +337,26 @@ const NPC_LEGS = [
   { name: "gravemire-stalker", hasImage: true, expectedFailures: [] },
   { name: "young-ash-wyrm", hasImage: false, expectedFailures: [] },
   { name: "test-archmage", hasImage: false, expectedFailures: ['Spell "fli"'] },
+  // M6b: tool-level import (proves the tool itself over the wire)
+  {
+    name: "tool-level",
+    async run(server, opts) {
+      console.log("\n  M6b: tool-level import_npc (test-archmage)");
+      const markdown = fs.readFileSync(
+        "test/fixtures/statblock-import/test-archmage.md",
+        "utf-8"
+      );
+      const result = await runImportNpc(server, {
+        markdown,
+        folder: "Tool Test",
+      }, opts);
+      if (!result.ok) {
+        throw new Error(`Tool import failed: ${result.error.code}`);
+      }
+      console.log(`    ✓ actor ${result.data.actorId} imported via tool`);
+      console.log(`    ✓ verification: ${result.data.verification.ok ? "PASS" : "FAIL (expected)"}`);
+    },
+  },
 ];
 
 if (live) {
@@ -366,7 +388,18 @@ if (live) {
     console.log(`world: ${onForge ? "Forge" : "local"} (asset source: ${assetSource})\n`);
 
     for (const fixture of NPC_LEGS) {
-      await runNpcLeg(server, opts, assetSource, fixture);
+      if (fixture.run) {
+        // Tool-level leg with custom run function
+        try {
+          await fixture.run(server, opts);
+          show(`import_npc (M6b tool-level: ${fixture.name})`, { ok: true });
+        } catch (e) {
+          show(`import_npc (M6b tool-level: ${fixture.name})`, { ok: false, error: { code: "TOOL_ERROR", message: e.message } });
+        }
+      } else {
+        // Regular fixture leg
+        await runNpcLeg(server, opts, assetSource, fixture);
+      }
     }
   } catch (e) {
     console.error("NPC import leg error:", e.message);
@@ -421,7 +454,18 @@ show("import_from_compendium (Tier 1, with patch)", await runImportFromCompendiu
 
 try {
   for (const fixture of NPC_LEGS) {
-    await runNpcLeg(server, opts, "data", fixture);
+    if (fixture.run) {
+      // Tool-level leg with custom run function
+      try {
+        await fixture.run(server, opts);
+        show(`import_npc (M6b tool-level: ${fixture.name})`, { ok: true });
+      } catch (e) {
+        show(`import_npc (M6b tool-level: ${fixture.name})`, { ok: false, error: { code: "TOOL_ERROR", message: e.message } });
+      }
+    } else {
+      // Regular fixture leg
+      await runNpcLeg(server, opts, "data", fixture);
+    }
   }
 } catch (e) {
   console.error("NPC import leg error:", e.message);
