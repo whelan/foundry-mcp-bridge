@@ -208,11 +208,11 @@ traits:
     const { actorId, tier } = (result as any).data;
     expect(tier).toBe(3);
 
-    const actor = mock.documents("Actor").find((a: any) => a._id === actorId);
+    const actor = mock.documents("Actor").find((a: any) => a._id === actorId) as any;
     expect(actor).toBeDefined();
-    expect(actor.flags["foundry-mcp-bridge"].statblockKey).toBe("test-archmage");
+    expect(actor!.flags["foundry-mcp-bridge"].statblockKey).toBe("test-archmage");
 
-    const daggerItem = actor.items.find((i: any) => i.name === "Dagger");
+    const daggerItem = actor!.items.find((i: any) => i.name === "Dagger");
     if (daggerItem) {
       expect(daggerItem.flags["foundry-mcp-bridge"].statblockKey).toBe("action/dagger");
     }
