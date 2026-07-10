@@ -36,9 +36,9 @@ export interface ImportNpcDeps {
   /** Search the world's compendia for actors matching `nameQuery`. */
   searchCompendium(nameQuery: string): Promise<CompendiumEntry[]>;
   /** Clone a compendium entry into the world, applying an optional patch. */
-  importFromCompendium(uuid: string, patch?: Record<string, unknown>): Promise<{ _id: string }>;
+  importFromCompendium(uuid: string, patch?: Record<string, unknown>, folderId?: string): Promise<{ _id: string }>;
   /** Create a synthesized document from scratch (Tier 3 fallback). */
-  createDocument(data: Dnd5eActorDocument): Promise<{ _id: string }>;
+  createDocument(data: Dnd5eActorDocument, folderId?: string): Promise<{ _id: string }>;
   /** Upload an image file and return the resolved remote path. */
   uploadImage?(filename: string, contentBase64: string, targetFolder?: string): Promise<string>;
   /** Search Item compendia (all packs) for a spell by name. */
@@ -58,14 +58,15 @@ export interface ImportNpcDeps {
 export async function importNpc(
   statblock: StatblockData,
   deps: ImportNpcDeps,
-  imageContent?: { filename: string; contentBase64: string }
+  imageContent?: { filename: string; contentBase64: string },
+  folderId?: string
 ): Promise<ImportNpcResult> {
   const index = await deps.searchCompendium(statblock.data.name);
   const plan = matchStatblock(statblock, index);
 
   let result: ImportNpcResult;
   if (plan.tier === 1) {
-    const doc = await deps.importFromCompendium(plan.uuid, plan.patch);
+    const doc = await deps.importFromCompendium(plan.uuid, plan.patch, folderId);
     result = { actorId: doc._id, tier: 1, matchedUuid: plan.uuid };
   } else {
     // For Tier 3: upload image if provided, then use resolved path in actor data
@@ -79,7 +80,7 @@ export async function importNpc(
     }
 
     const actorData = statblockToFoundryActor(statblock, resolvedImagePath);
-    const doc = await deps.createDocument(actorData);
+    const doc = await deps.createDocument(actorData, folderId);
     result = { actorId: doc._id, tier: 3 };
   }
 
