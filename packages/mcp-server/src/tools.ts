@@ -765,29 +765,40 @@ export async function runImportNpc(
       importResult = await importNpc(
         statblock,
         deps,
-        input.image ? input.image : undefined,
+        input.image,
         folderId,
       );
     } catch (e) {
-      const message = (e as any).message || "Unknown error during import";
+      const err = e as any;
+      const message = err.message || "Unknown error during import";
+      const cause = err.cause ? `${err.cause}` : undefined;
 
-      // If the error message starts with a dep name, extract the stage
-      let stage = "actor-create";
-      if (message.includes("attachSpells")) {
-        stage = "attachSpells";
-      } else if (message.includes("uploadAsset")) {
-        stage = "uploadImage";
+      // Extract structured error info from library throws
+      const stage = err.stage || "actor-create";
+      const errorActorId = err.actorId;
+
+      // If actor was created, include its ID in error details
+      if (errorActorId) {
+        return {
+          ok: false,
+          error: {
+            code: "INTERNAL",
+            message,
+            details: { actorId: errorActorId, stage, cause },
+          },
+          steps,
+        };
+      } else {
+        return {
+          ok: false,
+          error: {
+            code: "INTERNAL",
+            message,
+            details: { stage, cause },
+          },
+          steps,
+        };
       }
-
-      return {
-        ok: false,
-        error: {
-          code: "INTERNAL",
-          message,
-          details: { stage },
-        },
-        steps,
-      };
     }
 
     // Step 6: Read back and verify

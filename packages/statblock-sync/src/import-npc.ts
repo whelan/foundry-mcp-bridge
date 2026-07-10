@@ -64,31 +64,62 @@ export async function importNpc(
   const index = await deps.searchCompendium(statblock.data.name);
   const plan = matchStatblock(statblock, index);
 
+  let actorId: string;
   let result: ImportNpcResult;
-  if (plan.tier === 1) {
-    const doc = await deps.importFromCompendium(plan.uuid, plan.patch, folderId);
-    result = { actorId: doc._id, tier: 1, matchedUuid: plan.uuid };
-  } else {
-    // For Tier 3: upload image if provided, then use resolved path in actor data
-    let resolvedImagePath: string | undefined;
-    if (imageContent && deps.uploadImage) {
-      resolvedImagePath = await deps.uploadImage(
-        imageContent.filename,
-        imageContent.contentBase64,
-        `worlds/npcs/${statblock.data.name.replace(/\s+/g, "-").toLowerCase()}`
-      );
-    }
 
-    const actorData = statblockToFoundryActor(statblock, resolvedImagePath);
-    if (folderId) {
-      actorData.folder = folderId;
+  try {
+    if (plan.tier === 1) {
+      const doc = await deps.importFromCompendium(plan.uuid, plan.patch, folderId);
+      actorId = doc._id;
+      result = { actorId, tier: 1, matchedUuid: plan.uuid };
+    } else {
+      // For Tier 3: upload image if provided, then use resolved path in actor data
+      let resolvedImagePath: string | undefined;
+      if (imageContent && deps.uploadImage) {
+        try {
+          resolvedImagePath = await deps.uploadImage(
+            imageContent.filename,
+            imageContent.contentBase64,
+            `worlds/npcs/${statblock.data.name.replace(/\s+/g, "-").toLowerCase()}`
+          );
+        } catch (e) {
+          const err = e as any;
+          err.actorId = undefined; // Mark as image-upload failure (no actor yet)
+          err.stage = "uploadImage";
+          throw err;
+        }
+      }
+
+      const actorData = statblockToFoundryActor(statblock, resolvedImagePath);
+      if (folderId) {
+        actorData.folder = folderId;
+      }
+      const doc = await deps.createDocument(actorData);
+      actorId = doc._id;
+      result = { actorId, tier: 3 };
     }
-    const doc = await deps.createDocument(actorData);
-    result = { actorId: doc._id, tier: 3 };
+  } catch (e) {
+    const err = e as any;
+    // Mark stage as actor-create if not already set
+    if (!err.stage) {
+      err.stage = "actor-create";
+    }
+    // Mark actorId as undefined if not already set (creation failed)
+    if (err.actorId === undefined && !("actorId" in err)) {
+      err.actorId = undefined;
+    }
+    throw err;
   }
 
-  if (statblock.spellcasting) {
-    await attachSpells(statblock.spellcasting, result.actorId, deps);
+  try {
+    if (statblock.spellcasting) {
+      await attachSpells(statblock.spellcasting, actorId, deps);
+    }
+  } catch (e) {
+    const err = e as any;
+    err.actorId = actorId; // Include the created actor ID
+    err.stage = "attachSpells"; // Attach structured stage info
+    throw err;
   }
 
   return result;
