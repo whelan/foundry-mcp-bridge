@@ -1,4 +1,4 @@
-import { parseStatblock, parseStatblockRaw, parseAttackAction, parseSaveAction, KNOWN_DAMAGE_TYPES } from "./index.js";
+import { parseStatblock, parseStatblockRaw, parseAttackAction, parseSaveAction } from "./index.js";
 
 export interface LintFinding {
   action: string;
