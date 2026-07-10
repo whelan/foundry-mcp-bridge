@@ -126,6 +126,100 @@ export async function importNpc(
 }
 
 /**
+ * Build a dot-notation patch for updating an existing actor with freshly
+ * parsed statblock data. Only includes statblock-owned fields (name, AC, HP max,
+ * abilities, CR, skills, saves, spell slots, resources, languages, traits).
+ * Preserves Foundry-owned runtime state (current HP, effects, token, exhaustion,
+ * currency, _stats, ownership).
+ *
+ * The patch is ready to pass to updateDocumentReliable's dry-run → write →
+ * read-back → rollback pipeline.
+ */
+export function buildNpcUpdatePatch(
+  statblock: StatblockData,
+  resolvedImagePath?: string,
+  folderId?: string
+): Record<string, unknown> {
+  // Synthesize a fresh actor to extract statblock-owned fields
+  const fresh = statblockToFoundryActor(statblock, resolvedImagePath);
+  const sys = fresh.system as Record<string, any>;
+
+  // Build the patch by selecting only statblock-owned paths
+  const patch: Record<string, unknown> = {};
+
+  // Top-level fields
+  patch.name = fresh.name;
+  if (resolvedImagePath) {
+    patch.img = fresh.img;
+  }
+
+  // System fields — statblock-owned subset
+  const attributes = sys.attributes as Record<string, any>;
+  patch["system.attributes.ac.flat"] = attributes.ac?.flat;
+  patch["system.attributes.ac.calc"] = attributes.ac?.calc;
+  patch["system.attributes.hp.max"] = attributes.hp?.max;
+  patch["system.attributes.hp.formula"] = attributes.hp?.formula;
+  patch["system.attributes.movement"] = attributes.movement;
+  patch["system.attributes.senses"] = attributes.senses;
+
+  // Abilities (values only, not bonuses or proficiency state)
+  const abilities = sys.abilities as Record<string, any>;
+  for (const ability of ["str", "dex", "con", "int", "wis", "cha"] as const) {
+    const abilityData = abilities[ability] as Record<string, any>;
+    patch[`system.abilities.${ability}.value`] = abilityData?.value;
+    patch[`system.abilities.${ability}.proficient`] = abilityData?.proficient ?? 0;
+  }
+
+  // Details
+  const details = sys.details as Record<string, any>;
+  patch["system.details.cr"] = details.cr;
+  patch["system.details.alignment"] = details.alignment;
+  patch["system.details.type"] = details.type;
+
+  // Traits
+  const traits = sys.traits as Record<string, any>;
+  patch["system.traits.size"] = traits.size;
+  patch["system.traits.languages"] = traits.languages;
+  patch["system.traits.dr"] = traits.dr;
+  patch["system.traits.di"] = traits.di;
+  patch["system.traits.dv"] = traits.dv;
+  patch["system.traits.ci"] = traits.ci;
+
+  // Skills (proficiency + ability, not derived bonuses)
+  const skills = sys.skills as Record<string, any>;
+  for (const [key, val] of Object.entries(skills)) {
+    patch[`system.skills.${key}`] = val;
+  }
+
+  // Resources
+  const resources = sys.resources as Record<string, any>;
+  patch["system.resources.legact"] = resources.legact;
+  patch["system.resources.legres"] = resources.legres;
+  patch["system.resources.lair"] = resources.lair;
+
+  // Spells (slot counts, not spent)
+  const spells = sys.spells as Record<string, any> | undefined;
+  if (spells) {
+    for (let level = 1; level <= 9; level++) {
+      const key = `spell${level}`;
+      if (key in spells) {
+        patch[`system.spells.${key}`] = spells[key];
+      }
+    }
+    if ("pact" in spells) {
+      patch["system.spells.pact"] = spells.pact;
+    }
+  }
+
+  // Folder (only if provided)
+  if (folderId) {
+    patch.folder = folderId;
+  }
+
+  return patch;
+}
+
+/**
  * Resolve and attach each spell name in a parsed spellcasting block as an
  * embedded Item on the actor: exact-match (case-insensitive) against the
  * official `dnd5e.spells24` pack first, falling back to the 2014 `dnd5e.spells`

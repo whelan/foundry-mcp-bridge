@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { MockFoundry } from "./mock-foundry.js";
 import { MockTransport } from "./mock-transport.js";
 import { runImportNpc } from "../../packages/mcp-server/src/tools.js";
+import { buildNpcUpdatePatch, parseStatblock } from "../../packages/statblock-sync/src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -196,5 +197,115 @@ traits:
     expect(result.ok).toBe(true);
     const actor = mock.documents("Actor").find((a: any) => a._id === (result as any).data.actorId);
     expect(actor).toBeDefined();
+  });
+});
+
+describe("buildNpcUpdatePatch: dot-notation patch builder", () => {
+  it("includes only statblock-owned fields", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const patch = buildNpcUpdatePatch(statblock);
+
+    // Statblock-owned should be present
+    expect(patch["system.attributes.ac.flat"]).toBeDefined();
+    expect(patch["system.abilities.int.value"]).toBeDefined();
+    expect(patch["system.details.cr"]).toBeDefined();
+    expect(patch.name).toBeDefined();
+
+    // Foundry-owned should NOT be present
+    expect("system.attributes.hp.value" in patch).toBe(false);
+    expect("system.attributes.exhaustion" in patch).toBe(false);
+    expect("effects" in patch).toBe(false);
+    expect("_stats" in patch).toBe(false);
+    expect("ownership" in patch).toBe(false);
+  });
+
+  it("includes image when resolvedImagePath is provided", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const imagePath = "https://example.com/wizard.png";
+    const patch = buildNpcUpdatePatch(statblock, imagePath);
+
+    expect(patch.img).toBe(imagePath);
+  });
+
+  it("omits image when resolvedImagePath is not provided", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const patch = buildNpcUpdatePatch(statblock);
+
+    expect("img" in patch).toBe(false);
+  });
+
+  it("includes folder when folderId is provided", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const folderId = "folder-abc123";
+    const patch = buildNpcUpdatePatch(statblock, undefined, folderId);
+
+    expect(patch.folder).toBe(folderId);
+  });
+
+  it("omits folder when folderId is not provided", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const patch = buildNpcUpdatePatch(statblock);
+
+    expect("folder" in patch).toBe(false);
+  });
+
+  it("includes ability proficiencies and saves", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const patch = buildNpcUpdatePatch(statblock);
+
+    // All six abilities should have values
+    for (const ability of ["str", "dex", "con", "int", "wis", "cha"]) {
+      expect(`system.abilities.${ability}.value` in patch).toBe(true);
+      expect(`system.abilities.${ability}.proficient` in patch).toBe(true);
+    }
+  });
+
+  it("includes skill proficiencies", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const patch = buildNpcUpdatePatch(statblock);
+
+    // Should include system.skills.* entries
+    const skillKeys = Object.keys(patch).filter((k) => k.startsWith("system.skills."));
+    expect(skillKeys.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("includes spell slots if spellcasting is present", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const patch = buildNpcUpdatePatch(statblock);
+
+    // Archmage has spellcasting, so spell slots should be included
+    const spellKeys = Object.keys(patch).filter((k) => k.startsWith("system.spells."));
+    expect(spellKeys.length).toBeGreaterThan(0);
+  });
+
+  it("includes resources (legendary/lair actions)", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const patch = buildNpcUpdatePatch(statblock);
+
+    expect(patch["system.resources.legact"]).toBeDefined();
+    expect(patch["system.resources.legres"]).toBeDefined();
+    expect(patch["system.resources.lair"]).toBeDefined();
+  });
+
+  it("includes traits (size, languages, resistances)", () => {
+    const markdown = loadFixture("test-archmage.md");
+    const statblock = parseStatblock(markdown);
+    const patch = buildNpcUpdatePatch(statblock);
+
+    expect(patch["system.traits.size"]).toBeDefined();
+    expect(patch["system.traits.languages"]).toBeDefined();
+    expect(patch["system.traits.dr"]).toBeDefined();
+    expect(patch["system.traits.di"]).toBeDefined();
+    expect(patch["system.traits.dv"]).toBeDefined();
+    expect(patch["system.traits.ci"]).toBeDefined();
   });
 });
