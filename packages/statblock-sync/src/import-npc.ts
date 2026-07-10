@@ -24,12 +24,17 @@ import type { CompendiumEntry } from "@foundry-mcp-bridge/shared";
 import type { StatblockData } from "./schema.js";
 import { statblockToFoundryActor, type Dnd5eActorDocument } from "./to-foundry.js";
 import { matchStatblock } from "./match.js";
+import { statblockKey } from "./slug.js";
 
 export interface ImportNpcResult {
   actorId: string;
   tier: 1 | 3;
   /** The compendium entry cloned, when `tier === 1`. */
   matchedUuid?: string;
+  /** Whether the actor was created or updated. */
+  action: "created" | "updated";
+  /** Summary of item changes during upsert (create/update/delete/unchanged counts). */
+  itemChanges?: { created: number; updated: number; deleted: number; unchanged: number };
 }
 
 export interface ImportNpcDeps {
@@ -47,33 +52,76 @@ export interface ImportNpcDeps {
   importEmbeddedFromCompendium(parentId: string, uuid: string): Promise<{ _id: string }>;
   /** Create a literal (non-compendium) embedded Item on the given actor. */
   createEmbeddedItem(parentId: string, data: Record<string, unknown>): Promise<{ _id: string }>;
+  /** Find actors by their statblockKey flag. */
+  findActorsByKey(key: string): Promise<{ _id: string }[]>;
+  /** Update an actor document by ID. */
+  updateDocument(actorId: string, patch: Record<string, unknown>): Promise<{ _id: string }>;
+  /** Find all items on an actor. */
+  findActorItems(actorId: string): Promise<Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }>>;
+  /** Update an embedded item on an actor. */
+  updateEmbeddedItem(actorId: string, itemId: string, patch: Record<string, unknown>): Promise<{ _id: string }>;
+  /** Delete an embedded item from an actor. */
+  deleteEmbeddedItem(actorId: string, itemId: string): Promise<{ _id: string }>;
 }
 
 /**
- * Import a parsed statblock into the world, preferring a Tier 1 compendium
- * clone over Tier 3 synthesis whenever the statblock's name exactly matches
- * an existing compendium actor — the "works like the official compendium
- * monster" goal (design doc §1).
+ * Import a parsed statblock into the world, with support for upsert (update-or-create).
+ *
+ * Modes:
+ * - "upsert" (default): Match found → update; no match → create
+ * - "create": Always creates, even if match exists (for intentional duplicates)
+ * - "update": Requires match; error if none found
+ *
+ * When updating (Tier 3 only), builds a patch of statblock-owned fields and diffs
+ * tool-created items by key: matched items updated, new items created, removed items
+ * deleted, GM-added unflagged items preserved.
+ *
+ * Tier 1 (compendium clone) always creates and skips item diffing; spells are
+ * attached after actor exists.
  */
 export async function importNpc(
   statblock: StatblockData,
   deps: ImportNpcDeps,
   imageContent?: { filename: string; contentBase64: string },
-  folderId?: string
+  folderId?: string,
+  mode: "upsert" | "create" | "update" = "upsert",
+  matchedActorId?: string
 ): Promise<ImportNpcResult> {
-  const index = await deps.searchCompendium(statblock.data.name);
-  const plan = matchStatblock(statblock, index);
+  const key = statblockKey(statblock.data.name);
 
+  // Determine if this is a create or update path
   let actorId: string;
+  let action: "created" | "updated";
   let result: ImportNpcResult;
 
-  try {
-    if (plan.tier === 1) {
-      const doc = await deps.importFromCompendium(plan.uuid, plan.patch, folderId);
-      actorId = doc._id;
-      result = { actorId, tier: 1, matchedUuid: plan.uuid };
-    } else {
-      // For Tier 3: upload image if provided, then use resolved path in actor data
+  // If no explicit match provided, query for one (unless mode is "create")
+  if (!matchedActorId && mode !== "create") {
+    const matches = await deps.findActorsByKey(key);
+    if (matches.length > 1) {
+      throw Object.assign(new Error(`Ambiguous match: ${matches.length} actors with key "${key}"`), {
+        code: "VALIDATION",
+        details: { matchedActorIds: matches.map(m => m._id) },
+        stage: "match-query",
+      });
+    }
+    if (matches.length === 1) {
+      matchedActorId = matches[0]!._id;
+    }
+  }
+
+  // Validate mode constraints
+  if (mode === "update" && !matchedActorId) {
+    throw Object.assign(new Error(`mode: "update" requires an existing actor with key "${key}"`), {
+      code: "VALIDATION",
+      details: { statblockKey: key },
+      stage: "mode-validation",
+    });
+  }
+
+  // UPDATE PATH
+  if (matchedActorId && (mode === "upsert" || mode === "update")) {
+    try {
+      // Build patch of statblock-owned fields only
       let resolvedImagePath: string | undefined;
       if (imageContent && deps.uploadImage) {
         try {
@@ -84,7 +132,80 @@ export async function importNpc(
           );
         } catch (e) {
           const err = e as any;
-          err.actorId = undefined; // Mark as image-upload failure (no actor yet)
+          err.actorId = undefined;
+          err.stage = "uploadImage";
+          throw err;
+        }
+      }
+
+      const patch = buildNpcUpdatePatch(statblock, resolvedImagePath, folderId);
+      const updateResult = await deps.updateDocument(matchedActorId, patch);
+      actorId = updateResult._id;
+      action = "updated";
+      result = { actorId, tier: 3, action };
+    } catch (e) {
+      const err = e as any;
+      if (!err.stage) {
+        err.stage = "actor-update";
+      }
+      if (!("actorId" in err)) {
+        err.actorId = matchedActorId;
+      }
+      throw err;
+    }
+
+    // Item diffing for upsert (Tier 3 only for v1)
+    try {
+      const itemChanges = await diffAndApplyItems(
+        matchedActorId,
+        statblock,
+        deps
+      );
+      result.itemChanges = itemChanges;
+    } catch (e) {
+      const err = e as any;
+      err.actorId = actorId;
+      err.stage = "itemDiff";
+      throw err;
+    }
+
+    // Attach spells if needed
+    try {
+      if (statblock.spellcasting) {
+        await attachSpells(statblock.spellcasting, actorId, deps);
+      }
+    } catch (e) {
+      const err = e as any;
+      err.actorId = actorId;
+      err.stage = "attachSpells";
+      throw err;
+    }
+
+    return result;
+  }
+
+  // CREATE PATH (mode is "create" or upsert with no match)
+  try {
+    const index = await deps.searchCompendium(statblock.data.name);
+    const plan = matchStatblock(statblock, index);
+
+    if (plan.tier === 1) {
+      const doc = await deps.importFromCompendium(plan.uuid, plan.patch, folderId);
+      actorId = doc._id;
+      action = "created";
+      result = { actorId, tier: 1, matchedUuid: plan.uuid, action };
+    } else {
+      let resolvedImagePath: string | undefined;
+      if (imageContent && deps.uploadImage) {
+        try {
+          resolvedImagePath = await deps.uploadImage(
+            imageContent.filename,
+            imageContent.contentBase64,
+            `worlds/npcs/${statblock.data.name.replace(/\s+/g, "-").toLowerCase()}`
+          );
+        } catch (e) {
+          const err = e as any;
+          err.actorId = undefined;
           err.stage = "uploadImage";
           throw err;
         }
@@ -96,29 +217,29 @@ export async function importNpc(
       }
       const doc = await deps.createDocument(actorData);
       actorId = doc._id;
-      result = { actorId, tier: 3 };
+      action = "created";
+      result = { actorId, tier: 3, action };
     }
   } catch (e) {
     const err = e as any;
-    // Mark stage as actor-create if not already set
     if (!err.stage) {
       err.stage = "actor-create";
     }
-    // Mark actorId as undefined if not already set (creation failed)
     if (!("actorId" in err)) {
       err.actorId = undefined;
     }
     throw err;
   }
 
+  // Attach spells
   try {
     if (statblock.spellcasting) {
       await attachSpells(statblock.spellcasting, actorId, deps);
     }
   } catch (e) {
     const err = e as any;
-    err.actorId = actorId; // Include the created actor ID
-    err.stage = "attachSpells"; // Attach structured stage info
+    err.actorId = actorId;
+    err.stage = "attachSpells";
     throw err;
   }
 
@@ -251,4 +372,91 @@ async function attachSpells(
       }
     }
   }
+}
+
+/**
+ * Diff tool-created items (those with statblockKey flags) on an actor against
+ * a fresh statblock synthesis. Matched items are updated in-place (preserving _id),
+ * new items are created, removed items are deleted, and GM-added unflagged items
+ * are preserved.
+ *
+ * Returns a summary of changes: { created, updated, deleted, unchanged }.
+ */
+async function diffAndApplyItems(
+  actorId: string,
+  statblock: StatblockData,
+  deps: ImportNpcDeps
+): Promise<{ created: number; updated: number; deleted: number; unchanged: number }> {
+  // Fetch current items
+  const currentItems = await deps.findActorItems(actorId);
+
+  // Synthesize fresh item list
+  const freshActor = statblockToFoundryActor(statblock);
+  const freshItems = freshActor.items;
+
+  // Partition current items by flag presence
+  const flaggedItems = currentItems.filter(i => i.flags?.["foundry-mcp-bridge"]?.statblockKey);
+  const unflaggedItems = currentItems.filter(i => !i.flags?.["foundry-mcp-bridge"]?.statblockKey);
+
+  // Build maps for diffing
+  const currentByKey = new Map(
+    flaggedItems.map(i => [i.flags!["foundry-mcp-bridge"]!.statblockKey, i])
+  );
+  const freshByKey = new Map(
+    freshItems.map(i => [i.flags?.["foundry-mcp-bridge"]?.statblockKey, i])
+  );
+
+  let created = 0;
+  let updated = 0;
+  let deleted = 0;
+  let unchanged = 0;
+
+  // Create new items (fresh key not in current)
+  for (const [freshKey, freshItem] of freshByKey) {
+    if (!freshKey || currentByKey.has(freshKey)) continue;
+    await deps.createEmbeddedItem(actorId, freshItem as any);
+    created++;
+  }
+
+  // Update matched items (key in both current and fresh)
+  for (const [currentKey, currentItem] of currentByKey) {
+    const freshItem = freshByKey.get(currentKey);
+    if (!freshItem) continue; // Delete handled below
+
+    if (currentItem.name === freshItem.name) {
+      // No name change, just check if system/img changed
+      const changed = JSON.stringify(currentItem) !== JSON.stringify(freshItem);
+      if (changed) {
+        // Build minimal patch: name, img, system
+        const patch = {
+          name: freshItem.name,
+          img: freshItem.img,
+          system: freshItem.system,
+        };
+        await deps.updateEmbeddedItem(actorId, currentItem._id, patch);
+        updated++;
+      } else {
+        unchanged++;
+      }
+    } else {
+      // Name changed, update it
+      const patch = {
+        name: freshItem.name,
+        img: freshItem.img,
+        system: freshItem.system,
+      };
+      await deps.updateEmbeddedItem(actorId, currentItem._id, patch);
+      updated++;
+    }
+  }
+
+  // Delete removed items (current key not in fresh, and flagged)
+  for (const [currentKey, currentItem] of currentByKey) {
+    if (!freshByKey.has(currentKey)) {
+      await deps.deleteEmbeddedItem(actorId, currentItem._id);
+      deleted++;
+    }
+  }
+
+  return { created, updated, deleted, unchanged };
 }

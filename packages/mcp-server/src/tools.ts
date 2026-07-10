@@ -757,6 +757,72 @@ export async function runImportNpc(
         }
         return (result.data as any[])[0];
       },
+
+      async findActorsByKey(key: string): Promise<{ _id: string }[]> {
+        const result = await runFindDocuments(transport, {
+          documentType: "Actor",
+          query: { flags: { "foundry-mcp-bridge": { statblockKey: key } } },
+        });
+        if (!result.ok) {
+          throw new Error(`findActorsByKey: ${result.error.code}`);
+        }
+        return result.data as { _id: string }[];
+      },
+
+      async updateDocument(actorId: string, patch: Record<string, unknown>): Promise<{ _id: string }> {
+        const result = await runUpdateDocument(transport, {
+          documentType: "Actor",
+          id: actorId,
+          data: patch,
+        });
+        if (!result.ok) {
+          throw new Error(`updateDocument: ${result.error.code}`);
+        }
+        return result.data as { _id: string };
+      },
+
+      async findActorItems(
+        actorId: string,
+      ): Promise<Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }>> {
+        const result = await runFindDocuments(transport, {
+          documentType: "Item",
+          query: { "parent._id": actorId },
+        });
+        if (!result.ok) {
+          throw new Error(`findActorItems: ${result.error.code}`);
+        }
+        return result.data as Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }>;
+      },
+
+      async updateEmbeddedItem(
+        actorId: string,
+        itemId: string,
+        patch: Record<string, unknown>,
+      ): Promise<{ _id: string }> {
+        const result = await runUpdateEmbedded(transport, {
+          parentType: "Actor",
+          parentId: actorId,
+          embeddedName: "Item",
+          data: [{ _id: itemId, ...patch }],
+        });
+        if (!result.ok) {
+          throw new Error(`updateEmbeddedItem: ${result.error.code}`);
+        }
+        return (result.data as any[])[0];
+      },
+
+      async deleteEmbeddedItem(actorId: string, itemId: string): Promise<{ _id: string }> {
+        const result = await runDeleteEmbedded(transport, {
+          parentType: "Actor",
+          parentId: actorId,
+          embeddedName: "Item",
+          ids: [itemId],
+        });
+        if (!result.ok) {
+          throw new Error(`deleteEmbeddedItem: ${result.error.code}`);
+        }
+        return (result.data as any[])[0];
+      },
     } as any;
 
     // Step 5: Import (wrap in stage tracking)

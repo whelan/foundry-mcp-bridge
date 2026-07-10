@@ -26,6 +26,10 @@ import {
   runCreateDocument,
   runCreateEmbedded,
   runUploadAsset,
+  runFindDocuments,
+  runUpdateDocument,
+  runUpdateEmbedded,
+  runDeleteEmbedded,
 } from "../../packages/mcp-server/src/tools.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -103,6 +107,60 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
         "createEmbeddedItem",
       );
       return created[0]!;
+    },
+    async findActorsByKey(key) {
+      const results = unwrap<Array<{ _id: string }>>(
+        await runFindDocuments(transport, {
+          documentType: "Actor",
+          query: { flags: { "foundry-mcp-bridge": { statblockKey: key } } },
+        }),
+        "findActorsByKey",
+      );
+      return results;
+    },
+    async updateDocument(actorId, patch) {
+      return unwrap<{ _id: string }>(
+        await runUpdateDocument(transport, {
+          documentType: "Actor",
+          id: actorId,
+          data: patch,
+        }),
+        "updateDocument",
+      );
+    },
+    async findActorItems(actorId) {
+      const items = unwrap<Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }>>(
+        await runFindDocuments(transport, {
+          documentType: "Item",
+          query: { "parent._id": actorId },
+        }),
+        "findActorItems",
+      );
+      return items;
+    },
+    async updateEmbeddedItem(actorId, itemId, patch) {
+      const updated = unwrap<Array<{ _id: string }>>(
+        await runUpdateEmbedded(transport, {
+          parentType: "Actor",
+          parentId: actorId,
+          embeddedName: "Item",
+          data: [{ _id: itemId, ...patch }],
+        }),
+        "updateEmbeddedItem",
+      );
+      return updated[0]!;
+    },
+    async deleteEmbeddedItem(actorId, itemId) {
+      const deleted = unwrap<Array<{ _id: string }>>(
+        await runDeleteEmbedded(transport, {
+          parentType: "Actor",
+          parentId: actorId,
+          embeddedName: "Item",
+          ids: [itemId],
+        }),
+        "deleteEmbeddedItem",
+      );
+      return deleted[0]!;
     },
   };
 }

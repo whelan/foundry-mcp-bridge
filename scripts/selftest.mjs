@@ -32,6 +32,8 @@ import {
   runBrowseAssets,
   runBatchUploadAssets,
   runCreateEmbedded,
+  runUpdateEmbedded,
+  runDeleteEmbedded,
   runCreateQuest,
   runSearchCompendium,
   runImportFromCompendium,
@@ -87,6 +89,26 @@ function handle(env) {
       if (c.id) {
         const d = store.get(`${c.documentType}:${c.id}`);
         return d ? ok(d) : err("NOT_FOUND", `${c.documentType} ${c.id}`);
+      }
+      // Query-based find: filter documents by flags or other conditions
+      if (c.query) {
+        const results = [];
+        for (const [key, doc] of store) {
+          if (!key.startsWith(`${c.documentType}:`)) continue;
+          // Simple query matching for flags.foundry-mcp-bridge.statblockKey
+          if (c.query.flags?.["foundry-mcp-bridge"]?.statblockKey) {
+            const targetKey = c.query.flags["foundry-mcp-bridge"].statblockKey;
+            if (doc.flags?.["foundry-mcp-bridge"]?.statblockKey === targetKey) {
+              results.push(doc);
+            }
+          } else if (c.query["parent._id"]) {
+            // Query by parent._id (for finding embedded items)
+            if (doc.parent?._id === c.query["parent._id"]) {
+              results.push(doc);
+            }
+          }
+        }
+        return ok(results);
       }
       return ok([...store.values()]);
     }
@@ -200,6 +222,46 @@ function handle(env) {
       }
       return ok(created);
     }
+    case "updateEmbedded": {
+      const k = `${c.parentType}:${c.parentId}`;
+      const parent = store.get(k);
+      if (!parent) return err("NOT_FOUND", `${c.parentType} ${c.parentId}`);
+      const field = embeddedField(c.embeddedName);
+      const items = parent[field] || [];
+      const updated = [];
+      for (const item of items) {
+        for (const update of c.data) {
+          if (update._id === item._id) {
+            const u = applyUpdate(item, update);
+            u._id = update._id;
+            updated.push(u);
+            const idx = items.indexOf(item);
+            if (!env.dryRun) items[idx] = u;
+            break;
+          }
+        }
+      }
+      if (!env.dryRun) store.set(k, parent);
+      return ok(updated);
+    }
+    case "deleteEmbedded": {
+      const k = `${c.parentType}:${c.parentId}`;
+      const parent = store.get(k);
+      if (!parent) return err("NOT_FOUND", `${c.parentType} ${c.parentId}`);
+      const field = embeddedField(c.embeddedName);
+      const items = parent[field] || [];
+      const deleted = [];
+      for (const id of c.ids) {
+        const idx = items.findIndex((i) => i._id === id);
+        if (idx !== -1) {
+          const item = items[idx];
+          deleted.push({ _id: id });
+          if (!env.dryRun) items.splice(idx, 1);
+        }
+      }
+      if (!env.dryRun) store.set(k, parent);
+      return ok(deleted);
+    }
     default:
       return err("UNSUPPORTED", c.action);
   }
@@ -276,6 +338,39 @@ async function runNpcLeg(server, opts, assetSource = "data", fixture = { name: "
         opts,
       );
       if (!res.ok) throw new Error(`createEmbeddedItem failed: ${res.error.code}`);
+      return res.data[0];
+    },
+    async findActorsByKey(key) {
+      const res = await runFindDocuments(server, { documentType: "Actor", query: { flags: { "foundry-mcp-bridge": { statblockKey: key } } } }, opts);
+      if (!res.ok) throw new Error(`findActorsByKey failed: ${res.error.code}`);
+      return res.data || [];
+    },
+    async updateDocument(actorId, patch) {
+      const res = await runUpdateDocument(server, { documentType: "Actor", id: actorId, data: patch }, opts);
+      if (!res.ok) throw new Error(`updateDocument failed: ${res.error.code}`);
+      return res.data;
+    },
+    async findActorItems(actorId) {
+      const res = await runFindDocuments(server, { documentType: "Item", query: { "parent._id": actorId } }, opts);
+      if (!res.ok) throw new Error(`findActorItems failed: ${res.error.code}`);
+      return res.data || [];
+    },
+    async updateEmbeddedItem(actorId, itemId, patch) {
+      const res = await runUpdateEmbedded(
+        server,
+        { parentType: "Actor", parentId: actorId, embeddedName: "Item", data: [{ _id: itemId, ...patch }] },
+        opts,
+      );
+      if (!res.ok) throw new Error(`updateEmbeddedItem failed: ${res.error.code}`);
+      return res.data[0];
+    },
+    async deleteEmbeddedItem(actorId, itemId) {
+      const res = await runDeleteEmbedded(
+        server,
+        { parentType: "Actor", parentId: actorId, embeddedName: "Item", ids: [itemId] },
+        opts,
+      );
+      if (!res.ok) throw new Error(`deleteEmbeddedItem failed: ${res.error.code}`);
       return res.data[0];
     },
   }, imageContent);
