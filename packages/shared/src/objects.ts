@@ -84,11 +84,18 @@ export function applyUpdate(doc: Json, diff: Json): Json {
  * True when every (possibly nested) leaf in `expected` is present and equal in
  * `actual`. Used for read-back verification: we only assert the fields we sent,
  * not the fields Foundry adds. Arrays are compared by deep equality.
+ *
+ * Keys whose `expected` value is `undefined` are skipped: `undefined` never
+ * survives JSON serialization over the wire, so it was never actually sent and
+ * cannot be asserted against a read-back (which Foundry may populate with a real
+ * default, e.g. `img`/`prototypeToken` on a freshly created actor).
  */
 export function isSubset(actual: unknown, expected: unknown): boolean {
   if (isPlainObject(expected)) {
     if (!isPlainObject(actual)) return false;
-    return Object.entries(expected).every(([k, v]) => isSubset(actual[k], v));
+    return Object.entries(expected).every(
+      ([k, v]) => v === undefined || isSubset(actual[k], v),
+    );
   }
   if (Array.isArray(expected)) {
     if (!Array.isArray(actual) || actual.length !== expected.length) return false;

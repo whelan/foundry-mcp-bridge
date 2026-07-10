@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { expandObject, isSafePath, applyUpdate, filterUnsafePaths } from "./objects.js";
+import { expandObject, isSafePath, applyUpdate, filterUnsafePaths, isSubset } from "./objects.js";
 
 describe("expandObject", () => {
   it("expands dot-paths into nested objects", () => {
@@ -43,6 +43,32 @@ describe("filterUnsafePaths", () => {
     expect(
       filterUnsafePaths({ "system.hp": 5, name: "x", "__proto__.bad": 1, "a..b": 2 }),
     ).toEqual({ "system.hp": 5, name: "x" });
+  });
+});
+
+describe("isSubset", () => {
+  it("passes when every expected leaf is present and equal, ignoring extra actual fields", () => {
+    expect(isSubset({ a: 1, b: 2, c: 3 }, { a: 1, b: 2 })).toBe(true);
+    expect(isSubset({ a: { x: 1, y: 2 } }, { a: { x: 1 } })).toBe(true);
+  });
+
+  it("fails on a differing primitive or missing key", () => {
+    expect(isSubset({ a: 1 }, { a: 2 })).toBe(false);
+    expect(isSubset({ a: 1 }, { b: 1 })).toBe(false);
+  });
+
+  it("compares arrays by length and index", () => {
+    expect(isSubset({ a: [1, 2] }, { a: [1, 2] })).toBe(true);
+    expect(isSubset({ a: [1, 2, 3] }, { a: [1, 2] })).toBe(false);
+  });
+
+  it("skips expected keys whose value is undefined (never sent over the wire)", () => {
+    // Regression: statblockToFoundryActor emits img/prototypeToken as undefined;
+    // Foundry populates them with real defaults on create. An undefined expected
+    // value must not force the read-back to also be undefined.
+    expect(
+      isSubset({ img: "systems/dnd5e/icons/svg/actors/npc.svg", name: "X" }, { img: undefined, name: "X" }),
+    ).toBe(true);
   });
 });
 
