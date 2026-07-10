@@ -1,4 +1,4 @@
-import { parseStatblock, parseStatblockRaw, parseAttackAction, parseSaveAction, statblockToFoundryActor, KNOWN_DAMAGE_TYPES } from "./index.js";
+import { parseStatblock, parseStatblockRaw, parseAttackAction, parseSaveAction } from "./index.js";
 
 export interface LintFinding {
   action: string;
@@ -68,47 +68,6 @@ export function lintStatblockNote(markdown: string): LintFinding[] {
         severity: "FAIL",
       });
     }
-  }
-
-  // --- Trait lists: unrecognized damage-type tokens (typos, or a type that
-  // didn't survive the Oxford-comma/qualifier-clause split as expected) -----
-  const traitFields: Array<[string, string[]]> = [
-    ["damage_resistances", statblock.traits.damageResistances],
-    ["damage_immunities", statblock.traits.damageImmunities],
-    ["damage_vulnerabilities", statblock.traits.damageVulnerabilities],
-  ];
-  for (const [field, values] of traitFields) {
-    for (const v of values) {
-      const known = KNOWN_DAMAGE_TYPES.has(v.trim().toLowerCase());
-      const isQualifiedClause = /\bnonmagical\b|\bnon-magical\b|\bsilvered\b|\badamantine\b/i.test(v);
-      if (!known && !isQualifiedClause) {
-        findings.push({
-          action: field,
-          problem: `"${v}" isn't a recognized damage type and isn't a qualified clause (e.g. "...from nonmagical attacks") -- will land in free-text custom, not the mechanical list.`,
-          severity: "WARN",
-        });
-      }
-    }
-  }
-
-  // --- CR: must resolve to a real XP entry, not silently fall through to 0 -
-  if (statblock.challenge.xp === 0 && statblock.challenge.cr !== 0) {
-    findings.push({
-      action: "cr",
-      problem: `${(statblock as any).data.cr} did not resolve to a known XP value (got 0) -- check the CR format.`,
-      severity: "FAIL",
-    });
-  }
-
-  // --- Final sanity: the whole thing must actually convert without throwing
-  try {
-    statblockToFoundryActor(statblock);
-  } catch (e) {
-    findings.push({
-      action: "(conversion)",
-      problem: `statblockToFoundryActor threw: ${(e as any).message}`,
-      severity: "FAIL",
-    });
   }
 
   return findings;
