@@ -4,7 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { MockFoundry } from "./mock-foundry.js";
 import { MockTransport } from "./mock-transport.js";
-import { runImportNpc } from "../../packages/mcp-server/src/tools.js";
+import { runImportNpc, runCreateDocument } from "../../packages/mcp-server/src/tools.js";
 import { buildNpcUpdatePatch, parseStatblock } from "../../packages/statblock-sync/src/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -197,6 +197,103 @@ traits:
     expect(result.ok).toBe(true);
     const actor = mock.documents("Actor").find((a: any) => a._id === (result as any).data.actorId);
     expect(actor).toBeDefined();
+  });
+
+  it("first import creates actor and stamps statblockKey on actor + items", async () => {
+    const markdown = loadFixture("test-archmage.md");
+
+    const result = await runImportNpc(transport, { markdown, mode: "create", assetSource: "data" });
+
+    expect(result.ok).toBe(true);
+    const { actorId, tier } = (result as any).data;
+    expect(tier).toBe(3);
+
+    const actor = mock.documents("Actor").find((a: any) => a._id === actorId);
+    expect(actor).toBeDefined();
+    expect(actor.flags["foundry-mcp-bridge"].statblockKey).toBe("test-archmage");
+
+    const daggerItem = actor.items.find((i: any) => i.name === "Dagger");
+    if (daggerItem) {
+      expect(daggerItem.flags["foundry-mcp-bridge"].statblockKey).toBe("action/dagger");
+    }
+  });
+
+  it("second import of same note with default mode upserts", async () => {
+    const markdown = loadFixture("test-archmage.md");
+
+    const created = await runImportNpc(transport, { markdown, mode: "create", assetSource: "data" });
+    expect(created.ok).toBe(true);
+    const actorId = (created as any).data.actorId;
+
+    const updated = await runImportNpc(transport, { markdown, assetSource: "data" });
+    expect(updated.ok).toBe(true);
+    const { actorId: updatedActorId, action, itemChanges } = (updated as any).data;
+    expect(updatedActorId).toBe(actorId);
+    expect(action).toBe("updated");
+    // Verify itemChanges was calculated
+    if (itemChanges) {
+      expect(typeof itemChanges.created).toBe("number");
+      expect(typeof itemChanges.updated).toBe("number");
+      expect(typeof itemChanges.deleted).toBe("number");
+      expect(typeof itemChanges.unchanged).toBe("number");
+    }
+
+    // Verify the same actor was updated (not a new one)
+    const allActors = mock.documents("Actor");
+    const archmageActors = allActors.filter((a: any) => a.name === "Test Archmage");
+    expect(archmageActors.length).toBe(1);
+  });
+
+  it("mode: 'create' forces new actor even when match exists", async () => {
+    const markdown = loadFixture("test-archmage.md");
+
+    const first = await runImportNpc(transport, { markdown, assetSource: "data" });
+    expect(first.ok).toBe(true);
+    const firstActorId = (first as any).data.actorId;
+
+    const second = await runImportNpc(transport, { markdown, mode: "create", assetSource: "data" });
+    expect(second.ok).toBe(true);
+    const secondActorId = (second as any).data.actorId;
+    const action = (second as any).data.action;
+
+    expect(secondActorId).not.toBe(firstActorId);
+    expect(action).toBe("created");
+  });
+
+  it("mode: 'update' with no match throws VALIDATION error", async () => {
+    const markdown = loadFixture("test-archmage.md");
+
+    const result = await runImportNpc(transport, { markdown, mode: "update", assetSource: "data" });
+
+    expect(result.ok).toBe(false);
+    const error = (result as any).error;
+    expect(error.code).toBe("VALIDATION");
+    expect(error.message).toContain("mode: \"update\" requires");
+  });
+
+  it("ambiguous match (2+ actors with same key) throws VALIDATION error", async () => {
+    const markdown = loadFixture("test-archmage.md");
+
+    const first = await runImportNpc(transport, { markdown, assetSource: "data" });
+    expect(first.ok).toBe(true);
+
+    // Create a second actor with the same statblockKey via the transport
+    const secondActorResult = await runCreateDocument(transport, {
+      documentType: "Actor",
+      data: {
+        name: "Test Archmage",
+        type: "npc",
+        flags: { "foundry-mcp-bridge": { statblockKey: "test-archmage" } },
+      },
+    });
+    expect(secondActorResult.ok).toBe(true);
+
+    const result = await runImportNpc(transport, { markdown, assetSource: "data" });
+
+    expect(result.ok).toBe(false);
+    const error = (result as any).error;
+    expect(error.code).toBe("VALIDATION");
+    expect(error.message).toContain("Ambiguous match");
   });
 });
 

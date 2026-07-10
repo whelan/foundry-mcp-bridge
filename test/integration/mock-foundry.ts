@@ -486,10 +486,31 @@ export class MockFoundry {
     }
     const all = this.list(cmd.documentType);
     if (!cmd.query) return ok(id, all);
-    const matches = all.filter((doc) =>
-      Object.entries(cmd.query!).every(([path, value]) => getByPath(doc, path) === value),
+
+    // Helper function to check if a value matches a query recursively
+    const matches = (docValue: unknown, queryValue: unknown): boolean => {
+      if (queryValue === null || typeof queryValue !== "object" || Array.isArray(queryValue)) {
+        return docValue === queryValue;
+      }
+      // If queryValue is an object (but not an array), check all its keys
+      for (const [key, qv] of Object.entries(queryValue)) {
+        if (typeof docValue !== "object" || docValue === null || !(key in docValue)) {
+          return false;
+        }
+        if (!matches((docValue as Record<string, unknown>)[key], qv)) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const matchDocs = all.filter((doc) =>
+      Object.entries(cmd.query!).every(([path, value]) => {
+        const docValue = getByPath(doc, path);
+        return matches(docValue, value);
+      }),
     );
-    return ok(id, matches);
+    return ok(id, matchDocs);
   }
 
   private createQuest(

@@ -843,6 +843,7 @@ export async function runImportNpc(
       const cause = err.cause ? `${err.cause}` : undefined;
 
       // Extract structured error info from library throws
+      const code = err.code || "INTERNAL";
       const stage = err.stage || "actor-create";
       const errorActorId = err.actorId;
 
@@ -851,7 +852,7 @@ export async function runImportNpc(
         return {
           ok: false,
           error: {
-            code: "INTERNAL",
+            code,
             message,
             details: { actorId: errorActorId, stage, cause },
           },
@@ -861,7 +862,7 @@ export async function runImportNpc(
         return {
           ok: false,
           error: {
-            code: "INTERNAL",
+            code,
             message,
             details: { stage, cause },
           },
@@ -898,7 +899,9 @@ export async function runImportNpc(
       data: {
         actorId: importResult.actorId,
         tier: importResult.tier,
+        action: importResult.action,
         matchedUuid: importResult.matchedUuid,
+        itemChanges: importResult.itemChanges,
         verification: {
           ok: verification.ok,
           checks: verification.checks,
