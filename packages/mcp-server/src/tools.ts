@@ -17,6 +17,7 @@ import {
   expandObject,
   isSafePath,
   filterUnsafePaths,
+  type CompendiumEntry,
 } from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
 import {
@@ -529,4 +530,310 @@ export async function runImportEmbeddedFromCompendium(
     args.fields,
     args.full,
   );
+}
+
+// --- import_npc ---------------------------------------------------------
+
+export const ImportNpcShape = z.object({
+  markdown: z.string().min(1),
+  image: z.object({
+    filename: z.string().min(1),
+    contentBase64: z.string().min(1),
+  }).optional(),
+  assetSource: z.enum(["data", "forgevtt"]).default("data"),
+  folder: z.string().optional(),
+});
+export type ImportNpcShape = z.infer<typeof ImportNpcShape>;
+
+/**
+ * Resolve or create an Actor folder by name.
+ * Returns the folder ID, or undefined if no folder was requested.
+ */
+async function resolveFolder(
+  transport: RelayTransport,
+  folderName: string | undefined,
+): Promise<string | undefined> {
+  if (!folderName) return undefined;
+
+  // Find existing Actor folder by name
+  const existing = await runFindDocuments(transport, {
+    documentType: "Folder",
+    query: { name: folderName, type: "Actor" },
+    fields: ["_id"],
+  });
+
+  if (existing.ok && Array.isArray(existing.data) && existing.data.length > 0) {
+    const folders = existing.data as Array<{ _id: string }>;
+    const firstFolder = folders[0];
+    if (firstFolder) {
+      return firstFolder._id;
+    }
+  }
+
+  // Create new folder
+  const created = await runCreateDocument(transport, {
+    documentType: "Folder",
+    data: { name: folderName, type: "Actor" },
+  });
+
+  if (!created.ok) {
+    throw new Error(
+      `Failed to create folder "${folderName}": ${created.error.code}`,
+    );
+  }
+
+  const doc = created.data as { _id: string };
+  return doc._id;
+}
+
+/**
+ * Import an NPC from a statblock markdown note.
+ * Orchestrates: lint → parse → folder → importNpc() → verify.
+ */
+export async function runImportNpc(
+  transport: RelayTransport,
+  input: ImportNpcShape,
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+
+  try {
+    // Step 1: Lint
+    steps.push("lint");
+    const { lintStatblockNote } = await import(
+      "@foundry-mcp-bridge/statblock-sync"
+    );
+    const lintFindings = lintStatblockNote(input.markdown);
+    const failures = lintFindings.filter(
+      (f: { severity: string }) => f.severity === "FAIL",
+    );
+    if (failures.length > 0) {
+      return {
+        ok: false,
+        error: {
+          code: "VALIDATION",
+          message: "Statblock lint found 2014-style or malformed actions",
+          details: { findings: failures },
+        },
+        steps,
+      };
+    }
+
+    // Step 2: Parse
+    steps.push("parse");
+    const {
+      parseStatblock,
+      importNpc,
+      verifyImportedNpc,
+    } = await import("@foundry-mcp-bridge/statblock-sync");
+
+    let statblock;
+    try {
+      statblock = parseStatblock(input.markdown);
+    } catch (e) {
+      return {
+        ok: false,
+        error: {
+          code: "VALIDATION",
+          message: "Failed to parse statblock",
+          details: { cause: (e as any).message },
+        },
+        steps,
+      };
+    }
+
+    // Step 3: Resolve folder (if requested)
+    steps.push("resolve-folder");
+    let folderId: string | undefined;
+    try {
+      folderId = await resolveFolder(transport, input.folder);
+    } catch (e) {
+      return {
+        ok: false,
+        error: {
+          code: "INTERNAL",
+          message: `Folder resolution failed: ${(e as any).message}`,
+        },
+        steps,
+      };
+    }
+
+    // Step 4: Prepare deps
+    const deps = {
+      async searchCompendium(nameQuery: string): Promise<CompendiumEntry[]> {
+        const result = await runSearchCompendium(transport, {
+          documentType: "Actor",
+          nameQuery,
+        });
+        if (!result.ok) {
+          throw new Error(`searchCompendium: ${result.error.code}`);
+        }
+        return result.data as CompendiumEntry[];
+      },
+
+      async importFromCompendium(
+        uuid: string,
+        patch?: Record<string, unknown>,
+      ): Promise<{ _id: string }> {
+        const result = await runImportFromCompendium(transport, {
+          documentType: "Actor",
+          uuid,
+          patch,
+          folderId,
+        });
+        if (!result.ok) {
+          throw new Error(`importFromCompendium: ${result.error.code}`);
+        }
+        return result.data as { _id: string };
+      },
+
+      async createDocument(data: Record<string, unknown>): Promise<{ _id: string }> {
+        const result = await runCreateDocument(transport, {
+          documentType: "Actor",
+          data: data as Record<string, unknown>,
+        });
+        if (!result.ok) {
+          throw new Error(`createDocument: ${result.error.code}`);
+        }
+        return result.data as { _id: string };
+      },
+
+      async uploadImage(
+        filename: string,
+        contentBase64: string,
+        targetFolder?: string,
+      ): Promise<string> {
+        const result = await runUploadAsset(transport, {
+          source: input.assetSource,
+          target: targetFolder ?? "worlds/npcs",
+          filename,
+          contentBase64,
+        });
+        if (!result.ok) {
+          throw new Error(`uploadAsset: ${result.error.code}`);
+        }
+        return (result.data as any).path;
+      },
+
+      async searchSpellCompendium(nameQuery: string): Promise<CompendiumEntry[]> {
+        const result = await runSearchCompendium(transport, {
+          documentType: "Item",
+          nameQuery,
+        });
+        if (!result.ok) {
+          throw new Error(`searchSpellCompendium: ${result.error.code}`);
+        }
+        return result.data as CompendiumEntry[];
+      },
+
+      async importEmbeddedFromCompendium(
+        parentId: string,
+        uuid: string,
+      ): Promise<{ _id: string }> {
+        const result = await runImportEmbeddedFromCompendium(transport, {
+          parentType: "Actor",
+          parentId,
+          embeddedName: "Item",
+          uuids: [{ uuid }],
+        });
+        if (!result.ok) {
+          throw new Error(`importEmbeddedFromCompendium: ${result.error.code}`);
+        }
+        return (result.data as any[])[0];
+      },
+
+      async createEmbeddedItem(
+        parentId: string,
+        data: Record<string, unknown>,
+      ): Promise<{ _id: string }> {
+        const result = await runCreateEmbedded(transport, {
+          parentType: "Actor",
+          parentId,
+          embeddedName: "Item",
+          data: [data],
+        });
+        if (!result.ok) {
+          throw new Error(`createEmbeddedItem: ${result.error.code}`);
+        }
+        return (result.data as any[])[0];
+      },
+    } as any;
+
+    // Step 5: Import (wrap in stage tracking)
+    steps.push("import");
+    let importResult;
+    try {
+      importResult = await importNpc(
+        statblock,
+        deps,
+        input.image ? input.image : undefined,
+        folderId,
+      );
+    } catch (e) {
+      const message = (e as any).message || "Unknown error during import";
+
+      // If the error message starts with a dep name, extract the stage
+      let stage = "actor-create";
+      if (message.includes("attachSpells")) {
+        stage = "attachSpells";
+      } else if (message.includes("uploadAsset")) {
+        stage = "uploadImage";
+      }
+
+      return {
+        ok: false,
+        error: {
+          code: "INTERNAL",
+          message,
+          details: { stage },
+        },
+        steps,
+      };
+    }
+
+    // Step 6: Read back and verify
+    steps.push("read-back");
+    const readBackResult = await runFindDocuments(transport, {
+      documentType: "Actor",
+      id: importResult.actorId,
+      fields: ["_id", "name", "type", "system", "items", "folder"],
+    });
+
+    if (!readBackResult.ok) {
+      return {
+        ok: false,
+        error: {
+          code: "INTERNAL",
+          message: "Read-back failed after import",
+          details: { actorId: importResult.actorId, cause: readBackResult.error.code },
+        },
+        steps,
+      };
+    }
+
+    const readBack = readBackResult.data as any;
+    const verification = verifyImportedNpc(readBack, statblock);
+
+    return {
+      ok: true,
+      data: {
+        actorId: importResult.actorId,
+        tier: importResult.tier,
+        matchedUuid: importResult.matchedUuid,
+        verification: {
+          ok: verification.ok,
+          checks: verification.checks,
+        },
+      },
+      steps,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: {
+        code: "INTERNAL",
+        message: `Unexpected error: ${(e as any).message}`,
+      },
+      steps,
+    };
+  }
 }
