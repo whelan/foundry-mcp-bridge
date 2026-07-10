@@ -11435,7 +11435,9 @@ var StatblockSchema = external_exports.object({
   actions: external_exports.array(NamedEntrySchema).optional(),
   reactions: external_exports.array(NamedEntrySchema).optional(),
   legendary_actions: external_exports.array(NamedEntrySchema).optional(),
-  lair_actions: external_exports.array(NamedEntrySchema).optional()
+  lair_actions: external_exports.array(NamedEntrySchema).optional(),
+  /** Explicit legendary-action budget override; defaults to legendary_actions.length when absent. */
+  legendary_action_count: external_exports.number().int().nonnegative().optional()
 }).passthrough();
 var SkillLineSchema = external_exports.object({
   skill: external_exports.string(),
@@ -11451,51 +11453,8 @@ var AbilityModSchema = external_exports.object({
 var import_yaml = __toESM(require_dist(), 1);
 
 // packages/statblock-sync/dist/utils.js
-var SKILL_TO_ABILITY_MAP = {
-  acrobatics: "dex",
-  "animal handling": "wis",
-  arcana: "int",
-  athletics: "str",
-  deception: "cha",
-  history: "int",
-  insight: "wis",
-  intimidation: "cha",
-  investigation: "int",
-  medicine: "wis",
-  nature: "int",
-  perception: "wis",
-  performance: "cha",
-  persuasion: "cha",
-  religion: "int",
-  sleight: "dex",
-  "sleight of hand": "dex",
-  stealth: "dex",
-  survival: "wis"
-};
-var SKILL_TO_ABBREVIATION_MAP = {
-  acrobatics: "acr",
-  "animal handling": "ani",
-  arcana: "arc",
-  athletics: "ath",
-  deception: "dec",
-  history: "his",
-  insight: "ins",
-  intimidation: "itm",
-  investigation: "inv",
-  medicine: "med",
-  nature: "nat",
-  perception: "prc",
-  performance: "prf",
-  persuasion: "per",
-  religion: "rel",
-  sleight: "slt",
-  "sleight of hand": "slt",
-  stealth: "ste",
-  survival: "sur"
-};
 var DAMAGE_TYPES_STR = "slashing|piercing|bludgeoning|psychic|necrotic|fire|cold|lightning|radiant|acid|poison|thunder|force";
 var KNOWN_DAMAGE_TYPES = new Set(DAMAGE_TYPES_STR.split("|"));
-var SENSE_RANGE_RE = /(darkvision|blindsight|tremorsense|truesight)\s+(\d+)\s*ft/i;
 var SIZE_TO_ABBREVIATION_MAP = {
   tiny: "tiny",
   small: "sm",
@@ -11506,252 +11465,6 @@ var SIZE_TO_ABBREVIATION_MAP = {
 };
 function stripMarkdown(text) {
   return text.replace(/\*+/g, "");
-}
-function getSkillAbility(skill) {
-  return SKILL_TO_ABILITY_MAP[skill.toLowerCase()] || "str";
-}
-function skillAbbrev(skill) {
-  return SKILL_TO_ABBREVIATION_MAP[skill.toLowerCase().replace(/ of hand/, "")];
-}
-
-// packages/statblock-sync/dist/parse.js
-var STATBLOCK_FENCE_RE = /^([\s\S]*?)```statblock\n([\s\S]*?)\n```\s*\n?([\s\S]*)$/;
-var XP_BY_CR = {
-  0: 10,
-  "0.125": 25,
-  "0.25": 50,
-  "0.5": 100,
-  1: 200,
-  2: 450,
-  3: 700,
-  4: 1100,
-  5: 1800,
-  6: 2300,
-  7: 2900,
-  8: 3900,
-  9: 5e3,
-  10: 5900,
-  11: 7200,
-  12: 8400,
-  13: 1e4,
-  14: 11500,
-  15: 13e3,
-  16: 15e3,
-  17: 18e3,
-  18: 2e4,
-  19: 22e3,
-  20: 25e3,
-  21: 33e3,
-  22: 41e3,
-  23: 5e4,
-  24: 62e3,
-  25: 75e3,
-  26: 9e4,
-  27: 105e3,
-  28: 12e4,
-  29: 135e3,
-  30: 155e3
-};
-function parseStatblockRaw(raw) {
-  const normalized = raw.replace(/\r\n/g, "\n");
-  const match = STATBLOCK_FENCE_RE.exec(normalized);
-  if (!match || match[2] === void 0) {
-    return {
-      data: {},
-      prose: { before: normalized, after: "" }
-    };
-  }
-  const before = match[1] ?? "";
-  const yamlContent = match[2];
-  const after = match[3] ?? "";
-  const data = (0, import_yaml.parse)(yamlContent) ?? {};
-  return {
-    data,
-    prose: { before, after }
-  };
-}
-function parseStatblock(raw) {
-  const { data, prose } = parseStatblockRaw(raw);
-  const sb = StatblockSchema.parse(data);
-  return {
-    data: sb,
-    prose,
-    attributes: buildAttributes(sb),
-    abilities_: buildAbilityScores(sb),
-    skills: buildSkillsAndSaves(sb),
-    traits: buildTraits(sb),
-    challenge: buildChallenge(sb),
-    creatureType: buildCreatureType(sb),
-    abilities: buildAbilities(sb),
-    actions: buildActions(sb)
-  };
-}
-function buildAttributes(sb) {
-  const speed = {};
-  if (sb.speed) {
-    const walkMatch = sb.speed.match(/(\d+)\s*ft\.?/i);
-    if (walkMatch?.[1])
-      speed.walk = parseInt(walkMatch[1], 10);
-    const flyMatch = sb.speed.match(/fly\s+(\d+)\s*ft/i);
-    if (flyMatch?.[1])
-      speed.fly = parseInt(flyMatch[1], 10);
-    const swimMatch = sb.speed.match(/swim\s+(\d+)\s*ft/i);
-    if (swimMatch?.[1])
-      speed.swim = parseInt(swimMatch[1], 10);
-    const burrowMatch = sb.speed.match(/burrow\s+(\d+)\s*ft/i);
-    if (burrowMatch?.[1])
-      speed.burrow = parseInt(burrowMatch[1], 10);
-    const climbMatch = sb.speed.match(/climb\s+(\d+)\s*ft/i);
-    if (climbMatch?.[1])
-      speed.climb = parseInt(climbMatch[1], 10);
-  }
-  return {
-    armorClass: sb.ac,
-    hitPoints: { value: sb.hp, formula: sb.hit_dice ?? "" },
-    speed
-  };
-}
-function buildAbilityScores(sb) {
-  const [str, dex, con, int, wis, cha] = sb.stats;
-  return { str, dex, con, int, wis, cha };
-}
-function buildSkillsAndSaves(sb) {
-  const proficiencies = (sb.skillsaves ?? []).flatMap((entry) => Object.entries(entry).map(([skill, bonus]) => ({ skill, bonus, proficient: true })));
-  const savingThrows = (sb.saves ?? []).flatMap((entry) => Object.entries(entry).map(([ability, bonus]) => ({ ability, bonus, proficient: true })));
-  return { proficiencies, savingThrows };
-}
-function splitTraitList(value) {
-  return value ? value.split(",").map((s) => s.trim().replace(/^and\s+/i, "")).filter(Boolean) : [];
-}
-var DAMAGE_QUALIFIER_RE = /\bnonmagical\b|\bnon-magical\b|\bsilvered\b|\badamantine\b/i;
-function splitDamageTraitList(value) {
-  if (!value)
-    return [];
-  return value.split(";").map((clause) => clause.trim()).filter(Boolean).flatMap((clause) => DAMAGE_QUALIFIER_RE.test(clause) ? [clause] : splitTraitList(clause));
-}
-function buildTraits(sb) {
-  return {
-    damageResistances: splitDamageTraitList(sb.damage_resistances),
-    damageImmunities: splitDamageTraitList(sb.damage_immunities),
-    damageVulnerabilities: splitDamageTraitList(sb.damage_vulnerabilities),
-    conditionImmunities: splitTraitList(sb.condition_immunities),
-    senses: splitTraitList(sb.senses),
-    languages: splitTraitList(sb.languages)
-  };
-}
-function buildChallenge(sb) {
-  let crValue;
-  if (typeof sb.cr === "number") {
-    crValue = sb.cr;
-  } else if (sb.cr.includes("/")) {
-    const [num, denom] = sb.cr.split("/").map((s) => parseInt(s, 10));
-    crValue = num !== void 0 && denom !== void 0 ? num / denom : parseFloat(sb.cr);
-  } else {
-    crValue = parseFloat(sb.cr);
-  }
-  const xp = XP_BY_CR[crValue] ?? 0;
-  return { cr: crValue, xp };
-}
-function buildCreatureType(sb) {
-  const size = SIZE_TO_ABBREVIATION_MAP[(sb.size ?? "Medium").toLowerCase()] ?? "med";
-  const typeMatch = (sb.type ?? "humanoid").match(/^([a-zA-Z]+)(?:\s*\(([^)]+)\))?/);
-  return {
-    size,
-    type: (typeMatch?.[1] ?? "humanoid").toLowerCase(),
-    subtype: typeMatch?.[2]?.trim(),
-    alignment: sb.alignment ?? ""
-  };
-}
-function buildAbilities(sb) {
-  return (sb.traits ?? []).map((t) => ({
-    name: t.name,
-    description: t.desc,
-    passive: true
-  }));
-}
-function extractRecharge(name) {
-  const rechargeMatch = name.match(/\s*\(Recharge\s+(\d)(?:-\d)?\)/i);
-  if (!rechargeMatch?.[1])
-    return { name };
-  return {
-    name: name.replace(rechargeMatch[0], "").trim(),
-    recharge: { value: parseInt(rechargeMatch[1], 10), charged: true }
-  };
-}
-var ACTION_LIST_FIELDS = [
-  { field: "actions", type: "action" },
-  { field: "reactions", type: "reaction" },
-  { field: "legendary_actions", type: "legendary" },
-  { field: "lair_actions", type: "lair" }
-];
-function buildActions(sb) {
-  return ACTION_LIST_FIELDS.flatMap(({ field, type }) => (sb[field] ?? []).map((entry) => {
-    const { name, recharge } = extractRecharge(entry.name);
-    return {
-      name,
-      type,
-      description: entry.desc,
-      multiattack: name.toLowerCase().includes("multiattack"),
-      recharge
-    };
-  }));
-}
-
-// packages/statblock-sync/dist/math.js
-function getAbilityModifier(score) {
-  return Math.floor((score - 10) / 2);
-}
-function getProficiencyBonus(cr) {
-  if (cr < 1)
-    return 2;
-  if (cr < 5)
-    return 2;
-  if (cr < 9)
-    return 3;
-  if (cr < 13)
-    return 4;
-  if (cr < 17)
-    return 5;
-  if (cr < 21)
-    return 6;
-  if (cr < 25)
-    return 7;
-  if (cr < 29)
-    return 8;
-  return 9;
-}
-function parseDamageFormula(formula) {
-  const normalized = formula.toLowerCase().trim();
-  const flatMatch = normalized.match(/^(\d+)$/);
-  if (flatMatch && flatMatch[1]) {
-    const bonus2 = parseInt(flatMatch[1], 10);
-    return { count: 0, die: 0, bonus: bonus2, average: bonus2 };
-  }
-  const diceMatch = normalized.match(/(\d+)d(\d+)(?:\s*([+-])\s*(\d+))?/);
-  if (!diceMatch || !diceMatch[1] || !diceMatch[2]) {
-    return {
-      count: 1,
-      die: 6,
-      bonus: 0,
-      average: 3.5
-    };
-  }
-  const count = parseInt(diceMatch[1], 10);
-  const die = parseInt(diceMatch[2], 10);
-  const sign = diceMatch[3] === "-" ? -1 : 1;
-  const bonus = diceMatch[4] ? sign * parseInt(diceMatch[4], 10) : 0;
-  const average = (die + 1) / 2 * count + bonus;
-  return {
-    count,
-    die,
-    bonus,
-    average: Math.round(average * 10) / 10
-    // Round to 1 decimal place
-  };
-}
-function getAbilityMod(abilities_, ability) {
-  const score = abilities_[ability.toLowerCase()];
-  return score !== void 0 ? getAbilityModifier(score) : 0;
 }
 
 // packages/statblock-sync/dist/grammar.js
@@ -11859,6 +11572,240 @@ function parseDamage(description) {
     }
   }
   return damages;
+}
+function parseSpellcastingTrait(desc) {
+  const normalized = stripMarkdown(desc).replace(/\s+/g, " ").trim();
+  const dcMatch = normalized.match(/spell save DC\s*(\d+)/i);
+  const bonusMatch = normalized.match(/\+(\d+)\s+to hit with spell attacks/i);
+  const abilityMatch = normalized.match(/spellcasting ability is (\w+)/i);
+  if (!dcMatch?.[1] || !bonusMatch?.[1] || !abilityMatch?.[1])
+    return void 0;
+  const HEADER_RE = /(Cantrips\s*\(at will\)|(\d)(?:st|nd|rd|th)\s*level(?:\s*\((\d+)\s*slots?\))?)\s*:\s*/gi;
+  const headers = [];
+  let hm;
+  while ((hm = HEADER_RE.exec(normalized)) !== null) {
+    headers.push({
+      index: hm.index,
+      end: hm.index + hm[0].length,
+      level: hm[2] ? parseInt(hm[2], 10) : 0,
+      slots: hm[3] ? parseInt(hm[3], 10) : void 0
+    });
+  }
+  const levels = headers.map((h, i) => {
+    const stop = i + 1 < headers.length ? headers[i + 1].index : normalized.length;
+    const body = normalized.slice(h.end, stop).replace(/\.\s*$/, "").trim();
+    return {
+      level: h.level,
+      slots: h.slots,
+      spellNames: body.split(",").map((s) => s.trim()).filter(Boolean)
+    };
+  });
+  return {
+    ability: abilityMatch[1].toLowerCase().substring(0, 3),
+    dc: parseInt(dcMatch[1], 10),
+    attackBonus: parseInt(bonusMatch[1], 10),
+    levels
+  };
+}
+
+// packages/statblock-sync/dist/parse.js
+var STATBLOCK_FENCE_RE = /^([\s\S]*?)```statblock\n([\s\S]*?)\n```\s*\n?([\s\S]*)$/;
+var XP_BY_CR = {
+  0: 10,
+  "0.125": 25,
+  "0.25": 50,
+  "0.5": 100,
+  1: 200,
+  2: 450,
+  3: 700,
+  4: 1100,
+  5: 1800,
+  6: 2300,
+  7: 2900,
+  8: 3900,
+  9: 5e3,
+  10: 5900,
+  11: 7200,
+  12: 8400,
+  13: 1e4,
+  14: 11500,
+  15: 13e3,
+  16: 15e3,
+  17: 18e3,
+  18: 2e4,
+  19: 22e3,
+  20: 25e3,
+  21: 33e3,
+  22: 41e3,
+  23: 5e4,
+  24: 62e3,
+  25: 75e3,
+  26: 9e4,
+  27: 105e3,
+  28: 12e4,
+  29: 135e3,
+  30: 155e3
+};
+function parseStatblockRaw(raw) {
+  const normalized = raw.replace(/\r\n/g, "\n");
+  const match = STATBLOCK_FENCE_RE.exec(normalized);
+  if (!match || match[2] === void 0) {
+    return {
+      data: {},
+      prose: { before: normalized, after: "" }
+    };
+  }
+  const before = match[1] ?? "";
+  const yamlContent = match[2];
+  const after = match[3] ?? "";
+  const data = (0, import_yaml.parse)(yamlContent) ?? {};
+  return {
+    data,
+    prose: { before, after }
+  };
+}
+function parseStatblock(raw) {
+  const { data, prose } = parseStatblockRaw(raw);
+  const sb = StatblockSchema.parse(data);
+  return {
+    data: sb,
+    prose,
+    attributes: buildAttributes(sb),
+    abilities_: buildAbilityScores(sb),
+    skills: buildSkillsAndSaves(sb),
+    traits: buildTraits(sb),
+    challenge: buildChallenge(sb),
+    creatureType: buildCreatureType(sb),
+    abilities: buildAbilities(sb),
+    actions: buildActions(sb),
+    spellcasting: buildSpellcasting(sb)
+  };
+}
+function buildSpellcasting(sb) {
+  const trait = (sb.traits ?? []).find((t) => /^spellcasting$/i.test(t.name));
+  return trait ? parseSpellcastingTrait(trait.desc) : void 0;
+}
+function buildAttributes(sb) {
+  const speed = {};
+  if (sb.speed) {
+    const walkMatch = sb.speed.match(/(\d+)\s*ft\.?/i);
+    if (walkMatch?.[1])
+      speed.walk = parseInt(walkMatch[1], 10);
+    const flyMatch = sb.speed.match(/fly\s+(\d+)\s*ft/i);
+    if (flyMatch?.[1])
+      speed.fly = parseInt(flyMatch[1], 10);
+    const swimMatch = sb.speed.match(/swim\s+(\d+)\s*ft/i);
+    if (swimMatch?.[1])
+      speed.swim = parseInt(swimMatch[1], 10);
+    const burrowMatch = sb.speed.match(/burrow\s+(\d+)\s*ft/i);
+    if (burrowMatch?.[1])
+      speed.burrow = parseInt(burrowMatch[1], 10);
+    const climbMatch = sb.speed.match(/climb\s+(\d+)\s*ft/i);
+    if (climbMatch?.[1])
+      speed.climb = parseInt(climbMatch[1], 10);
+  }
+  return {
+    armorClass: sb.ac,
+    hitPoints: { value: sb.hp, formula: sb.hit_dice ?? "" },
+    speed
+  };
+}
+function buildAbilityScores(sb) {
+  const [str, dex, con, int, wis, cha] = sb.stats;
+  return { str, dex, con, int, wis, cha };
+}
+function buildSkillsAndSaves(sb) {
+  const proficiencies = (sb.skillsaves ?? []).flatMap((entry) => Object.entries(entry).map(([skill, bonus]) => ({ skill, bonus, proficient: true })));
+  const savingThrows = (sb.saves ?? []).flatMap((entry) => Object.entries(entry).map(([ability, bonus]) => ({ ability, bonus, proficient: true })));
+  return { proficiencies, savingThrows };
+}
+function splitTraitList(value) {
+  return value ? value.split(",").map((s) => s.trim().replace(/^and\s+/i, "")).filter(Boolean) : [];
+}
+var DAMAGE_QUALIFIER_RE = /\bnonmagical\b|\bnon-magical\b|\bsilvered\b|\badamantine\b/i;
+function splitDamageTraitList(value) {
+  if (!value)
+    return [];
+  return value.split(";").map((clause) => clause.trim()).filter(Boolean).flatMap((clause) => DAMAGE_QUALIFIER_RE.test(clause) ? [clause] : splitTraitList(clause));
+}
+function buildTraits(sb) {
+  return {
+    damageResistances: splitDamageTraitList(sb.damage_resistances),
+    damageImmunities: splitDamageTraitList(sb.damage_immunities),
+    damageVulnerabilities: splitDamageTraitList(sb.damage_vulnerabilities),
+    conditionImmunities: splitTraitList(sb.condition_immunities),
+    senses: splitTraitList(sb.senses),
+    languages: splitTraitList(sb.languages)
+  };
+}
+function buildChallenge(sb) {
+  let crValue;
+  if (typeof sb.cr === "number") {
+    crValue = sb.cr;
+  } else if (sb.cr.includes("/")) {
+    const [num, denom] = sb.cr.split("/").map((s) => parseInt(s, 10));
+    crValue = num !== void 0 && denom !== void 0 ? num / denom : parseFloat(sb.cr);
+  } else {
+    crValue = parseFloat(sb.cr);
+  }
+  const xp = XP_BY_CR[crValue] ?? 0;
+  return { cr: crValue, xp };
+}
+function buildCreatureType(sb) {
+  const size = SIZE_TO_ABBREVIATION_MAP[(sb.size ?? "Medium").toLowerCase()] ?? "med";
+  const typeMatch = (sb.type ?? "humanoid").match(/^([a-zA-Z]+)(?:\s*\(([^)]+)\))?/);
+  return {
+    size,
+    type: (typeMatch?.[1] ?? "humanoid").toLowerCase(),
+    subtype: typeMatch?.[2]?.trim(),
+    alignment: sb.alignment ?? ""
+  };
+}
+function extractLegendaryResistanceUses(name) {
+  if (!/^Legendary Resistance\b/i.test(name))
+    return { name };
+  const match = name.match(/\((\d+)\/Day\)/i);
+  if (!match?.[1])
+    return { name };
+  return { name: name.replace(match[0], "").trim(), uses: parseInt(match[1], 10) };
+}
+function buildAbilities(sb) {
+  return (sb.traits ?? []).map((t) => {
+    const { name, uses } = extractLegendaryResistanceUses(t.name);
+    return {
+      name,
+      description: t.desc,
+      passive: true,
+      ...uses !== void 0 ? { legendaryResistanceUses: uses } : {}
+    };
+  });
+}
+function extractRecharge(name) {
+  const rechargeMatch = name.match(/\s*\(Recharge\s+(\d)(?:-\d)?\)/i);
+  if (!rechargeMatch?.[1])
+    return { name };
+  return {
+    name: name.replace(rechargeMatch[0], "").trim(),
+    recharge: { value: parseInt(rechargeMatch[1], 10), charged: true }
+  };
+}
+var ACTION_LIST_FIELDS = [
+  { field: "actions", type: "action" },
+  { field: "reactions", type: "reaction" },
+  { field: "legendary_actions", type: "legendary" },
+  { field: "lair_actions", type: "lair" }
+];
+function buildActions(sb) {
+  return ACTION_LIST_FIELDS.flatMap(({ field, type }) => (sb[field] ?? []).map((entry) => {
+    const { name, recharge } = extractRecharge(entry.name);
+    return {
+      name,
+      type,
+      description: entry.desc,
+      multiattack: name.toLowerCase().includes("multiattack"),
+      recharge
+    };
+  }));
 }
 
 // packages/shared/dist/protocol.js
@@ -12016,6 +11963,20 @@ var ImportFromCompendiumCommand = external_exports.object({
   /** Optional folder id to place the imported document in. */
   folderId: external_exports.string().optional()
 });
+var ImportEmbeddedFromCompendiumEntry = external_exports.object({
+  uuid: external_exports.string().min(1),
+  /** Optional dot-notation patch applied to this entry's cloned data. */
+  patch: DocumentData.optional()
+});
+var ImportEmbeddedFromCompendiumCommand = external_exports.object({
+  action: external_exports.literal("importEmbeddedFromCompendium"),
+  parentType: DocumentType,
+  parentId: external_exports.string().min(1),
+  /** e.g. "Item" (spells cloned onto an actor). */
+  embeddedName: external_exports.string().min(1),
+  /** Batched so a whole spell list attaches in one round-trip. */
+  uuids: external_exports.array(ImportEmbeddedFromCompendiumEntry).min(1)
+});
 var Command = external_exports.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -12033,7 +11994,8 @@ var Command = external_exports.discriminatedUnion("action", [
   BrowseAssetsCommand,
   BatchUploadAssetsCommand,
   SearchCompendiumCommand,
-  ImportFromCompendiumCommand
+  ImportFromCompendiumCommand,
+  ImportEmbeddedFromCompendiumCommand
 ]);
 var CommandEnvelope = external_exports.object({
   /** Correlation id (uuid) tying a result back to its command. */
@@ -12073,398 +12035,57 @@ var CommandResult = external_exports.discriminatedUnion("ok", [
   })
 ]);
 
-// packages/shared/dist/scene-builders.js
-var ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-function randomID(length = 16) {
-  let out = "";
-  for (let i = 0; i < length; i++) {
-    out += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
-  }
-  return out;
-}
-
-// packages/statblock-sync/dist/activities.js
-var foundryId = randomID;
-function toDamagePart(part) {
-  const f = parseDamageFormula(part.formula);
-  return {
-    number: f.count,
-    denomination: f.die,
-    bonus: f.bonus !== 0 ? String(f.bonus) : "",
-    types: [part.type],
-    custom: { enabled: false, formula: "" },
-    scaling: { number: 1 }
-  };
-}
-function parseTemplate(description) {
-  const m = description.match(/(\d+)-foot\s+(cone|line|sphere|radius|emanation|cube|cylinder)/i);
-  if (!m)
-    return void 0;
-  return { type: m[2].toLowerCase(), size: m[1] };
-}
-function activityCommon(id, activation) {
-  return {
-    _id: id,
-    sort: 0,
-    activation: { type: activation, value: null, override: false },
-    consumption: { scaling: { allowed: false }, spellSlot: true, targets: [] },
-    description: {},
-    duration: { units: "inst", concentration: false, override: false },
-    effects: [],
-    range: { override: false, units: "self" },
-    target: {
-      template: { contiguous: false, units: "ft" },
-      affects: { choice: false },
-      override: false,
-      prompt: true
-    },
-    uses: { spent: 0, recovery: [] },
-    img: null,
-    flags: {},
-    visibility: {
-      level: {},
-      requireAttunement: false,
-      requireIdentification: false,
-      requireMagic: false
-    }
-  };
-}
-function attackActivity(opts) {
-  const id = opts.id ?? foundryId();
-  const common = activityCommon(id, opts.activation ?? "action");
-  return {
-    [id]: {
-      ...common,
-      type: "attack",
-      attack: {
-        critical: { threshold: null },
-        // flat + ability "none": reproduce the printed to-hit exactly and add
-        // no ability mod to base damage (its explicit bonus carries the mod).
-        flat: true,
-        ability: "none",
-        bonus: String(opts.bonus),
-        type: { value: opts.attackType, classification: "" }
-      },
-      damage: { critical: { bonus: "" }, includeBase: true, parts: opts.extraParts ?? [] },
-      consumption: {
-        ...common.consumption,
-        targets: opts.consumesItemUse ? [{ type: "itemUses", value: "1", target: "", scaling: {} }] : []
+// packages/statblock-sync/dist/lint.js
+var LOOKS_LIKE_ATTACK = /\b(?:attack roll|weapon attack|spell attack)\b/i;
+var LOOKS_LIKE_SAVE = /\bsaving throw\b/i;
+function lintStatblockNote(markdown) {
+  const findings = [];
+  const { data: rawData } = parseStatblockRaw(markdown);
+  if (Object.keys(rawData).length === 0)
+    return findings;
+  let statblock;
+  try {
+    statblock = parseStatblock(markdown);
+  } catch (e) {
+    if (Array.isArray(e.issues)) {
+      for (const issue of e.issues) {
+        findings.push({
+          action: `(schema)`,
+          problem: issue.message,
+          severity: "FAIL"
+        });
       }
+    } else {
+      findings.push({
+        action: "(parse)",
+        problem: e.message || "Unknown parse error",
+        severity: "FAIL"
+      });
     }
-  };
-}
-function saveActivity(opts) {
-  const id = opts.id ?? foundryId();
-  const common = activityCommon(id, opts.activation ?? "action");
-  return {
-    [id]: {
-      ...common,
-      type: "save",
-      // Save activities carry keys the other kinds don't (fixture-proven on
-      // Stench / Cold Breath): activation.condition, description.chatFlavor,
-      // range.special, a full target template, uses.max.
-      activation: { ...common.activation, condition: "" },
-      description: { chatFlavor: "" },
-      range: { ...common.range, special: "" },
-      target: {
-        ...common.target,
-        template: {
-          ...common.target.template,
-          type: opts.template?.type ?? "",
-          size: opts.template?.size ?? "",
-          count: ""
-        },
-        affects: { ...common.target.affects, type: opts.template ? "creature" : "", count: "", special: "" }
-      },
-      uses: { ...common.uses, max: "" },
-      consumption: {
-        ...common.consumption,
-        targets: opts.consumesItemUse ? [{ type: "itemUses", value: "1", target: "", scaling: {} }] : []
-      },
-      // Empty calculation = "use the formula as the flat DC" (fixture-proven).
-      save: { ability: [opts.ability], dc: { calculation: "", formula: String(opts.dc) } },
-      damage: { parts: opts.parts, onSave: opts.onSave }
-    }
-  };
-}
-function utilityActivity(opts) {
-  const id = opts.id ?? foundryId();
-  return {
-    [id]: {
-      ...activityCommon(id, opts.activation),
-      type: "utility",
-      roll: { prompt: false, visible: false }
-    }
-  };
-}
-
-// packages/statblock-sync/dist/to-foundry.js
-var DEFAULT_ITEM_ICONS = {
-  feat: "icons/svg/book.svg",
-  weapon: "icons/svg/sword.svg"
-};
-var KNOWN_CONDITIONS = /* @__PURE__ */ new Set([
-  "blinded",
-  "charmed",
-  "deafened",
-  "exhaustion",
-  "frightened",
-  "grappled",
-  "incapacitated",
-  "invisible",
-  "paralyzed",
-  "petrified",
-  "poisoned",
-  "prone",
-  "restrained",
-  "stunned",
-  "unconscious"
-]);
-var KNOWN_LANGUAGES = /* @__PURE__ */ new Set([
-  "common",
-  "dwarvish",
-  "elvish",
-  "giant",
-  "gnomish",
-  "goblin",
-  "halfling",
-  "orc",
-  "abyssal",
-  "celestial",
-  "draconic",
-  "deep speech",
-  "infernal",
-  "primordial",
-  "sylvan",
-  "undercommon",
-  "common sign language",
-  "thieves' cant",
-  "druidic"
-]);
-function splitKnown(values, known) {
-  const value = [];
-  const custom2 = [];
-  for (const v of values) {
-    const trimmed = v.trim();
-    const k = trimmed.toLowerCase();
-    if (known.has(k))
-      value.push(k);
-    else if (trimmed)
-      custom2.push(trimmed);
+    return findings;
   }
-  return { value, custom: custom2.join("; ") };
-}
-function buildSenses(senses) {
-  const ranges = {
-    darkvision: null,
-    blindsight: null,
-    tremorsense: null,
-    truesight: null
-  };
-  const special = [];
-  for (const s of senses) {
-    const m = s.match(SENSE_RANGE_RE);
-    if (m) {
-      ranges[m[1].toLowerCase()] = parseInt(m[2], 10);
-      const qualifier = s.slice(m.index + m[0].length).replace(/^[.,;\s]+/, "").replace(/^\((.*)\)$/, "$1").trim();
-      if (qualifier)
-        special.push(qualifier);
-    } else if (!/passive\s+perception/i.test(s)) {
-      special.push(s.trim());
+  const allEntries = [...statblock.abilities || [], ...statblock.actions || []];
+  for (const entry of allEntries) {
+    const attack = parseAttackAction(entry.description);
+    const save = parseSaveAction(entry.description);
+    const looksAttack = LOOKS_LIKE_ATTACK.test(entry.description);
+    const looksSave = LOOKS_LIKE_SAVE.test(entry.description);
+    if (looksAttack && !attack) {
+      findings.push({
+        action: entry.name,
+        problem: `looks like an attack ("...attack roll...") but won't parse as 2024 grammar`,
+        severity: "FAIL"
+      });
+    }
+    if (looksSave && !save) {
+      findings.push({
+        action: entry.name,
+        problem: `looks like a save ("...saving throw...") but won't parse as 2024 grammar`,
+        severity: "FAIL"
+      });
     }
   }
-  return { units: null, special: special.join("; "), ranges };
-}
-function statblockToFoundryActor(statblock, resolvedImagePath) {
-  const abilities_ = statblock.abilities_;
-  const prof = getProficiencyBonus(statblock.challenge.cr);
-  const skills = {};
-  for (const p of statblock.skills.proficiencies) {
-    const abbrev = skillAbbrev(p.skill);
-    if (!abbrev)
-      continue;
-    const mod = getAbilityMod(abilities_, getSkillAbility(p.skill));
-    const delta = p.bonus - (mod + prof);
-    skills[abbrev] = delta === 0 ? { value: 1 } : { value: 1, bonuses: { check: String(delta) } };
-  }
-  const abilities = {};
-  for (const key of ["str", "dex", "con", "int", "wis", "cha"]) {
-    abilities[key] = { value: abilities_[key] };
-  }
-  for (const save of statblock.skills.savingThrows) {
-    const key = save.ability.toLowerCase().substring(0, 3);
-    if (!abilities[key])
-      continue;
-    const delta = save.bonus - (getAbilityMod(abilities_, key) + prof);
-    abilities[key].proficient = 1;
-    if (delta !== 0)
-      abilities[key].bonuses = { save: String(delta) };
-  }
-  const dr = splitKnown(statblock.traits.damageResistances, KNOWN_DAMAGE_TYPES);
-  const di = splitKnown(statblock.traits.damageImmunities, KNOWN_DAMAGE_TYPES);
-  const dv = splitKnown(statblock.traits.damageVulnerabilities, KNOWN_DAMAGE_TYPES);
-  const ci = splitKnown(statblock.traits.conditionImmunities, KNOWN_CONDITIONS);
-  const langs = splitKnown(statblock.traits.languages, KNOWN_LANGUAGES);
-  const system = {
-    attributes: {
-      ac: {
-        flat: statblock.attributes.armorClass,
-        calc: /natural/i.test(statblock.data.ac_class ?? "") ? "natural" : "flat"
-      },
-      hp: {
-        value: statblock.attributes.hitPoints.value,
-        max: statblock.attributes.hitPoints.value,
-        formula: statblock.attributes.hitPoints.formula
-      },
-      movement: {
-        // Only the speeds the statblock has — officials omit absent speeds
-        // entirely (ghast: walk only; wyrmling: walk/fly/swim/burrow).
-        ...Object.fromEntries(Object.entries(statblock.attributes.speed).filter(([, v]) => typeof v === "number" && v > 0)),
-        units: "ft",
-        hover: false
-      },
-      senses: buildSenses(statblock.traits.senses)
-    },
-    details: {
-      biography: { value: "" },
-      alignment: statblock.creatureType.alignment,
-      type: {
-        value: statblock.creatureType.type,
-        subtype: statblock.creatureType.subtype ?? ""
-      },
-      cr: statblock.challenge.cr
-      // No xp (dnd5e derives it from CR) and — critically — no `race`: on
-      // NPCs it's a LocalDocumentField (Item reference, officially null); the
-      // legacy `race: { value: "" }` is what dry-run rejected with
-      // "The value provided to a LocalDocumentField must be a BaseItem instance."
-    },
-    traits: {
-      size: statblock.creatureType.size,
-      languages: { value: langs.value, custom: langs.custom, communication: {} },
-      dr: { value: dr.value, bypasses: [], custom: dr.custom },
-      di: { value: di.value, bypasses: [], custom: di.custom },
-      dv: { value: dv.value, bypasses: [], custom: dv.custom },
-      ci: { value: ci.value, custom: ci.custom }
-    },
-    abilities,
-    skills
-  };
-  const items = [];
-  for (const ability of statblock.abilities) {
-    items.push(featItem(ability.name, ability.description, { properties: ["trait"] }));
-  }
-  for (const action of statblock.actions) {
-    items.push(actionToItem(action));
-  }
-  const actorImg = resolvedImagePath ?? statblock.data.image ?? void 0;
-  return {
-    name: statblock.data.name,
-    type: "npc",
-    img: actorImg,
-    system,
-    items,
-    effects: [],
-    prototypeToken: actorImg ? { texture: { src: actorImg } } : void 0
-  };
-}
-function itemUses(recharge) {
-  if (!recharge)
-    return { spent: 0, recovery: [], max: "" };
-  return {
-    spent: 0,
-    max: "1",
-    recovery: [{ period: "recharge", formula: String(recharge.value), type: "recoverAll" }]
-  };
-}
-function featSystem(description) {
-  return {
-    description: { value: description, chat: "" },
-    type: { value: "monster", subtype: "" },
-    properties: [],
-    requirements: "",
-    uses: { spent: 0, recovery: [], max: "" },
-    activities: {}
-  };
-}
-function featItem(name, description, opts) {
-  const system = featSystem(description);
-  if (opts?.uses)
-    system.uses = opts.uses;
-  if (opts?.activities)
-    system.activities = opts.activities;
-  if (opts?.properties)
-    system.properties = opts.properties;
-  return { name, type: "feat", img: DEFAULT_ITEM_ICONS.feat, system };
-}
-var INERT_DAMAGE_PART = {
-  number: 0,
-  denomination: 0,
-  bonus: "",
-  types: [],
-  custom: { enabled: false, formula: "" },
-  scaling: { number: 1 }
-};
-function actionToItem(action) {
-  const attackParsed = parseAttackAction(action.description);
-  const saveParsed = parseSaveAction(action.description);
-  const activation = action.type;
-  if (attackParsed) {
-    const [base, ...extra] = attackParsed.damage;
-    return {
-      name: action.name,
-      type: "weapon",
-      img: DEFAULT_ITEM_ICONS.weapon,
-      system: {
-        description: { value: action.description, chat: "" },
-        type: { value: "natural", baseItem: "" },
-        damage: {
-          // No parsed damage (rare): an inert base with no types.
-          base: base ? toDamagePart(base) : INERT_DAMAGE_PART,
-          versatile: {
-            number: null,
-            denomination: null,
-            types: [],
-            custom: { enabled: false },
-            scaling: { number: 1 }
-          }
-        },
-        range: {
-          value: attackParsed.range?.normal ?? null,
-          long: attackParsed.range?.long ?? null,
-          reach: attackParsed.reach ?? null,
-          units: "ft"
-        },
-        properties: [],
-        proficient: null,
-        uses: itemUses(action.recharge),
-        activities: attackActivity({
-          bonus: attackParsed.bonus,
-          attackType: attackParsed.type === "ranged" ? "ranged" : "melee",
-          extraParts: extra.map(toDamagePart),
-          activation,
-          consumesItemUse: !!action.recharge
-        })
-      }
-    };
-  }
-  if (saveParsed) {
-    return featItem(action.name, action.description, {
-      uses: itemUses(action.recharge),
-      activities: saveActivity({
-        ability: saveParsed.ability.toLowerCase().substring(0, 3),
-        dc: saveParsed.dc,
-        parts: saveParsed.damage.map(toDamagePart),
-        onSave: saveParsed.onSave,
-        template: parseTemplate(action.description),
-        consumesItemUse: !!action.recharge,
-        activation
-      })
-    });
-  }
-  return featItem(action.name, action.description, {
-    activities: utilityActivity({ activation }),
-    uses: itemUses(action.recharge)
-  });
+  return findings;
 }
 
 // scripts/lint-statblock.mjs
@@ -12493,91 +12114,25 @@ if (files.length === 0) {
   console.error("No .md files found (searched: " + (args.length > 0 ? args.join(", ") : "current directory") + ").");
   process.exit(1);
 }
-var LOOKS_LIKE_ATTACK = /\b(?:attack roll|weapon attack|spell attack)\b/i;
-var LOOKS_LIKE_SAVE = /\bsaving throw\b/i;
 var anyFail = false;
 var anyWarn = false;
 var checked = 0;
 for (const file of files) {
   const raw = import_fs.default.readFileSync(file, "utf-8");
-  const { data: rawData } = parseStatblockRaw(raw);
-  if (Object.keys(rawData).length === 0) continue;
+  const findings = lintStatblockNote(raw);
+  if (findings.length === 0) continue;
   checked++;
   const name = import_path.default.basename(file);
   console.log(`
 ${name}`);
-  let statblock;
-  try {
-    statblock = parseStatblock(raw);
-  } catch (e) {
-    const detail = Array.isArray(e.issues) ? e.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join(", ") : e.message;
-    console.log(`  FAIL  no valid \`statblock\` fence found or required fields missing -- ${detail}`);
-    anyFail = true;
-    continue;
+  let hasFailures = false;
+  for (const f of findings) {
+    const label = f.severity === "FAIL" ? "FAIL" : "WARN";
+    console.log(`  ${label}  ${f.action}: ${f.problem}`);
+    if (f.severity === "FAIL") hasFailures = true;
   }
-  const checks = [];
-  for (const action of statblock.actions) {
-    const attack = parseAttackAction(action.description);
-    const save = parseSaveAction(action.description);
-    const looksAttack = LOOKS_LIKE_ATTACK.test(action.description);
-    const looksSave = LOOKS_LIKE_SAVE.test(action.description);
-    if (looksAttack && !attack) {
-      checks.push({
-        ok: false,
-        msg: `"${action.name}" mentions an attack roll but doesn't match the 2024 header ("Melee/Ranged Attack Roll: +N") -- will import as a non-rollable feat. 2014 phrasing ("Melee Weapon Attack: +N to hit") is not supported.`
-      });
-    }
-    if (looksSave && !save) {
-      checks.push({
-        ok: false,
-        msg: `"${action.name}" mentions a saving throw but doesn't match the 2024 header ("<Ability> Saving Throw: DC N") -- will import as a non-rollable feat. 2014 prose ("...DC N <Ability> saving throw...") is not supported.`
-      });
-    }
-    if (!attack && !save && !looksAttack && !looksSave) {
-      checks.push({ ok: true, msg: `"${action.name}" \u2014 descriptive (no roll), as intended` });
-    } else if (attack) {
-      checks.push({ ok: true, msg: `"${action.name}" \u2014 attack, +${attack.bonus}` });
-    } else if (save) {
-      checks.push({ ok: true, msg: `"${action.name}" \u2014 save, DC ${save.dc} ${save.ability}` });
-    }
-  }
-  const traitFields = [
-    ["damage_resistances", statblock.traits.damageResistances],
-    ["damage_immunities", statblock.traits.damageImmunities],
-    ["damage_vulnerabilities", statblock.traits.damageVulnerabilities]
-  ];
-  for (const [field, values] of traitFields) {
-    for (const v of values) {
-      const known = KNOWN_DAMAGE_TYPES.has(v.trim().toLowerCase());
-      const isQualifiedClause = /\bnonmagical\b|\bnon-magical\b|\bsilvered\b|\badamantine\b/i.test(v);
-      if (!known && !isQualifiedClause) {
-        checks.push({
-          ok: "warn",
-          msg: `${field}: "${v}" isn't a recognized damage type and isn't a qualified clause (e.g. "...from nonmagical attacks") -- will land in free-text custom, not the mechanical list.`
-        });
-      }
-    }
-  }
-  if (statblock.challenge.xp === 0 && statblock.challenge.cr !== 0) {
-    checks.push({
-      ok: false,
-      msg: `cr: ${statblock.data.cr} did not resolve to a known XP value (got 0) -- check the CR format.`
-    });
-  }
-  try {
-    statblockToFoundryActor(statblock);
-  } catch (e) {
-    checks.push({ ok: false, msg: `statblockToFoundryActor threw: ${e.message}` });
-  }
-  for (const c of checks) {
-    const label = c.ok === true ? "PASS" : c.ok === "warn" ? "WARN" : "FAIL";
-    console.log(`  ${label}  ${c.msg}`);
-    if (c.ok === false) anyFail = true;
-    if (c.ok === "warn") anyWarn = true;
-  }
-  if (checks.length === 0) {
-    console.log("  (no actions/traits to check)");
-  }
+  if (hasFailures) anyFail = true;
+  if (findings.some((f) => f.severity === "WARN")) anyWarn = true;
 }
 console.log("");
 if (checked === 0) {
