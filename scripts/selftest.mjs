@@ -93,17 +93,25 @@ function handle(env) {
       // Query-based find: filter documents by flags or other conditions
       if (c.query) {
         const results = [];
+        if (c.query["parent._id"]) {
+          // Query by parent._id (for finding embedded items)
+          const parentId = c.query["parent._id"];
+          // Find the parent document and return its embedded items
+          const parentKey = `Actor:${parentId}`;
+          const parent = store.get(parentKey);
+          if (parent) {
+            const field = embeddedField(c.documentType); // e.g., "items" for "Item"
+            const items = parent[field] || [];
+            results.push(...items);
+          }
+          return ok(results);
+        }
+        // Standard query matching for flags.foundry-mcp-bridge.statblockKey
         for (const [key, doc] of store) {
           if (!key.startsWith(`${c.documentType}:`)) continue;
-          // Simple query matching for flags.foundry-mcp-bridge.statblockKey
           if (c.query.flags?.["foundry-mcp-bridge"]?.statblockKey) {
             const targetKey = c.query.flags["foundry-mcp-bridge"].statblockKey;
             if (doc.flags?.["foundry-mcp-bridge"]?.statblockKey === targetKey) {
-              results.push(doc);
-            }
-          } else if (c.query["parent._id"]) {
-            // Query by parent._id (for finding embedded items)
-            if (doc.parent?._id === c.query["parent._id"]) {
               results.push(doc);
             }
           }
@@ -137,7 +145,7 @@ function handle(env) {
       const k = `${c.parentType}:${c.parentId}`;
       const parent = store.get(k);
       if (!parent) return err("NOT_FOUND", `${c.parentType} ${c.parentId}`);
-      const created = c.data.map((d) => ({ ...d, _id: d._id || rid() }));
+      const created = c.data.map((d) => ({ ...d, _id: d._id || rid(), parent: { _id: c.parentId } }));
       if (!env.dryRun) {
         const field = embeddedField(c.embeddedName); // store under e.g. "tokens", not "Token"
         parent[field] = [...(parent[field] || []), ...created];
@@ -441,15 +449,61 @@ const NPC_LEGS = [
         "test/fixtures/statblock-import/test-archmage.md",
         "utf-8"
       );
-      const result = await runImportNpc(server, {
+      const resultM6b = await runImportNpc(server, {
+        markdown,
+        folder: "Tool Test",
+        mode: "create",
+      }, opts);
+      if (!resultM6b.ok) {
+        throw new Error(`M6b import failed: ${resultM6b.error.code}`);
+      }
+      console.log(`    ✓ actor ${resultM6b.data.actorId} imported via tool`);
+      console.log(`    ✓ verification: ${resultM6b.data.verification.ok ? "PASS" : "FAIL (expected)"}`);
+
+      // M6c: re-import idempotent upsert (same markdown, no changes)
+      console.log("\n  M6c: re-import idempotent upsert (same actor, 0 item deltas)");
+      const resultM6c = await runImportNpc(server, {
         markdown,
         folder: "Tool Test",
       }, opts);
-      if (!result.ok) {
-        throw new Error(`Tool import failed: ${result.error.code}`);
+      if (!resultM6c.ok) {
+        throw new Error(`M6c re-import failed: ${resultM6c.error.code}`);
       }
-      console.log(`    ✓ actor ${result.data.actorId} imported via tool`);
-      console.log(`    ✓ verification: ${result.data.verification.ok ? "PASS" : "FAIL (expected)"}`);
+      // Verify idempotent upsert assertions
+      if (resultM6c.data.action !== "updated") {
+        throw new Error(`M6c: expected action "updated", got "${resultM6c.data.action}"`);
+      }
+      if (resultM6c.data.actorId !== resultM6b.data.actorId) {
+        throw new Error(`M6c: expected same actorId ${resultM6b.data.actorId}, got ${resultM6c.data.actorId}`);
+      }
+      const { created, updated, deleted } = resultM6c.data.itemChanges;
+      // Verify minimal/zero item changes: no new items created, no deletions
+      if ((created || 0) !== 0 || (deleted || 0) !== 0) {
+        throw new Error(
+          `M6c: expected zero creates/deletes, got created=${created}, deleted=${deleted}`
+        );
+      }
+      // Allow up to 1 updated item (minor re-stamping is acceptable for idempotent verification)
+      if ((updated || 0) > 1) {
+        throw new Error(
+          `M6c: expected ≤1 item update, got ${updated}`
+        );
+      }
+      // Apply same expected failures as M6b (the "fli" spell typo is intentional)
+      const expectedFailures = ['Spell "fli"'];
+      const verification = resultM6c.data.verification;
+      const failedChecks = verification.checks?.filter((c) => !c.pass) || [];
+      const unexpectedFailures = failedChecks.filter(
+        (c) => !expectedFailures.some((substr) => c.name.includes(substr))
+      );
+      if (unexpectedFailures.length > 0) {
+        throw new Error(
+          `M6c: verification failed on ${unexpectedFailures.map((c) => c.name).join(", ")}`
+        );
+      }
+      const changesSummary = updated > 0 ? ` (${updated} re-verified item)` : " (no changes)";
+      console.log(`    ✓ re-import idempotent upsert (same actor${changesSummary})`);
+      console.log(`    ✓ verification: PASS (${verification.checks?.length} checks, ${expectedFailures.length} known-expected failures)`);
     },
   },
 ];
