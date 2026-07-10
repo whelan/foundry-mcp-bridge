@@ -105,7 +105,7 @@ export async function importNpc(
       err.stage = "actor-create";
     }
     // Mark actorId as undefined if not already set (creation failed)
-    if (err.actorId === undefined && !("actorId" in err)) {
+    if (!("actorId" in err)) {
       err.actorId = undefined;
     }
     throw err;
