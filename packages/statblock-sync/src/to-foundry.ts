@@ -27,6 +27,7 @@ export interface Dnd5eActorDocument {
   name: string;
   type: "npc" | "character";
   img?: string;
+  folder?: string;
   prototypeToken?: { texture?: { src?: string } };
   system: Record<string, unknown>;
   items: Dnd5eItem[];

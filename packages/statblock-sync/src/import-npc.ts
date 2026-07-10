@@ -38,7 +38,7 @@ export interface ImportNpcDeps {
   /** Clone a compendium entry into the world, applying an optional patch. */
   importFromCompendium(uuid: string, patch?: Record<string, unknown>, folderId?: string): Promise<{ _id: string }>;
   /** Create a synthesized document from scratch (Tier 3 fallback). */
-  createDocument(data: Dnd5eActorDocument, folderId?: string): Promise<{ _id: string }>;
+  createDocument(data: Dnd5eActorDocument): Promise<{ _id: string }>;
   /** Upload an image file and return the resolved remote path. */
   uploadImage?(filename: string, contentBase64: string, targetFolder?: string): Promise<string>;
   /** Search Item compendia (all packs) for a spell by name. */
@@ -80,7 +80,10 @@ export async function importNpc(
     }
 
     const actorData = statblockToFoundryActor(statblock, resolvedImagePath);
-    const doc = await deps.createDocument(actorData, folderId);
+    if (folderId) {
+      actorData.folder = folderId;
+    }
+    const doc = await deps.createDocument(actorData);
     result = { actorId: doc._id, tier: 3 };
   }
 
