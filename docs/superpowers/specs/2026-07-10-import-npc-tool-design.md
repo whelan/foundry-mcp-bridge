@@ -34,6 +34,7 @@ instead of the piecewise `create_document` + `create_embedded` +
 | What does the tool return? | **Always verify** — re-read the actor and include a `verifyImportedNpc` report. Failed checks do not undo the import. |
 | Run the statblock lint gate? | **Lint and reject** — 2014-style / malformed action text ⇒ `VALIDATION` error before any write. |
 | Name collisions? | **Always create** — no collision logic; duplicates are the caller's concern. |
+| Organize into folders? | **Yes** — optional `folder` name param; **find-or-create** (reuse an existing Actor folder of that name). Flat top-level folders only for v1; nested paths are a follow-up. |
 
 ## Architecture
 
@@ -46,17 +47,38 @@ in `test/integration/statblock-import.test.ts:45` and `scripts/selftest.mjs`.
 runImportNpc(transport, input)
   1. lintStatblockNote(markdown)            → any FAIL ⇒ VALIDATION (details.findings), no write
   2. parseStatblock(markdown)               → zod-validated StatblockData (VALIDATION on failure)
-  3. importNpc(statblock, deps, image?)     → deps wired to existing runners:
+  3. resolveFolder(input.folder?)           → find-or-create Actor folder → folderId (skipped if no folder)
+  4. importNpc(statblock, deps, image?, folderId?)  → deps wired to existing runners:
        searchCompendium             → runSearchCompendium      (Actor tier match)
-       importFromCompendium         → runImportFromCompendium  (Tier 1 clone)
-       createDocument               → runCreateDocument        (Tier 3 synthesis)
+       importFromCompendium         → runImportFromCompendium  (Tier 1 clone, folderId)
+       createDocument               → runCreateDocument        (Tier 3 synthesis, data.folder)
        uploadImage                  → runUploadAsset            (portrait, when image given)
        searchSpellCompendium        → runSearchCompendium       (Item)
        importEmbeddedFromCompendium → runImportEmbeddedFromCompendium
        createEmbeddedItem           → runCreateEmbedded         (placeholder spells)
-  4. runFindDocuments(actorId, full:true)   → read-back the created actor
-  5. verifyImportedNpc(readBack, statblock) → verification report
+  5. runFindDocuments(actorId, full:true)   → read-back the created actor
+  6. verifyImportedNpc(readBack, statblock) → verification report
 ```
+
+### Folder placement
+
+When `input.folder` is given, `resolveFolder()` (in the tool) does a
+find-or-create: `runFindDocuments("Folder", {name, type:"Actor"})` and, on miss,
+`runCreateDocument("Folder", {name, type:"Actor"})`, yielding a `folderId`. The
+id is threaded into `importNpc()` via a new optional `folderId` parameter, which
+each tier applies:
+
+- **Tier 1** — passed as the `folderId` arg to the `importFromCompendium` dep
+  (the `importFromCompendium` wire command already carries an optional
+  `folderId`, protocol.ts:262).
+- **Tier 3** — set as `data.folder` on the synthesized actor before
+  `createDocument`.
+
+`importNpc()` gains the optional `folderId` param but is otherwise unchanged;
+callers that omit it (existing selftest legs, integration tests) behave exactly
+as today. Only flat, top-level Actor folders are supported in v1 — a `folder`
+value is treated as a single literal name, not a `/`-separated path. Nested
+paths are a documented follow-up.
 
 Every sub-step still flows through its own reliability pipeline (dry-run → write
 → read-back → rollback), so the orchestration inherits those guarantees per step.
@@ -82,6 +104,7 @@ Every sub-step still flows through its own reliability pipeline (dry-run → wri
   markdown: string;                                       // the note, ```statblock fence included
   image?: { filename: string; contentBase64: string };    // optional portrait
   assetSource?: "data" | "forgevtt";                       // where uploadImage writes; default "data"
+  folder?: string;                                         // Actor folder name; find-or-create, flat
 }
 ```
 
@@ -160,6 +183,10 @@ it and regenerate the `.cjs` bundle. Guards the single-source-of-truth invariant
   the mock. (The exact arming mechanism is an implementation-plan detail; the
   capability exists.)
 - **Image** (`gravemire-stalker` + its `.png`) → portrait path set on read-back.
+- **Folder find-or-create** — import two NPCs with the same `folder` name → both
+  actors' `folder` field points at the *same* folder id, and exactly one `Folder`
+  document of that name exists in the mock (proves reuse, not duplicate creation).
+  A Tier-1 import with a folder also asserts the folder id lands on the clone.
 
 **Selftest — new leg:** `scripts/selftest.mjs` already drives the three fixtures
 through `importNpc()` directly; add a parallel leg driving one fixture through
@@ -177,7 +204,11 @@ a fresh note can confirm at the end, but no module release is involved.
 - `scripts/lint-statblock.mjs` — thinned to consume `lintStatblockNote()`.
 - `.claude/skills/write-statblock/lint-statblock.bundle.cjs` — regenerated.
 - `packages/mcp-server/package.json` — add `statblock-sync` workspace dep.
-- `packages/mcp-server/src/tools.ts` — `ImportNpcShape` + `runImportNpc()`.
+- `packages/mcp-server/src/tools.ts` — `ImportNpcShape` + `runImportNpc()` +
+  `resolveFolder()` helper.
+- `packages/statblock-sync/src/import-npc.ts` — `importNpc()` gains an optional
+  `folderId` param threaded to both tiers (Tier 1 dep arg, Tier 3 `data.folder`);
+  the `importFromCompendium` dep signature gains an optional `folderId`.
 - `packages/mcp-server/src/server.ts` — register `import_npc`.
 - `test/integration/import-npc-tool.test.ts` (new) — pipeline tests.
 - `scripts/selftest.mjs` — new tool-level leg.
