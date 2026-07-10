@@ -22,6 +22,7 @@ import {
   toDamagePart,
   parseTemplate,
 } from "./activities.js";
+import { statblockKey } from "./slug.js";
 
 export interface Dnd5eActorDocument {
   name: string;
@@ -32,6 +33,7 @@ export interface Dnd5eActorDocument {
   system: Record<string, unknown>;
   items: Dnd5eItem[];
   effects: unknown[];
+  flags?: Record<string, Record<string, unknown>>;
 }
 
 export interface Dnd5eItem {
@@ -39,6 +41,7 @@ export interface Dnd5eItem {
   type: string;
   img?: string;
   system?: Record<string, unknown>;
+  flags?: Record<string, Record<string, unknown>>;
 }
 
 /**
@@ -252,6 +255,7 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
     items.push(
       featItem(ability.name, ability.description, {
         properties: ["trait"],
+        flagPrefix: "feat",
         ...(ability.legendaryResistanceUses !== undefined
           ? { uses: dailyUses(ability.legendaryResistanceUses) }
           : {}),
@@ -273,6 +277,11 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
     items,
     effects: [],
     prototypeToken: actorImg ? { texture: { src: actorImg } } : undefined,
+    flags: {
+      "foundry-mcp-bridge": {
+        statblockKey: statblockKey(statblock.data.name),
+      },
+    },
   };
 }
 
@@ -311,13 +320,20 @@ function featSystem(description: string): Record<string, unknown> {
 function featItem(
   name: string,
   description: string,
-  opts?: { activities?: Record<string, unknown>; uses?: Record<string, unknown>; properties?: string[] }
+  opts?: { activities?: Record<string, unknown>; uses?: Record<string, unknown>; properties?: string[]; flagPrefix?: string }
 ): Dnd5eItem {
   const system = featSystem(description);
   if (opts?.uses) system.uses = opts.uses;
   if (opts?.activities) system.activities = opts.activities;
   if (opts?.properties) system.properties = opts.properties;
-  return { name, type: "feat", img: itemIcon(name, "feat"), system };
+  const flags = opts?.flagPrefix
+    ? {
+        "foundry-mcp-bridge": {
+          statblockKey: `${opts.flagPrefix}/${statblockKey(name)}`,
+        },
+      }
+    : undefined;
+  return { name, type: "feat", img: itemIcon(name, "feat"), system, ...(flags && { flags }) };
 }
 
 /** A zero-damage, typeless base — used when an attack's description had no parseable damage at all. */
@@ -385,12 +401,18 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
           consumesItemUse: !!action.recharge,
         }),
       },
+      flags: {
+        "foundry-mcp-bridge": {
+          statblockKey: `action/${statblockKey(action.name)}`,
+        },
+      },
     };
   }
 
   if (saveParsed) {
     return featItem(action.name, action.description, {
       uses: itemUses(action.recharge),
+      flagPrefix: "action",
       activities: saveActivity({
         ability: saveParsed.ability.toLowerCase().substring(0, 3),
         dc: saveParsed.dc,
@@ -410,5 +432,6 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
   return featItem(action.name, action.description, {
     activities: utilityActivity({ activation }),
     uses: itemUses(action.recharge),
+    flagPrefix: "action",
   });
 }
