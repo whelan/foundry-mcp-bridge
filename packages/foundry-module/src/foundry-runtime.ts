@@ -438,7 +438,12 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         if (!source) {
           throw new CommandExecutionError("NOT_FOUND", `compendium entry ${entry.uuid} not found`);
         }
-        datas.push(entry.patch ? applyUpdate(source.toObject(), entry.patch) : source.toObject());
+        // toObject() alone loses provenance; stamp the source uuid like Foundry's
+        // own fromCompendium() import path does, so consumers (e.g. statblock-sync's
+        // verify-npc) can tell official clones from synthesized placeholders.
+        const data = source.toObject();
+        data._stats = { ...data._stats, compendiumSource: entry.uuid };
+        datas.push(entry.patch ? applyUpdate(data, entry.patch) : data);
       }
       if (opts.dryRun) return datas;
       const created = await parent.createEmbeddedDocuments(embeddedName, datas);
