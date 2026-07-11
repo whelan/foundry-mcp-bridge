@@ -481,7 +481,6 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       });
       return {
         name: obj.name,
-        type: obj.type,
         img: obj.img,
         system: obj.system,
         items,

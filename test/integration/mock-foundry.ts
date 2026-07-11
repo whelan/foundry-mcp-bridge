@@ -691,7 +691,6 @@ export class MockFoundry {
     }));
     return ok(id, {
       name: String(data.name ?? ""),
-      type: String(data.type ?? ""),
       img: data.img,
       system: (data.system ?? {}) as Record<string, unknown>,
       items,

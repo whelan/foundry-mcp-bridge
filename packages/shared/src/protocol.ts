@@ -297,7 +297,6 @@ export interface CompendiumDocumentItem {
 }
 export interface CompendiumDocument {
   name: string;
-  type: string;
   img?: string;
   system: Record<string, unknown>;
   items: CompendiumDocumentItem[];
