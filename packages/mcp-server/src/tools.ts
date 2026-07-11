@@ -35,6 +35,7 @@ import {
   browseAssetsReliable,
   batchUploadAssetsReliable,
   searchCompendiumReliable,
+  getCompendiumDocumentReliable,
   importFromCompendiumReliable,
   importEmbeddedFromCompendiumReliable,
   runRead,
@@ -499,6 +500,23 @@ export async function runImportFromCompendium(
     args.fields,
     args.full,
   );
+}
+
+// --- get_compendium_document ------------------------------------------------
+
+export const GetCompendiumDocumentShape = {
+  documentType: DocumentType,
+  uuid: z.string().min(1),
+};
+const GetCompendiumDocument = z.object(GetCompendiumDocumentShape);
+export type GetCompendiumDocumentArgs = z.infer<typeof GetCompendiumDocument>;
+
+export async function runGetCompendiumDocument(
+  transport: RelayTransport,
+  args: GetCompendiumDocumentArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return getCompendiumDocumentReliable(transport, args, opts);
 }
 
 // --- import_embedded_from_compendium ----------------------------------------

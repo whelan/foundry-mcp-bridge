@@ -838,6 +838,24 @@ export function searchCompendiumReliable(
   );
 }
 
+export interface GetCompendiumDocumentInput {
+  documentType: DocumentType;
+  uuid: string;
+}
+
+export function getCompendiumDocumentReliable(
+  transport: RelayTransport,
+  input: GetCompendiumDocumentInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runRead(
+    transport,
+    { action: "getCompendiumDocument", uuid: input.uuid },
+    "get-compendium-document",
+    opts,
+  );
+}
+
 export interface ImportFromCompendiumInput {
   documentType: DocumentType;
   uuid: string;
