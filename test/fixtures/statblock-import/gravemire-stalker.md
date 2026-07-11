@@ -24,7 +24,7 @@ languages: understands Common but can't speak
 cr: 3
 traits:
   - name: Stench of the Grave
-    desc: "Any creature that starts its turn within 5 feet of the stalker must succeed on a DC 12 Constitution saving throw or be poisoned until the start of its next turn."
+    desc: "Constitution Saving Throw: DC 12, each creature that starts its turn within 5 feet of the stalker. Failure: The creature is poisoned until the start of its next turn. Success: The creature is unaffected."
 actions:
   - name: Multiattack
     desc: "The stalker makes two Claw attacks."

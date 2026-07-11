@@ -79,7 +79,7 @@ describe("M1: Statblock Parsing", () => {
     expect(statblock.abilities.length).toBe(1);
     expect(statblock.abilities[0]?.name).toBe("Stench of the Grave");
     expect(statblock.abilities[0]?.description).toContain(
-      "Constitution saving throw"
+      "Constitution Saving Throw"
     );
 
     // Verify actions

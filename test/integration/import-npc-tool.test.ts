@@ -466,6 +466,62 @@ traits:
   });
 });
 
+describe("Tier 1 (compendium-clone) resync", () => {
+  let mock: MockFoundry;
+  let transport: MockTransport;
+
+  beforeEach(() => {
+    mock = new MockFoundry();
+    transport = new MockTransport(mock);
+  });
+
+  const tier1Note = () => loadFixture("gravemire-stalker.md");
+
+  it("first import creates a Tier 1 clone with tier + item provenance flags", async () => {
+    const result = await runImportNpc(transport, { markdown: tier1Note(), assetSource: "data" });
+    expect(result.ok).toBe(true);
+    const { actorId, tier, action } = (result as any).data;
+    expect(tier).toBe(1);
+    expect(action).toBe("created");
+
+    const actor = mock.documents("Actor").find((a: any) => a._id === actorId)! as any;
+    expect(actor.flags["foundry-mcp-bridge"].tier).toBe(1);
+    expect(actor.flags["foundry-mcp-bridge"].compendiumUuid).toContain("gravemire-stalker");
+    expect(actor.items.length).toBeGreaterThan(0);
+    for (const it of actor.items) {
+      expect((it as any).flags["foundry-mcp-bridge"].sourceUuid).toBeTruthy();
+    }
+  });
+
+  it("re-import refreshes in place, preserving _id and Foundry-owned runtime", async () => {
+    const first = await runImportNpc(transport, { markdown: tier1Note(), assetSource: "data" });
+    const actorId = (first as any).data.actorId;
+
+    // Inject runtime state
+    const actor = mock.documents("Actor").find((a: any) => a._id === actorId)! as any;
+    (actor.system as any).attributes.hp.value = 3;
+    (actor.system as any).currency = { gp: 999 };
+
+    const second = await runImportNpc(transport, { markdown: tier1Note(), assetSource: "data" });
+    expect(second.ok).toBe(true);
+    const data = (second as any).data;
+    expect(data.action).toBe("updated");
+    expect(data.actorId).toBe(actorId);
+
+    const after = mock.documents("Actor").find((a: any) => a._id === actorId)! as any;
+    expect((after.system as any).attributes.hp.value).toBe(3);
+    expect((after.system as any).currency.gp).toBe(999);
+  });
+
+  it("mode: 'update' with no match throws VALIDATION error", async () => {
+    const result = await runImportNpc(transport, { markdown: tier1Note(), mode: "update", assetSource: "data" });
+    expect(result.ok).toBe(false);
+    const error = (result as any).error;
+    expect(error.code).toBe("VALIDATION");
+    expect(error.message).toContain("mode: \"update\" requires");
+  });
+});
+
 describe("buildNpcUpdatePatch: dot-notation patch builder", () => {
   it("includes only statblock-owned fields", () => {
     const markdown = loadFixture("test-archmage.md");
