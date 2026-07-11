@@ -6,7 +6,7 @@
  * protocol logic is tested against the mock. Kept thin and obvious on purpose.
  */
 
-import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, type DocumentType } from "@foundry-mcp-bridge/shared";
+import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, type DocumentType, type CompendiumDocument } from "@foundry-mcp-bridge/shared";
 import type {
   DocData,
   ExecuteOptions,
@@ -448,6 +448,44 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       if (opts.dryRun) return datas;
       const created = await parent.createEmbeddedDocuments(embeddedName, datas);
       return created.map((d: any) => d.toObject());
+    },
+
+    async getCompendiumDocument(uuid): Promise<CompendiumDocument> {
+      let source;
+      try {
+        source = await fromUuid(uuid);
+      } catch (e) {
+        throw new CommandExecutionError(
+          "NOT_FOUND",
+          `compendium entry ${uuid} not found`,
+          { cause: e instanceof Error ? e.message : String(e) },
+        );
+      }
+      if (!source) {
+        throw new CommandExecutionError("NOT_FOUND", `compendium entry ${uuid} not found`);
+      }
+      const obj = source.toObject() as Record<string, any>;
+      // source.items is the actor's embedded Item collection; each item's .uuid
+      // is its full compendium uuid — the stable key statblock-sync stamps as
+      // provenance and matches against on refresh.
+      const items = Array.from((source.items ?? []) as Iterable<any>).map((it) => {
+        const io = it.toObject() as Record<string, any>;
+        return {
+          uuid: it.uuid as string,
+          name: it.name as string,
+          type: it.type as string,
+          img: io.img as string | undefined,
+          system: io.system as Record<string, unknown>,
+          effects: (io.effects ?? []) as Record<string, unknown>[],
+        };
+      });
+      return {
+        name: obj.name,
+        type: obj.type,
+        img: obj.img,
+        system: obj.system,
+        items,
+      };
     },
   } satisfies FoundryDocumentApi;
 }

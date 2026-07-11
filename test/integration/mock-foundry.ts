@@ -30,6 +30,11 @@ import {
 import type { WorldInfo, CompendiumEntry } from "../../packages/foundry-module/src/protocol-executor.js";
 import { loadSrdFixtures, PACK_NAME_BY_TYPE } from "../fixtures/dnd5e-srd/loader.js";
 
+/** Deterministic slug for a compendium item's synthetic uuid segment. */
+function mockItemSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "item";
+}
+
 /**
  * A compendium entry as the mock stores it: `documentType`/`pack` are kept
  * separate from `data` so filtering by document type never clobbers the
@@ -338,6 +343,8 @@ export class MockFoundry {
         return this.importFromCompendium(id, command, dryRun);
       case "importEmbeddedFromCompendium":
         return this.importEmbeddedFromCompendium(id, command, dryRun);
+      case "getCompendiumDocument":
+        return this.getCompendiumDocument(id, command);
     }
   }
 
@@ -659,5 +666,35 @@ export class MockFoundry {
     if (dryRun) return ok(id, created.map((c) => ({ ...c, _dryRun: true })));
     resolved.arr.push(...created);
     return ok(id, created);
+  }
+
+  private getCompendiumDocument(
+    id: string,
+    cmd: Extract<Command, { action: "getCompendiumDocument" }>,
+  ): CommandResult {
+    const record = this.compendium.get(cmd.uuid);
+    if (!record) {
+      return err(id, "NOT_FOUND", `compendium entry ${cmd.uuid} not found`);
+    }
+    const data = structuredClone(record.data) as Record<string, any>;
+    const rawItems = Array.isArray(data.items) ? (data.items as Record<string, any>[]) : [];
+    const items = rawItems.map((it) => ({
+      // Real compendium actor items have stable ids; the SRD fixtures omit them,
+      // so derive a deterministic per-item uuid from the item name. Two reads
+      // (create, then refresh) must address the same item by the same uuid.
+      uuid: `${cmd.uuid}.Item.${mockItemSlug(String(it.name ?? ""))}`,
+      name: String(it.name ?? ""),
+      type: String(it.type ?? "feat"),
+      img: it.img as string | undefined,
+      system: (it.system ?? {}) as Record<string, unknown>,
+      effects: Array.isArray(it.effects) ? (it.effects as Record<string, unknown>[]) : [],
+    }));
+    return ok(id, {
+      name: String(data.name ?? ""),
+      type: String(data.type ?? ""),
+      img: data.img,
+      system: (data.system ?? {}) as Record<string, unknown>,
+      items,
+    });
   }
 }

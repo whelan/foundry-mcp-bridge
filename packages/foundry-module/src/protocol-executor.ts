@@ -13,6 +13,7 @@ import {
   type DocumentType,
   type ErrorCode,
   type CompendiumEntry,
+  type CompendiumDocument,
   checkEnvelopeGuards,
   ok,
   err,
@@ -154,6 +155,7 @@ export interface FoundryDocumentApi {
     uuids: Array<{ uuid: string; patch?: DocData }>,
     opts: ExecuteOptions,
   ): Promise<DocData[]>;
+  getCompendiumDocument(uuid: string): Promise<CompendiumDocument>;
 }
 
 export interface ExecutorContext {
@@ -279,5 +281,7 @@ async function dispatch(
         command.uuids,
         opts,
       );
+    case "getCompendiumDocument":
+      return api.getCompendiumDocument(command.uuid);
   }
 }

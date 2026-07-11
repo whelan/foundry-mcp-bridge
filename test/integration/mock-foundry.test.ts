@@ -272,6 +272,33 @@ describe("importEmbeddedFromCompendium", () => {
   });
 });
 
+describe("getCompendiumDocument", () => {
+  it("getCompendiumDocument returns system + items with per-item uuids", async () => {
+    const f = new MockFoundry();
+    // Gravemire Stalker is a seeded actors24 fixture with 5 items.
+    const uuid = "Compendium.dnd5e.actors24.gravemire-stalker";
+    const res = await f.execute(envelope({ action: "getCompendiumDocument", uuid }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const doc = res.data as any;
+    expect(doc.name).toBe("Gravemire Stalker");
+    expect(doc.type).toBe("npc");
+    expect(doc.system).toBeDefined();
+    expect(doc.items.length).toBe(5);
+    for (const item of doc.items) {
+      expect(item.uuid.startsWith(uuid + ".Item.")).toBe(true);
+      expect(typeof item.name).toBe("string");
+    }
+    // Deterministic: a second read yields identical item uuids (refresh matching).
+    const res2 = await f.execute(envelope({ action: "getCompendiumDocument", uuid }));
+    expect(res2.ok).toBe(true);
+    if (res2.ok) {
+      const doc2 = res2.data as any;
+      expect(doc2.items.map((i: any) => i.uuid)).toEqual(doc.items.map((i: any) => i.uuid));
+    }
+  });
+});
+
 describe("uploadAsset", () => {
   it("uploads via FilePicker and returns the stored path", async () => {
     const f = new MockFoundry();

@@ -10,6 +10,7 @@ import {
   type Command,
   type DocumentType,
   PROTOCOL_VERSION,
+  type CompendiumDocument,
 } from "@foundry-mcp-bridge/shared";
 import { MockFoundry } from "./mock-foundry.js";
 import {
@@ -142,5 +143,14 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
         opts,
       )) as DocData[];
     },
+    async getCompendiumDocument(uuid) {
+      return (await run(
+        { action: "getCompendiumDocument", uuid },
+        { dryRun: false },
+      )) as CompendiumDocument;
+    },
   } satisfies FoundryDocumentApi;
 }
+
+/** Alias for mockFoundryApi; used in tests. */
+export const toApi = mockFoundryApi;

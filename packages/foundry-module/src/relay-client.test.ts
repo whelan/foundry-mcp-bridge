@@ -82,6 +82,9 @@ function stubApi(): FoundryDocumentApi {
     async importEmbeddedFromCompendium(_p, _id, _name, uuids) {
       return uuids.map((u) => ({ ...u.patch, _id: "imported-embedded" }));
     },
+    async getCompendiumDocument(_uuid) {
+      return { name: "", type: "", img: undefined, system: {}, items: [] };
+    },
   };
 }
 
