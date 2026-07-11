@@ -170,7 +170,7 @@ export async function importNpc(
       // something to match against without needing a data migration.
       const tier1Patch = {
         ...plan.patch,
-        flags: { "foundry-mcp-bridge": { statblockKey: key } },
+        flags: { "foundry-mcp-bridge": { statblockKey: key, tier: 1 } },
       };
       const doc = await deps.importFromCompendium(plan.uuid, tier1Patch, folderId);
       actorId = doc._id;
