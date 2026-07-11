@@ -283,7 +283,6 @@ export type ImportEmbeddedFromCompendiumCommand = z.infer<typeof ImportEmbeddedF
 
 export const GetCompendiumDocumentCommand = z.object({
   action: z.literal("getCompendiumDocument"),
-  documentType: DocumentType,
   uuid: z.string().min(1),
 });
 export type GetCompendiumDocumentCommand = z.infer<typeof GetCompendiumDocumentCommand>;
@@ -297,9 +296,7 @@ export interface CompendiumDocumentItem {
   effects?: Record<string, unknown>[];
 }
 export interface CompendiumDocument {
-  uuid: string;
   name: string;
-  type: string;
   img?: string;
   system: Record<string, unknown>;
   items: CompendiumDocumentItem[];

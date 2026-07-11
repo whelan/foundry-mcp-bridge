@@ -105,7 +105,7 @@ function commandSummary(c: Command): string {
     case "importEmbeddedFromCompendium":
       return `${c.parentType}/${c.embeddedName} parent=${c.parentId} n=${c.uuids.length}`;
     case "getCompendiumDocument":
-      return `${c.documentType} uuid=${c.uuid.slice(0, 20)}...`;
+      return `uuid=${c.uuid.slice(0, 20)}...`;
   }
 }
 
