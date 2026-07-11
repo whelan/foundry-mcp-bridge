@@ -20,9 +20,9 @@
  * mechanical actor, just without statblock-specific overrides applied.
  */
 
-import { isSubset, type CompendiumEntry } from "@foundry-mcp-bridge/shared";
+import { isSubset, type CompendiumEntry, type CompendiumDocument, type CompendiumDocumentItem } from "@foundry-mcp-bridge/shared";
 import type { StatblockData } from "./schema.js";
-import { statblockToFoundryActor, type Dnd5eActorDocument } from "./to-foundry.js";
+import { statblockToFoundryActor, type Dnd5eActorDocument, type Dnd5eItem } from "./to-foundry.js";
 import { matchStatblock } from "./match.js";
 import { statblockKey } from "./slug.js";
 
@@ -334,6 +334,123 @@ export function buildNpcUpdatePatch(
   }
 
   return patch;
+}
+
+/**
+ * Build a dot-notation patch for refreshing an existing Tier 1 actor from
+ * compendium data. Strips runtime leaves (HP current, exhaustion, currency)
+ * so deep-merge preserves them, includes all compendium-owned fields.
+ */
+export function buildCompendiumRefreshPatch(
+  fresh: CompendiumDocument,
+  resolvedImagePath?: string,
+  folderId?: string
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+
+  // Top-level fields
+  patch.name = fresh.name;
+  if (resolvedImagePath) {
+    patch.img = resolvedImagePath;
+  }
+
+  // Deep clone system to avoid mutations
+  const sys = structuredClone(fresh.system) as Record<string, any>;
+
+  // Strip runtime leaves from attributes
+  const attributes = sys.attributes as Record<string, any> | undefined;
+  if (attributes?.hp) {
+    delete attributes.hp.value;
+    delete attributes.hp.temp;
+    delete attributes.hp.tempmax;
+  }
+  if (attributes) {
+    delete attributes.exhaustion;
+  }
+  delete sys.currency;
+
+  patch.system = sys;
+
+  // Folder (only if provided)
+  if (folderId) {
+    patch.folder = folderId;
+  }
+
+  return patch;
+}
+
+/**
+ * Wrap a compendium item for creation, stamping its sourceUuid provenance flag.
+ */
+export function buildTier1Item(item: CompendiumDocumentItem): Dnd5eItem {
+  const wrapped = structuredClone(item) as Dnd5eItem;
+  if (!wrapped.flags) {
+    wrapped.flags = {};
+  }
+  if (!wrapped.flags["foundry-mcp-bridge"]) {
+    wrapped.flags["foundry-mcp-bridge"] = {};
+  }
+  wrapped.flags["foundry-mcp-bridge"].sourceUuid = item.uuid;
+  return wrapped;
+}
+
+/**
+ * Strip item-level runtime fields (spent uses, equipped, attunement) for updates.
+ * Preserves the item structure while removing GM-owned state.
+ */
+export function buildTier1ItemPatch(item: CompendiumDocumentItem): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  patch.name = item.name;
+  patch.img = item.img;
+  patch.system = structuredClone(item.system);
+
+  // Strip runtime leaves from item.system
+  const sys = patch.system as Record<string, any>;
+  if (sys.uses) {
+    delete sys.uses.spent;
+  }
+  delete sys.equipped;
+  delete sys.attuned;
+
+  return patch;
+}
+
+/**
+ * Build a full Tier 1 actor document from compendium data, stamping
+ * statblockKey, tier, and compendiumUuid flags. All items are wrapped
+ * with sourceUuid provenance.
+ */
+export function buildTier1ActorData(
+  fresh: CompendiumDocument,
+  key: string,
+  compendiumUuid: string,
+  folderId?: string,
+  resolvedImagePath?: string
+): Dnd5eActorDocument {
+  const actor: Dnd5eActorDocument = {
+    name: fresh.name,
+    type: "npc",
+    system: structuredClone(fresh.system),
+    items: fresh.items.map(item => buildTier1Item(item)),
+    effects: [],
+    flags: {
+      "foundry-mcp-bridge": {
+        statblockKey: key,
+        tier: 1,
+        compendiumUuid,
+      },
+    },
+  };
+
+  if (resolvedImagePath) {
+    actor.img = resolvedImagePath;
+  }
+
+  if (folderId) {
+    actor.folder = folderId;
+  }
+
+  return actor;
 }
 
 /**
