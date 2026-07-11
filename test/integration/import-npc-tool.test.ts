@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { MockFoundry } from "./mock-foundry.js";
+import { MockFoundry, documentKey } from "./mock-foundry.js";
 import { MockTransport } from "./mock-transport.js";
 import { runImportNpc, runCreateDocument } from "../../packages/mcp-server/src/tools.js";
 import { buildNpcUpdatePatch, parseStatblock } from "../../packages/statblock-sync/src/index.js";
@@ -519,6 +519,71 @@ describe("Tier 1 (compendium-clone) resync", () => {
     const error = (result as any).error;
     expect(error.code).toBe("VALIDATION");
     expect(error.message).toContain("mode: \"update\" requires");
+  });
+
+  it("compendium changed → refresh applies item deltas; GM-added item survives; removed item is deleted, not crashed", async () => {
+    const first = await runImportNpc(transport, { markdown: tier1Note(), assetSource: "data" });
+    const actorId = (first as any).data.actorId;
+    const compendiumUuid = (first as any).data.matchedUuid as string;
+
+    const actor = mock.documents("Actor").find((a: any) => a._id === actorId)! as any;
+    const originalItemCount = actor.items.length;
+
+    // GM adds an unflagged item directly on the actor -- must survive untouched.
+    actor.items.push({ _id: "gm-added-item", name: "GM Trinket", type: "loot", system: {} });
+
+    // Mutate the seeded compendium source: change one item's mechanics
+    // in-place (update -- the mock's synthetic item uuid is name-derived, so
+    // this test changes `system`, not `name`, to keep the same identity and
+    // exercise the update path rather than delete+create), drop the last
+    // item (delete), and add a brand-new one (create).
+    const record = (mock as any).compendium.get(compendiumUuid);
+    record.data.items[0].system = { ...record.data.items[0].system, description: { value: "Errata text" } };
+    record.data.items.pop();
+    record.data.items.push({ name: "New Errata Trait", type: "feature", system: {} });
+
+    const second = await runImportNpc(transport, { markdown: tier1Note(), assetSource: "data" });
+    expect(second.ok).toBe(true);
+    const { itemChanges } = (second as any).data;
+    expect(itemChanges.created).toBe(1);
+    expect(itemChanges.deleted).toBe(1);
+    expect(itemChanges.updated).toBeGreaterThanOrEqual(1);
+
+    const after = mock.documents("Actor").find((a: any) => a._id === actorId)! as any;
+    expect(after.items.some((i: any) => i.name === "GM Trinket")).toBe(true);
+    expect(after.items.some((i: any) => i.name === "New Errata Trait")).toBe(true);
+    // Original count minus the removed item, plus the GM item and the new one.
+    expect(after.items.length).toBe(originalItemCount - 1 + 1 + 1);
+  });
+
+  it("legacy Tier 1 actor (statblockKey only, unstamped items) self-upgrades on re-import without duplicating items", async () => {
+    const compendiumUuid = "Compendium.dnd5e.actors24.gravemire-stalker";
+    const record = (mock as any).compendium.get(compendiumUuid);
+    // Real (and mock) embedded items only ever get an _id once actually
+    // created in the world -- the compendium's own raw data never has one.
+    // A legacy clone (created by the old, pre-provenance importFromCompendium
+    // path) always has real ids on its items by the time it's re-imported.
+    const legacyActor = {
+      ...structuredClone(record.data),
+      items: record.data.items.map((it: any, i: number) => ({ ...structuredClone(it), _id: `legacy-item-${i}` })),
+      _id: "legacy-actor-1",
+      flags: { "foundry-mcp-bridge": { statblockKey: "gravemire-stalker" } },
+    };
+    (mock as any).store.set(documentKey("Actor", "legacy-actor-1"), legacyActor);
+
+    const result = await runImportNpc(transport, { markdown: tier1Note(), assetSource: "data" });
+    expect(result.ok).toBe(true);
+    const data = (result as any).data;
+    expect(data.action).toBe("updated");
+    expect(data.actorId).toBe("legacy-actor-1");
+    expect(data.tier).toBe(1);
+
+    const after = mock.documents("Actor").find((a: any) => a._id === "legacy-actor-1")! as any;
+    expect(after.flags["foundry-mcp-bridge"].tier).toBe(1);
+    expect(after.flags["foundry-mcp-bridge"].compendiumUuid).toBe(compendiumUuid);
+    // Adopted in place, not duplicated onto a fresh set (5 legacy + 5 fresh).
+    expect(after.items.length).toBe(record.data.items.length);
+    expect(after.items.every((i: any) => i.flags?.["foundry-mcp-bridge"]?.sourceUuid)).toBe(true);
   });
 });
 

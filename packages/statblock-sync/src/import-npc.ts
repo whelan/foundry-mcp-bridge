@@ -102,9 +102,16 @@ async function refreshTier1(
   try {
     fresh = await deps.getCompendiumDocument(compendiumUuid);
   } catch (e) {
+    const err = e as any;
     throw Object.assign(
       new Error(`Tier 1 refresh: compendium document ${compendiumUuid} could not be read`),
-      { code: "VALIDATION", details: { compendiumUuid }, stage: "compendium-read", actorId },
+      {
+        code: err.code ?? "VALIDATION",
+        details: { compendiumUuid },
+        stage: "compendium-read",
+        actorId,
+        cause: err.message ?? String(e),
+      },
     );
   }
 
@@ -112,13 +119,13 @@ async function refreshTier1(
     const resolvedImagePath = await resolveImagePath(statblock, imageContent, deps);
     const patch = buildCompendiumRefreshPatch(fresh, resolvedImagePath, folderId);
     // Backfill tier/compendiumUuid for legacy actors on upgrade
-    (patch as any)["flags.foundry-mcp-bridge.tier"] = 1;
-    (patch as any)["flags.foundry-mcp-bridge.compendiumUuid"] = compendiumUuid;
+    patch["flags.foundry-mcp-bridge.tier"] = 1;
+    patch["flags.foundry-mcp-bridge.compendiumUuid"] = compendiumUuid;
     await deps.updateDocument(actorId, patch);
   } catch (e) {
     const err = e as any;
     if (!err.stage) err.stage = "actor-update";
-    if (!("actorId" in err)) err.actorId = actorId;
+    if (err.actorId === undefined) err.actorId = actorId;
     throw err;
   }
 
@@ -150,25 +157,49 @@ async function refreshCompendiumItems(
   const freshByUuid = new Map(fresh.items.map((i) => [i.uuid, i]));
   const claimed = new Map<string, { _id: string; name: string; img?: string; system?: any; hadFlag: boolean }>();
 
-  // First, match by our sourceUuid flag
+  // First, match by our sourceUuid flag. An item whose source has disappeared
+  // from the compendium is deliberately left unclaimed here (not added to
+  // `claimed`) so it falls through to the "delete" loop below instead of
+  // reaching the update loop, which assumes every claimed uuid still exists
+  // in freshByUuid.
   for (const it of currentItems) {
     const src = it.flags?.["foundry-mcp-bridge"]?.sourceUuid;
-    if (typeof src === "string" && !claimed.has(src)) {
+    if (typeof src === "string" && freshByUuid.has(src) && !claimed.has(src)) {
       claimed.set(src, { _id: it._id, name: it.name, img: it.img, system: it.system, hadFlag: true });
     }
   }
 
-  // Legacy adoption: match by compendiumSource or name
+  // Legacy adoption: match unflagged items (predate the sourceUuid provenance
+  // stamp) by compendiumSource, or by name as a last resort. Name-matching is
+  // ambiguous when two items share a display name (e.g. two distinct "Claw"
+  // attacks) -- adopting the first match in iteration order would silently
+  // cross-wire their mechanics, so name-matching only fires when the current
+  // item's name is unique among both the unflagged legacy items being adopted
+  // and the still-unclaimed fresh items; an ambiguous name is left unadopted
+  // (the legacy item stays untouched, and its fresh counterpart is created
+  // fresh alongside it rather than guessing which one it replaces).
+  const unflaggedNameCounts = new Map<string, number>();
+  for (const it of currentItems) {
+    if (it.flags?.["foundry-mcp-bridge"]?.sourceUuid) continue;
+    unflaggedNameCounts.set(it.name, (unflaggedNameCounts.get(it.name) ?? 0) + 1);
+  }
+
   for (const it of currentItems) {
     if (it.flags?.["foundry-mcp-bridge"]?.sourceUuid) continue;
     const bySource = it._stats?.compendiumSource;
     let matchUuid: string | undefined;
     if (typeof bySource === "string" && freshByUuid.has(bySource) && !claimed.has(bySource)) {
       matchUuid = bySource;
-    } else {
+    } else if (unflaggedNameCounts.get(it.name) === 1) {
+      let nameMatches = 0;
+      let candidate: string | undefined;
       for (const [uuid, f] of freshByUuid) {
-        if (!claimed.has(uuid) && f.name === it.name) { matchUuid = uuid; break; }
+        if (!claimed.has(uuid) && f.name === it.name) {
+          nameMatches++;
+          candidate = uuid;
+        }
       }
+      if (nameMatches === 1) matchUuid = candidate;
     }
     if (matchUuid) {
       claimed.set(matchUuid, { _id: it._id, name: it.name, img: it.img, system: it.system, hadFlag: false });
@@ -275,6 +306,16 @@ export async function importNpc(
 
   // UPDATE PATH
   if (matchedActorId && (mode === "upsert" || mode === "update")) {
+    // A caller may pass matchedActorId directly (e.g. to resolve an earlier
+    // "Ambiguous match" error's matchedActorIds), bypassing the
+    // findActorsByKey lookup above -- in that case matchedActor's flags
+    // still need fetching, since resolveMatchedTier depends on them to route
+    // Tier 1 vs Tier 3. Without this, a directly-passed Tier 1 actor id would
+    // silently fall through to the Tier 3 synthesis-diff path below.
+    if (!matchedActor) {
+      const matches = await deps.findActorsByKey(key);
+      matchedActor = matches.find((m) => m._id === matchedActorId);
+    }
     if (matchedActor) {
       const resolved = await resolveMatchedTier(matchedActor, statblock, deps);
       if (resolved.tier === 1) {
@@ -302,7 +343,7 @@ export async function importNpc(
       if (!err.stage) {
         err.stage = "actor-update";
       }
-      if (!("actorId" in err)) {
+      if (err.actorId === undefined) {
         err.actorId = matchedActorId;
       }
       throw err;
