@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildCompendiumRefreshPatch,
   buildTier1Item,
+  buildTier1ItemPatch,
   buildTier1ActorData,
 } from "./import-npc.js";
 import type { CompendiumDocument } from "@foundry-mcp-bridge/shared";
@@ -57,6 +58,18 @@ describe("buildTier1Item", () => {
     const item = buildTier1Item(fresh.items[0]!) as any;
     expect(item.name).toBe("Dagger");
     expect(item.flags["foundry-mcp-bridge"].sourceUuid).toBe(fresh.items[0]!.uuid);
+  });
+});
+
+describe("buildTier1ItemPatch", () => {
+  it("strips item-level runtime (spent uses, equipped, attunement)", () => {
+    const patch = buildTier1ItemPatch(fresh.items[0]!) as any;
+    expect(patch.name).toBe("Dagger");
+    expect(patch.system.damage).toBe(4);
+    // runtime stripped:
+    expect(patch.system.uses?.spent).toBeUndefined();
+    expect(patch.system.equipped).toBeUndefined();
+    expect(patch.system.attunement).toBeUndefined();
   });
 });
 
