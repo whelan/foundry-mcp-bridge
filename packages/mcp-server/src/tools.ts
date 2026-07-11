@@ -510,7 +510,7 @@ export const GetCompendiumDocumentShape = {
 const GetCompendiumDocument = z.object(GetCompendiumDocumentShape);
 export type GetCompendiumDocumentArgs = z.infer<typeof GetCompendiumDocument>;
 
-export async function runGetCompendiumDocument(
+export function runGetCompendiumDocument(
   transport: RelayTransport,
   args: GetCompendiumDocumentArgs,
   opts: PipelineOptions = {},
