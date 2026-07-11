@@ -18,6 +18,7 @@ import {
   isSafePath,
   filterUnsafePaths,
   type CompendiumEntry,
+  type CompendiumDocument,
 } from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
 import {
@@ -700,17 +701,9 @@ export async function runImportNpc(
         return unwrapDep("searchCompendium", result);
       },
 
-      async importFromCompendium(
-        uuid: string,
-        patch?: Record<string, unknown>,
-      ): Promise<{ _id: string }> {
-        const result = await runImportFromCompendium(transport, {
-          documentType: "Actor",
-          uuid,
-          patch,
-          folderId,
-        });
-        return unwrapDep("importFromCompendium", result);
+      async getCompendiumDocument(uuid: string): Promise<CompendiumDocument> {
+        const result = await runGetCompendiumDocument(transport, { uuid });
+        return unwrapDep("getCompendiumDocument", result);
       },
 
       async createDocument(data: Record<string, unknown>): Promise<{ _id: string }> {
@@ -770,7 +763,7 @@ export async function runImportNpc(
         return unwrapDep<Array<{ _id: string }>>("createEmbeddedItem", result)[0]!;
       },
 
-      async findActorsByKey(key: string): Promise<{ _id: string }[]> {
+      async findActorsByKey(key: string): Promise<Array<{ _id: string; flags?: Record<string, any> }>> {
         // Dot-notation path, not a nested object literal: the wire contract's
         // `find` query is documented (and implemented by foundry-runtime.ts) as
         // shallow equality over dot-notation paths, not deep object matching —
@@ -778,6 +771,7 @@ export async function runImportNpc(
         const result = await runFindDocuments(transport, {
           documentType: "Actor",
           query: { "flags.foundry-mcp-bridge.statblockKey": key },
+          fields: ["_id", "flags"],
         });
         return unwrapDep("findActorsByKey", result);
       },
@@ -793,7 +787,7 @@ export async function runImportNpc(
 
       async findActorItems(
         actorId: string,
-      ): Promise<Array<{ _id: string; name: string; type: string; img?: string; system?: unknown; flags?: Record<string, any> }>> {
+      ): Promise<Array<{ _id: string; name: string; type: string; img?: string; system?: any; flags?: Record<string, any>; _stats?: Record<string, any> }>> {
         // Embedded items aren't addressable as top-level Item documents (Item's
         // collection is Foundry's world-level items sidebar) — they live on the
         // actor's own `items` array, so fetch the actor and read it off there.
@@ -801,7 +795,7 @@ export async function runImportNpc(
           documentType: "Actor",
           id: actorId,
         });
-        const actor = unwrapDep<{ items?: Array<{ _id: string; name: string; type: string; img?: string; system?: unknown; flags?: Record<string, any> }> }>(
+        const actor = unwrapDep<{ items?: Array<{ _id: string; name: string; type: string; img?: string; system?: any; flags?: Record<string, any>; _stats?: Record<string, any> }> }>(
           "findActorItems",
           result,
         );

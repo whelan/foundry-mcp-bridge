@@ -21,7 +21,7 @@ import type { RelayTransport } from "../../packages/mcp-server/src/relay-transpo
 import type { ToolOutcome } from "../../packages/mcp-server/src/reliability.js";
 import {
   runSearchCompendium,
-  runImportFromCompendium,
+  runGetCompendiumDocument,
   runImportEmbeddedFromCompendium,
   runCreateDocument,
   runCreateEmbedded,
@@ -54,10 +54,10 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
         "searchCompendium",
       );
     },
-    async importFromCompendium(uuid, patch) {
-      return unwrap<{ _id: string }>(
-        await runImportFromCompendium(transport, { documentType: "Actor", uuid, patch }),
-        "importFromCompendium",
+    async getCompendiumDocument(uuid) {
+      return unwrap<any>(
+        await runGetCompendiumDocument(transport, { uuid }),
+        "getCompendiumDocument",
       );
     },
     async createDocument(data) {
@@ -109,10 +109,11 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
       return created[0]!;
     },
     async findActorsByKey(key) {
-      const results = unwrap<Array<{ _id: string }>>(
+      const results = unwrap<Array<{ _id: string; flags?: Record<string, any> }>>(
         await runFindDocuments(transport, {
           documentType: "Actor",
           query: { "flags.foundry-mcp-bridge.statblockKey": key },
+          fields: ["_id", "flags"],
         }),
         "findActorsByKey",
       );
@@ -129,7 +130,7 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
       );
     },
     async findActorItems(actorId) {
-      const actorDoc = unwrap<{ items?: Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }> }>(
+      const actorDoc = unwrap<{ items?: Array<{ _id: string; name: string; type: string; img?: string; system?: any; flags?: Record<string, any>; _stats?: Record<string, any> }> }>(
         await runFindDocuments(transport, { documentType: "Actor", id: actorId }),
         "findActorItems",
       );

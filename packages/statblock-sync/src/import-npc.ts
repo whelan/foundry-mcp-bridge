@@ -40,8 +40,8 @@ export interface ImportNpcResult {
 export interface ImportNpcDeps {
   /** Search the world's compendia for actors matching `nameQuery`. */
   searchCompendium(nameQuery: string): Promise<CompendiumEntry[]>;
-  /** Clone a compendium entry into the world, applying an optional patch. */
-  importFromCompendium(uuid: string, patch?: Record<string, unknown>, folderId?: string): Promise<{ _id: string }>;
+  /** Read a compendium document's full data (system + items with per-item uuids). */
+  getCompendiumDocument(uuid: string): Promise<CompendiumDocument>;
   /** Create a synthesized document from scratch (Tier 3 fallback). */
   createDocument(data: Dnd5eActorDocument): Promise<{ _id: string }>;
   /** Upload an image file and return the resolved remote path. */
@@ -52,12 +52,12 @@ export interface ImportNpcDeps {
   importEmbeddedFromCompendium(parentId: string, uuid: string, patch?: Record<string, unknown>): Promise<{ _id: string }>;
   /** Create a literal (non-compendium) embedded Item on the given actor. */
   createEmbeddedItem(parentId: string, data: Record<string, unknown>): Promise<{ _id: string }>;
-  /** Find actors by their statblockKey flag. */
-  findActorsByKey(key: string): Promise<{ _id: string }[]>;
+  /** Find actors by their statblockKey flag, returning each actor's flags for tier dispatch. */
+  findActorsByKey(key: string): Promise<Array<{ _id: string; flags?: Record<string, any> }>>;
   /** Update an actor document by ID. */
   updateDocument(actorId: string, patch: Record<string, unknown>): Promise<{ _id: string }>;
   /** Find all items on an actor. */
-  findActorItems(actorId: string): Promise<Array<{ _id: string; name: string; type: string; img?: string; system?: unknown; flags?: Record<string, any> }>>;
+  findActorItems(actorId: string): Promise<Array<{ _id: string; name: string; type: string; img?: string; system?: any; flags?: Record<string, any>; _stats?: Record<string, any> }>>;
   /** Update an embedded item on an actor. */
   updateEmbeddedItem(actorId: string, itemId: string, patch: Record<string, unknown>): Promise<{ _id: string }>;
   /** Delete an embedded item from an actor. */
@@ -165,17 +165,14 @@ export async function importNpc(
     const plan = matchStatblock(statblock, index);
 
     if (plan.tier === 1) {
-      // Stamp statblockKey even though Tier 1 isn't an upsert target in v1
-      // (see design doc's Non-goals) — so a later Tier 1 re-sync has
-      // something to match against without needing a data migration.
-      const tier1Patch = {
-        ...plan.patch,
-        flags: { "foundry-mcp-bridge": { statblockKey: key, tier: 1 } },
-      };
-      const doc = await deps.importFromCompendium(plan.uuid, tier1Patch, folderId);
+      const fresh = await deps.getCompendiumDocument(plan.uuid);
+      const resolvedImagePath = await resolveImagePath(statblock, imageContent, deps);
+      const actorData = buildTier1ActorData(fresh, key, plan.uuid, folderId, resolvedImagePath);
+      const doc = await deps.createDocument(actorData as Dnd5eActorDocument);
       actorId = doc._id;
       action = "created";
       result = { actorId, tier: 1, matchedUuid: plan.uuid, action };
+      return result; // Early return — don't run attachSpells for Tier 1
     } else {
       const resolvedImagePath = await resolveImagePath(statblock, imageContent, deps);
       const actorData = statblockToFoundryActor(statblock, resolvedImagePath);
