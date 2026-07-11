@@ -65,6 +65,158 @@ export interface ImportNpcDeps {
 }
 
 /**
+ * Determine the tier of a matched actor for update routing. Checks the actor's
+ * foundry-mcp-bridge flags for explicit tier 1 marker (compendiumUuid); if not
+ * present, infers tier via legacy compendium exact-match. Falls back to Tier 3.
+ */
+async function resolveMatchedTier(
+  matched: { _id: string; flags?: Record<string, any> },
+  statblock: StatblockData,
+  deps: ImportNpcDeps,
+): Promise<{ tier: 1; compendiumUuid: string } | { tier: 3 }> {
+  const flag = matched.flags?.["foundry-mcp-bridge"];
+  if (flag?.tier === 3) return { tier: 3 };
+  if (flag?.tier === 1 && typeof flag.compendiumUuid === "string") {
+    return { tier: 1, compendiumUuid: flag.compendiumUuid };
+  }
+  // Legacy: infer via compendium exact-match
+  const index = await deps.searchCompendium(statblock.data.name);
+  const plan = matchStatblock(statblock, index);
+  return plan.tier === 1 ? { tier: 1, compendiumUuid: plan.uuid } : { tier: 3 };
+}
+
+/**
+ * Refresh a Tier 1 actor from its compendium source: reads fresh compendium data,
+ * builds and applies the refresh patch (preserving runtime state), backfills flags
+ * for legacy actors, and syncs items (create/update/delete/adopt).
+ */
+async function refreshTier1(
+  actorId: string,
+  compendiumUuid: string,
+  statblock: StatblockData,
+  deps: ImportNpcDeps,
+  imageContent: { filename: string; contentBase64: string } | undefined,
+  folderId: string | undefined,
+): Promise<ImportNpcResult> {
+  let fresh: CompendiumDocument;
+  try {
+    fresh = await deps.getCompendiumDocument(compendiumUuid);
+  } catch (e) {
+    throw Object.assign(
+      new Error(`Tier 1 refresh: compendium document ${compendiumUuid} could not be read`),
+      { code: "VALIDATION", details: { compendiumUuid }, stage: "compendium-read", actorId },
+    );
+  }
+
+  try {
+    const resolvedImagePath = await resolveImagePath(statblock, imageContent, deps);
+    const patch = buildCompendiumRefreshPatch(fresh, resolvedImagePath, folderId);
+    // Backfill tier/compendiumUuid for legacy actors on upgrade
+    (patch as any)["flags.foundry-mcp-bridge.tier"] = 1;
+    (patch as any)["flags.foundry-mcp-bridge.compendiumUuid"] = compendiumUuid;
+    await deps.updateDocument(actorId, patch);
+  } catch (e) {
+    const err = e as any;
+    if (!err.stage) err.stage = "actor-update";
+    if (!("actorId" in err)) err.actorId = actorId;
+    throw err;
+  }
+
+  let itemChanges;
+  try {
+    itemChanges = await refreshCompendiumItems(actorId, fresh, deps);
+  } catch (e) {
+    const err = e as any;
+    err.actorId = actorId;
+    err.stage = "itemDiff";
+    throw err;
+  }
+
+  return { actorId, tier: 1, matchedUuid: compendiumUuid, action: "updated", itemChanges };
+}
+
+/**
+ * Diff and sync embedded items for a Tier 1 actor refresh. Matches current items
+ * by sourceUuid flag, compendiumSource, or name; creates fresh items with no
+ * counterpart; updates matched items; deletes flagged items whose source disappeared;
+ * preserves unflagged (GM-added) items.
+ */
+async function refreshCompendiumItems(
+  actorId: string,
+  fresh: CompendiumDocument,
+  deps: ImportNpcDeps,
+): Promise<{ created: number; updated: number; deleted: number; unchanged: number }> {
+  const currentItems = await deps.findActorItems(actorId);
+  const freshByUuid = new Map(fresh.items.map((i) => [i.uuid, i]));
+  const claimed = new Map<string, { _id: string; name: string; img?: string; system?: any; hadFlag: boolean }>();
+
+  // First, match by our sourceUuid flag
+  for (const it of currentItems) {
+    const src = it.flags?.["foundry-mcp-bridge"]?.sourceUuid;
+    if (typeof src === "string" && !claimed.has(src)) {
+      claimed.set(src, { _id: it._id, name: it.name, img: it.img, system: it.system, hadFlag: true });
+    }
+  }
+
+  // Legacy adoption: match by compendiumSource or name
+  for (const it of currentItems) {
+    if (it.flags?.["foundry-mcp-bridge"]?.sourceUuid) continue;
+    const bySource = it._stats?.compendiumSource;
+    let matchUuid: string | undefined;
+    if (typeof bySource === "string" && freshByUuid.has(bySource) && !claimed.has(bySource)) {
+      matchUuid = bySource;
+    } else {
+      for (const [uuid, f] of freshByUuid) {
+        if (!claimed.has(uuid) && f.name === it.name) { matchUuid = uuid; break; }
+      }
+    }
+    if (matchUuid) {
+      claimed.set(matchUuid, { _id: it._id, name: it.name, img: it.img, system: it.system, hadFlag: false });
+    }
+  }
+
+  let created = 0, updated = 0, deleted = 0, unchanged = 0;
+
+  // Create fresh items with no claimed counterpart
+  for (const [uuid, item] of freshByUuid) {
+    if (claimed.has(uuid)) continue;
+    await deps.createEmbeddedItem(actorId, buildTier1Item(item) as unknown as Record<string, unknown>);
+    created++;
+  }
+
+  // Update (or adopt+stamp) claimed items
+  for (const [uuid, current] of claimed) {
+    const item = freshByUuid.get(uuid)!;
+    const patch = buildTier1ItemPatch(item) as Record<string, any>;
+    if (!current.hadFlag) {
+      patch.flags = { "foundry-mcp-bridge": { sourceUuid: uuid } };
+    }
+    const changed =
+      current.hadFlag === false ||
+      current.name !== item.name ||
+      current.img !== item.img ||
+      !isSubset(current.system, patch.system);
+    if (changed) {
+      await deps.updateEmbeddedItem(actorId, current._id, patch);
+      updated++;
+    } else {
+      unchanged++;
+    }
+  }
+
+  // Delete flagged items whose source disappeared
+  for (const it of currentItems) {
+    const src = it.flags?.["foundry-mcp-bridge"]?.sourceUuid;
+    if (typeof src === "string" && !freshByUuid.has(src)) {
+      await deps.deleteEmbeddedItem(actorId, it._id);
+      deleted++;
+    }
+  }
+
+  return { created, updated, deleted, unchanged };
+}
+
+/**
  * Import a parsed statblock into the world, with support for upsert (update-or-create).
  *
  * Modes:
@@ -72,12 +224,13 @@ export interface ImportNpcDeps {
  * - "create": Always creates, even if match exists (for intentional duplicates)
  * - "update": Requires match; error if none found
  *
- * When updating (Tier 3 only), builds a patch of statblock-owned fields and diffs
+ * When updating (Tier 1), refreshes from compendium data and syncs items.
+ * When updating (Tier 3), builds a patch of statblock-owned fields and diffs
  * tool-created items by key: matched items updated, new items created, removed items
  * deleted, GM-added unflagged items preserved.
  *
- * Tier 1 (compendium clone) always creates and skips item diffing; spells are
- * attached after actor exists.
+ * Tier 1 (compendium clone) creates or updates via compendium refresh.
+ * Spells are attached after actor exists.
  */
 export async function importNpc(
   statblock: StatblockData,
@@ -95,6 +248,7 @@ export async function importNpc(
   let result: ImportNpcResult;
 
   // If no explicit match provided, query for one (unless mode is "create")
+  let matchedActor: { _id: string; flags?: Record<string, any> } | undefined;
   if (!matchedActorId && mode !== "create") {
     const matches = await deps.findActorsByKey(key);
     if (matches.length > 1) {
@@ -105,7 +259,8 @@ export async function importNpc(
       });
     }
     if (matches.length === 1) {
-      matchedActorId = matches[0]!._id;
+      matchedActor = matches[0]!;
+      matchedActorId = matchedActor._id;
     }
   }
 
@@ -120,6 +275,21 @@ export async function importNpc(
 
   // UPDATE PATH
   if (matchedActorId && (mode === "upsert" || mode === "update")) {
+    if (matchedActor) {
+      const resolved = await resolveMatchedTier(matchedActor, statblock, deps);
+      if (resolved.tier === 1) {
+        return await refreshTier1(
+          matchedActorId,
+          resolved.compendiumUuid,
+          statblock,
+          deps,
+          imageContent,
+          folderId,
+        );
+      }
+    }
+
+    // Tier 3: existing synthesis-diff path (unchanged)
     try {
       const resolvedImagePath = await resolveImagePath(statblock, imageContent, deps);
       const patch = buildNpcUpdatePatch(statblock, resolvedImagePath, folderId);
