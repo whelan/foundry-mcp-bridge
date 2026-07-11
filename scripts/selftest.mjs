@@ -38,6 +38,7 @@ import {
   runSearchCompendium,
   runImportFromCompendium,
   runImportEmbeddedFromCompendium,
+  runGetCompendiumDocument,
   runImportNpc,
 } from "../packages/mcp-server/dist/index.js";
 // Reuse the real dot-notation merge + embedded-field mapping instead of re-implementing them.
@@ -73,6 +74,19 @@ const SPELL_COMPENDIUM = new Map(
     ["cone-of-cold", "Cone of Cold"],
   ].map(([slug, name]) => [`Compendium.dnd5e.spells24.${slug}`, { name, type: "spell", system: { level: 0 } }]),
 );
+
+// A handful of dnd5e.actors24 stand-ins so M6d (Tier 1 compendium-clone import)
+// has a real compendium entry to match against. Deliberately named apart from
+// every M6a NPC_LEGS fixture (gravemire-stalker, young-ash-wyrm, test-archmage)
+// -- those legs assert full Tier 3 synthesis (every mechanical field), so an
+// exact-name compendium match here would silently divert them onto the Tier 1
+// clone path instead and fail their verification.
+const ACTOR_COMPENDIUM = new Map(
+  [
+    ["tier1-clone-probe", "Tier1 Clone Probe"],
+  ].map(([slug, name]) => [`Compendium.dnd5e.actors24.${slug}`, { name, type: "npc", system: {}, items: [] }]),
+);
+
 function handle(env) {
   const c = env.command;
   const id = env.id;
@@ -192,16 +206,43 @@ function handle(env) {
             .map(([uuid, entry]) => ({ uuid, pack: "dnd5e.spells24", name: entry.name, type: "spell" })),
         );
       }
-      // Return a dummy result for testing (real implementation loads from fixtures)
-      return ok([{ uuid: "Compendium.dnd5e.actors24.dummy", pack: "dnd5e.actors24", name: "Dummy", type: "Actor" }]);
+      if (c.documentType === "Actor") {
+        // Real search: name-substring match against actor stand-ins,
+        // so M6d's Tier 1 compendium-clone import path is exercised.
+        const query = c.nameQuery.toLowerCase();
+        return ok(
+          [...ACTOR_COMPENDIUM.entries()]
+            .filter(([, entry]) => entry.name.toLowerCase().includes(query))
+            .map(([uuid, entry]) => ({ uuid, pack: "dnd5e.actors24", name: entry.name, type: "Actor" })),
+        );
+      }
+      // Return a dummy result for other document types
+      return ok([{ uuid: "Compendium.dnd5e.dummy", pack: "dnd5e", name: "Dummy", type: c.documentType }]);
     case "importFromCompendium": {
       // Simulate importing from compendium, honoring an optional patch so the
       // reliability pipeline's read-back verification is meaningfully exercised.
       const _id = rid();
-      const base = { name: "Imported Document", type: c.documentType };
-      const doc = { ...(c.patch ? applyUpdate(base, c.patch) : base), _id };
+      let source;
+      if (c.documentType === "Actor" && ACTOR_COMPENDIUM.has(c.uuid)) {
+        source = structuredClone(ACTOR_COMPENDIUM.get(c.uuid));
+      } else if (c.documentType === "Item" && SPELL_COMPENDIUM.has(c.uuid)) {
+        source = structuredClone(SPELL_COMPENDIUM.get(c.uuid));
+      } else {
+        source = { name: "Imported Document", type: c.documentType };
+      }
+      const doc = { ...(c.patch ? applyUpdate(source, c.patch) : source), _id };
       if (!env.dryRun) store.set(`${c.documentType}:${_id}`, doc);
       return ok(doc);
+    }
+    case "getCompendiumDocument": {
+      // Backs import_npc's Tier 1 create + refresh path: a read-only lookup
+      // of the actor stand-in's system + items, keyed by the same uuid
+      // searchCompendium/importFromCompendium above use.
+      if (!ACTOR_COMPENDIUM.has(c.uuid)) {
+        return err("NOT_FOUND", `compendium entry ${c.uuid} not found`);
+      }
+      const entry = structuredClone(ACTOR_COMPENDIUM.get(c.uuid));
+      return ok({ name: entry.name, img: entry.img, system: entry.system || {}, items: entry.items || [] });
     }
     case "importEmbeddedFromCompendium": {
       const k = `${c.parentType}:${c.parentId}`;
@@ -302,9 +343,9 @@ async function runNpcLeg(server, opts, assetSource = "data", fixture = { name: "
       if (!res.ok) throw new Error(`searchCompendium failed: ${res.error.code}`);
       return res.data || [];
     },
-    async importFromCompendium(uuid, patch) {
-      const res = await runImportFromCompendium(server, { documentType: "Actor", uuid, patch }, opts);
-      if (!res.ok) throw new Error(`importFromCompendium failed: ${res.error.code}`);
+    async getCompendiumDocument(uuid) {
+      const res = await runGetCompendiumDocument(server, { uuid }, opts);
+      if (!res.ok) throw new Error(`getCompendiumDocument failed: ${res.error.code}`);
       return res.data;
     },
     async createDocument(data) {
@@ -492,6 +533,22 @@ const NPC_LEGS = [
       const changesSummary = updated > 0 ? ` (${updated} re-verified item)` : " (no changes)";
       console.log(`    ✓ re-import idempotent upsert (same actor${changesSummary})`);
       console.log(`    ✓ verification: PASS (${verification.checks?.length} checks, ${expectedFailures.length} known-expected failures)`);
+
+      // M6d: Tier 1 compendium-clone import + idempotent refresh
+      console.log("\n  M6d: Tier 1 compendium clone import + refresh");
+      const tier1Md = fs.readFileSync("test/fixtures/statblock-import/tier1-clone-probe.md", "utf-8");
+      const t1a = await runImportNpc(server, { markdown: tier1Md, assetSource: SOURCE }, opts);
+      if (!t1a.ok) throw new Error(`M6d import failed: ${t1a.error.code}`);
+      if (t1a.data.tier !== 1) throw new Error(`M6d: expected tier 1, got ${t1a.data.tier}`);
+      console.log(`    ✓ Tier 1 actor ${t1a.data.actorId} cloned from ${t1a.data.matchedUuid}`);
+
+      const t1b = await runImportNpc(server, { markdown: tier1Md, assetSource: SOURCE }, opts);
+      if (!t1b.ok) throw new Error(`M6d refresh failed: ${t1b.error.code}`);
+      if (t1b.data.action !== "updated") throw new Error(`M6d: expected "updated", got "${t1b.data.action}"`);
+      if (t1b.data.actorId !== t1a.data.actorId) throw new Error(`M6d: actor _id changed on refresh`);
+      const d = t1b.data.itemChanges;
+      if (d.created !== 0 || d.deleted !== 0) throw new Error(`M6d: unexpected item deltas ${JSON.stringify(d)}`);
+      console.log(`    ✓ refresh idempotent: same actor, 0 item deltas`);
     },
   },
 ];
@@ -553,6 +610,7 @@ if (live) {
 }
 
 const TOKEN = "selftest";
+const SOURCE = "data"; // Mock mode always uses local data
 // Pass a trace logger so the selftest also exercises (and demonstrates) the
 // per-command trace the real server emits to stderr.
 const opts = { token: TOKEN, timeoutMs: 2000, log: (line) => console.log(line) };
