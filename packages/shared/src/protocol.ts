@@ -281,6 +281,30 @@ export const ImportEmbeddedFromCompendiumCommand = z.object({
 });
 export type ImportEmbeddedFromCompendiumCommand = z.infer<typeof ImportEmbeddedFromCompendiumCommand>;
 
+export const GetCompendiumDocumentCommand = z.object({
+  action: z.literal("getCompendiumDocument"),
+  documentType: DocumentType,
+  uuid: z.string().min(1),
+});
+export type GetCompendiumDocumentCommand = z.infer<typeof GetCompendiumDocumentCommand>;
+
+export interface CompendiumDocumentItem {
+  uuid: string;
+  name: string;
+  type: string;
+  img?: string;
+  system: Record<string, unknown>;
+  effects?: Record<string, unknown>[];
+}
+export interface CompendiumDocument {
+  uuid: string;
+  name: string;
+  type: string;
+  img?: string;
+  system: Record<string, unknown>;
+  items: CompendiumDocumentItem[];
+}
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -300,6 +324,7 @@ export const Command = z.discriminatedUnion("action", [
   SearchCompendiumCommand,
   ImportFromCompendiumCommand,
   ImportEmbeddedFromCompendiumCommand,
+  GetCompendiumDocumentCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

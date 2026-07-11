@@ -104,6 +104,8 @@ function commandSummary(c: Command): string {
       return `uuid=${c.uuid.slice(0, 20)}...`;
     case "importEmbeddedFromCompendium":
       return `${c.parentType}/${c.embeddedName} parent=${c.parentId} n=${c.uuids.length}`;
+    case "getCompendiumDocument":
+      return `${c.documentType} uuid=${c.uuid.slice(0, 20)}...`;
   }
 }
 

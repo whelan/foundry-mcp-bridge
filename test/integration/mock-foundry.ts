@@ -338,6 +338,8 @@ export class MockFoundry {
         return this.importFromCompendium(id, command, dryRun);
       case "importEmbeddedFromCompendium":
         return this.importEmbeddedFromCompendium(id, command, dryRun);
+      case "getCompendiumDocument":
+        return this.getCompendiumDocument(id, command);
     }
   }
 
@@ -659,5 +661,32 @@ export class MockFoundry {
     if (dryRun) return ok(id, created.map((c) => ({ ...c, _dryRun: true })));
     resolved.arr.push(...created);
     return ok(id, created);
+  }
+
+  private getCompendiumDocument(
+    id: string,
+    cmd: Extract<Command, { action: "getCompendiumDocument" }>,
+  ): CommandResult {
+    const record = this.compendium.get(cmd.uuid);
+    if (!record) {
+      return err(id, "NOT_FOUND", `compendium entry ${cmd.uuid} not found`);
+    }
+    const data = record.data as Record<string, unknown>;
+    const items = (data.items as any[] | undefined)?.map((item) => ({
+      uuid: `${cmd.uuid}.Item.${item._id}`,
+      name: String(item.name ?? ""),
+      type: String(item.type ?? ""),
+      img: typeof item.img === "string" ? item.img : undefined,
+      system: (item.system as Record<string, unknown>) ?? {},
+      effects: Array.isArray(item.effects) ? item.effects : undefined,
+    })) ?? [];
+    return ok(id, {
+      uuid: cmd.uuid,
+      name: String(data.name ?? ""),
+      type: String(data.type ?? record.documentType),
+      img: typeof data.img === "string" ? data.img : undefined,
+      system: (data.system as Record<string, unknown>) ?? {},
+      items,
+    });
   }
 }

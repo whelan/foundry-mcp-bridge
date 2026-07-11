@@ -83,3 +83,14 @@ describe("CommandResult helpers", () => {
     }
   });
 });
+
+describe("GetCompendiumDocumentCommand", () => {
+  it("parses a getCompendiumDocument command in the Command union", () => {
+    const parsed = Command.parse({
+      action: "getCompendiumDocument",
+      documentType: "Actor",
+      uuid: "Compendium.dnd5e.actors24.Actor.abc",
+    });
+    expect(parsed.action).toBe("getCompendiumDocument");
+  });
+});
