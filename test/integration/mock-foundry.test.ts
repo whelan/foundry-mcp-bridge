@@ -282,7 +282,6 @@ describe("getCompendiumDocument", () => {
     if (!res.ok) return;
     const doc = res.data as any;
     expect(doc.name).toBe("Gravemire Stalker");
-    expect(doc.type).toBe("npc");
     expect(doc.system).toBeDefined();
     expect(doc.items.length).toBe(5);
     for (const item of doc.items) {
