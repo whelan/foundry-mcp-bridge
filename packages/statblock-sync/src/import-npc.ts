@@ -591,14 +591,19 @@ export function buildCompendiumRefreshPatch(
  * Wrap a compendium item for creation, stamping its sourceUuid provenance flag.
  */
 export function buildTier1Item(item: CompendiumDocumentItem): Dnd5eItem {
-  const wrapped = structuredClone(item) as Dnd5eItem;
-  if (!wrapped.flags) {
-    wrapped.flags = {};
-  }
-  if (!wrapped.flags["foundry-mcp-bridge"]) {
-    wrapped.flags["foundry-mcp-bridge"] = {};
-  }
-  wrapped.flags["foundry-mcp-bridge"].sourceUuid = item.uuid;
+  // Pick only the fields a real Dnd5eItem document accepts -- item.uuid is
+  // the *compendium source's* identity, not a field on the created world
+  // item; carrying it through as a stray top-level key would make the
+  // create's read-back verification compare it against the new item's own
+  // (different) world uuid and spuriously fail, rolling back a valid create.
+  const wrapped: Dnd5eItem & { effects?: unknown[] } = {
+    name: item.name,
+    type: item.type,
+    img: item.img,
+    system: structuredClone(item.system),
+    ...(item.effects && item.effects.length ? { effects: structuredClone(item.effects) } : {}),
+    flags: { "foundry-mcp-bridge": { sourceUuid: item.uuid } },
+  };
   return wrapped;
 }
 

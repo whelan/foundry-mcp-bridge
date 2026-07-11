@@ -59,6 +59,15 @@ describe("buildTier1Item", () => {
     expect(item.name).toBe("Dagger");
     expect(item.flags["foundry-mcp-bridge"].sourceUuid).toBe(fresh.items[0]!.uuid);
   });
+
+  it("does not carry the compendium item's own uuid as a stray top-level field", () => {
+    // A live Foundry create's read-back verification compares every key we
+    // send against the newly-created item's own (different) world uuid --
+    // sending the source uuid as a literal `uuid` field spuriously fails
+    // that comparison and rolls back an otherwise-valid create.
+    const item = buildTier1Item(fresh.items[0]!) as any;
+    expect(item.uuid).toBeUndefined();
+  });
 });
 
 describe("buildTier1ItemPatch", () => {
