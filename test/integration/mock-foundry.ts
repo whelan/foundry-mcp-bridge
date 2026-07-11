@@ -16,6 +16,7 @@ import {
   type CommandError,
   type Json,
   COLLECTIONS,
+  EMBEDDED_FIELDS,
   checkEnvelopeGuards,
   embeddedField,
   randomID,
@@ -24,6 +25,7 @@ import {
   expandObject,
   getByPath,
   applyUpdate,
+  isPlainObject,
 } from "@foundry-mcp-bridge/shared";
 import type { WorldInfo, CompendiumEntry } from "../../packages/foundry-module/src/protocol-executor.js";
 import { loadSrdFixtures, PACK_NAME_BY_TYPE } from "../fixtures/dnd5e-srd/loader.js";
@@ -350,6 +352,20 @@ export class MockFoundry {
     // a fresh id is minted (so tests can't rely on ids the live system wouldn't keep).
     const _id = keepId && typeof data._id === "string" && data._id ? data._id : randomID();
     const doc: Json = { ...data, _id };
+    // Real Foundry auto-assigns an _id to every embedded document when the
+    // parent is created, including ones passed inline in the creation payload
+    // (e.g. Actor.create({ items: [...] })) — items without one would be
+    // unaddressable by any later updateEmbedded/deleteEmbedded/find call.
+    for (const field of new Set(Object.values(EMBEDDED_FIELDS))) {
+      const arr = doc[field];
+      if (Array.isArray(arr)) {
+        doc[field] = arr.map((entry) =>
+          isPlainObject(entry) && typeof entry._id === "string" && entry._id
+            ? entry
+            : { ...(entry as Json), _id: randomID() },
+        );
+      }
+    }
     if (dryRun) return ok(id, { ...doc, _id: null, _dryRun: true });
     this.store.set(documentKey(type, _id), doc);
     return ok(id, doc);

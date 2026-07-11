@@ -230,13 +230,11 @@ traits:
     const { actorId: updatedActorId, action, itemChanges } = (updated as any).data;
     expect(updatedActorId).toBe(actorId);
     expect(action).toBe("updated");
-    // Verify itemChanges was calculated
-    if (itemChanges) {
-      expect(typeof itemChanges.created).toBe("number");
-      expect(typeof itemChanges.updated).toBe("number");
-      expect(typeof itemChanges.deleted).toBe("number");
-      expect(typeof itemChanges.unchanged).toBe("number");
-    }
+    // Re-importing the exact same markdown is a true no-op on items: every
+    // item matches by statblockKey and compares equal, so nothing is
+    // created/updated/deleted.
+    expect(itemChanges).toEqual({ created: 0, updated: 0, deleted: 0, unchanged: itemChanges.unchanged });
+    expect(itemChanges.unchanged).toBeGreaterThan(0);
 
     // Verify the same actor was updated (not a new one)
     const allActors = mock.documents("Actor");
@@ -383,17 +381,88 @@ actions:
     expect(updatedActorId).toBe(actorId);
     expect(action).toBe("updated");
 
-    // Note: Full item diff verification would require enhancing the mock to properly
-    // flatten embedded items for queryable access. The mock currently stores items in the
-    // actor's items array and doesn't support querying them as top-level Item documents.
-    // itemChanges should be defined and contain the diff structure.
-    expect(itemChanges).toBeDefined();
+    // Longsword removed, Dagger added, Shield Bash's damage changed, Brave untouched.
+    expect(itemChanges).toEqual({ created: 1, updated: 1, deleted: 1, unchanged: 1 });
 
     // Verify the actor still exists and is the same
     const allActors = mock.documents("Actor");
     const warriorActors = allActors.filter((a: any) => a.name === "Simple Warrior");
     expect(warriorActors.length).toBe(1);
     expect(warriorActors[0]!._id).toBe(actorId);
+
+    const finalActor = warriorActors[0] as any;
+    const itemNames = finalActor.items.map((i: any) => i.name).sort();
+    expect(itemNames).toEqual(["Brave", "Dagger", "Shield Bash"]);
+  });
+
+  it("re-import with a spell removed from the note deletes the stale spell item", async () => {
+    const baseMarkdown = `# Simple Caster
+
+\`\`\`statblock
+name: Simple Caster
+size: Medium
+type: humanoid
+alignment: Neutral
+ac: 12
+ac_class: natural armor
+hp: 40
+hit_dice: 9d8
+speed: 30 ft.
+stats: [10, 12, 12, 16, 12, 10]
+senses: passive Perception 11
+languages: Common
+cr: 3
+traits:
+  - name: Spellcasting
+    desc: "The caster is a level 5 spellcaster. Its spellcasting ability is Intelligence (spell save DC 13, +5 to hit with spell attacks). The caster has the following wizard spells prepared: Cantrips (at will): fire bolt 1st level (4 slots): magic missile, shield"
+\`\`\`
+`;
+
+    const created = await runImportNpc(transport, { markdown: baseMarkdown, mode: "create", assetSource: "data" });
+    expect(created.ok).toBe(true);
+    const actorId = (created as any).data.actorId;
+
+    const firstImportActor = mock.documents("Actor").find((a: any) => a._id === actorId) as any;
+    const firstSpellNames = firstImportActor.items
+      .filter((i: any) => i.type === "spell")
+      .map((i: any) => i.name)
+      .sort();
+    expect(firstSpellNames).toEqual(["fire bolt", "magic missile", "shield"]);
+
+    // Re-import with "shield" dropped from the prepared list.
+    const modifiedMarkdown = `# Simple Caster
+
+\`\`\`statblock
+name: Simple Caster
+size: Medium
+type: humanoid
+alignment: Neutral
+ac: 12
+ac_class: natural armor
+hp: 40
+hit_dice: 9d8
+speed: 30 ft.
+stats: [10, 12, 12, 16, 12, 10]
+senses: passive Perception 11
+languages: Common
+cr: 3
+traits:
+  - name: Spellcasting
+    desc: "The caster is a level 5 spellcaster. Its spellcasting ability is Intelligence (spell save DC 13, +5 to hit with spell attacks). The caster has the following wizard spells prepared: Cantrips (at will): fire bolt 1st level (4 slots): magic missile"
+\`\`\`
+`;
+
+    const updated = await runImportNpc(transport, { markdown: modifiedMarkdown, assetSource: "data" });
+    expect(updated.ok).toBe(true);
+    expect((updated as any).data.actorId).toBe(actorId);
+    expect((updated as any).data.action).toBe("updated");
+
+    const finalActor = mock.documents("Actor").find((a: any) => a._id === actorId) as any;
+    const finalSpellNames = finalActor.items
+      .filter((i: any) => i.type === "spell")
+      .map((i: any) => i.name)
+      .sort();
+    expect(finalSpellNames).toEqual(["fire bolt", "magic missile"]);
   });
 });
 

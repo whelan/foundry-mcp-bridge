@@ -15,6 +15,34 @@ import { parseDamageFormula } from "./math.js";
 /** Random 16-char Foundry document id. */
 export const foundryId = randomID;
 
+const ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+/**
+ * Deterministic 16-char Foundry-style id derived from a stable seed (e.g. an
+ * item's own statblockKey). Re-synthesizing the same statblock content must
+ * produce byte-identical activity ids so a re-import with no real changes is
+ * a true no-op — a random id here made every re-import look "changed" even
+ * when nothing was edited, since the activity dict's own key differed each
+ * time (see import-npc.ts's diffAndApplyItems).
+ */
+export function stableId(seed: string): string {
+  let h = 0x811c9dc5;
+  const chars: string[] = [];
+  let cursor = seed;
+  while (chars.length < 16) {
+    for (let i = 0; i < cursor.length; i++) {
+      h ^= cursor.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    h = h >>> 0;
+    for (let i = 0; i < 4 && chars.length < 16; i++) {
+      chars.push(ID_CHARS[(h >>> (i * 8)) % ID_CHARS.length]!);
+    }
+    cursor = `${seed}#${chars.length}`; // perturb so successive rounds differ
+  }
+  return chars.join("");
+}
+
 /** dnd5e structured damage part (used for damage.base and activity damage.parts). */
 export interface ActivityDamagePart {
   number: number;

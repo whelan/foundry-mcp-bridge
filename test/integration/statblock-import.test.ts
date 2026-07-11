@@ -84,13 +84,13 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
         "searchSpellCompendium",
       );
     },
-    async importEmbeddedFromCompendium(parentId, uuid) {
+    async importEmbeddedFromCompendium(parentId, uuid, patch) {
       const created = unwrap<Array<{ _id: string }>>(
         await runImportEmbeddedFromCompendium(transport, {
           parentType: "Actor",
           parentId,
           embeddedName: "Item",
-          uuids: [{ uuid }],
+          uuids: [{ uuid, ...(patch && { patch }) }],
         }),
         "importEmbeddedFromCompendium",
       );
@@ -112,7 +112,7 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
       const results = unwrap<Array<{ _id: string }>>(
         await runFindDocuments(transport, {
           documentType: "Actor",
-          query: { flags: { "foundry-mcp-bridge": { statblockKey: key } } },
+          query: { "flags.foundry-mcp-bridge.statblockKey": key },
         }),
         "findActorsByKey",
       );
@@ -129,14 +129,11 @@ function realDeps(transport: RelayTransport): ImportNpcDeps {
       );
     },
     async findActorItems(actorId) {
-      const items = unwrap<Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }>>(
-        await runFindDocuments(transport, {
-          documentType: "Item",
-          query: { "parent._id": actorId },
-        }),
+      const actorDoc = unwrap<{ items?: Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }> }>(
+        await runFindDocuments(transport, { documentType: "Actor", id: actorId }),
         "findActorItems",
       );
-      return items;
+      return actorDoc.items ?? [];
     },
     async updateEmbeddedItem(actorId, itemId, patch) {
       const updated = unwrap<Array<{ _id: string }>>(

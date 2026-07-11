@@ -21,6 +21,7 @@ import {
   utilityActivity,
   toDamagePart,
   parseTemplate,
+  stableId,
 } from "./activities.js";
 import { statblockKey } from "./slug.js";
 
@@ -363,6 +364,10 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
   // dnd5e's activation-type strings — legendary/lair actions must NOT
   // collapse to "action" (that would consume the wrong action-economy slot).
   const activation: ActivationType = action.type;
+  // Derived from the item's own stable key, not random: re-synthesizing the
+  // same action must produce the same activity id so upsert re-imports with
+  // no real edits are true no-ops (see stableId's doc comment).
+  const activityId = stableId(`action/${statblockKey(action.name)}`);
 
   if (attackParsed) {
     const [base, ...extra] = attackParsed.damage;
@@ -394,6 +399,7 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
         proficient: null,
         uses: itemUses(action.recharge),
         activities: attackActivity({
+          id: activityId,
           bonus: attackParsed.bonus,
           attackType: attackParsed.type === "ranged" ? "ranged" : "melee",
           extraParts: extra.map(toDamagePart),
@@ -414,6 +420,7 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
       uses: itemUses(action.recharge),
       flagPrefix: "action",
       activities: saveActivity({
+        id: activityId,
         ability: saveParsed.ability.toLowerCase().substring(0, 3),
         dc: saveParsed.dc,
         parts: saveParsed.damage.map(toDamagePart),
@@ -430,7 +437,7 @@ function actionToItem(action: StatblockData["actions"][0]): Dnd5eItem {
   // Still recharge-limited if the statblock says so (e.g. a narrative-only
   // "Roar (Recharge 5-6)" the grammar parser didn't classify as attack/save).
   return featItem(action.name, action.description, {
-    activities: utilityActivity({ activation }),
+    activities: utilityActivity({ id: activityId, activation }),
     uses: itemUses(action.recharge),
     flagPrefix: "action",
   });

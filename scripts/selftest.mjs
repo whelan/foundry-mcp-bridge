@@ -41,7 +41,7 @@ import {
   runImportNpc,
 } from "../packages/mcp-server/dist/index.js";
 // Reuse the real dot-notation merge + embedded-field mapping instead of re-implementing them.
-import { applyUpdate, embeddedField } from "@foundry-mcp-bridge/shared";
+import { applyUpdate, embeddedField, getByPath } from "@foundry-mcp-bridge/shared";
 import { parseStatblock, importNpc, verifyImportedNpc } from "@foundry-mcp-bridge/statblock-sync";
 import fs from "fs";
 
@@ -82,6 +82,13 @@ function handle(env) {
     case "create": {
       const _id = c.data._id || rid();
       const doc = { ...c.data, _id };
+      // Real Foundry auto-assigns an _id to every embedded document at create
+      // time, including ones passed inline (e.g. Actor.create({ items: [...] }))
+      // — an item without one would be unaddressable by a later updateEmbedded
+      // /deleteEmbedded/find call.
+      if (Array.isArray(doc.items)) {
+        doc.items = doc.items.map((item) => (item._id ? item : { ...item, _id: rid() }));
+      }
       if (!env.dryRun) store.set(`${c.documentType}:${_id}`, doc);
       return ok(doc);
     }
@@ -90,31 +97,16 @@ function handle(env) {
         const d = store.get(`${c.documentType}:${c.id}`);
         return d ? ok(d) : err("NOT_FOUND", `${c.documentType} ${c.id}`);
       }
-      // Query-based find: filter documents by flags or other conditions
+      // Query-based find: shallow equality over dot-notation paths, matching
+      // the real find() in foundry-runtime.ts (embedded items aren't queried
+      // as top-level documents here — they're read off their parent's own
+      // array field, same as production; see findActorItems in tools.ts).
       if (c.query) {
         const results = [];
-        if (c.query["parent._id"]) {
-          // Query by parent._id (for finding embedded items)
-          const parentId = c.query["parent._id"];
-          // Find the parent document and return its embedded items
-          const parentKey = `Actor:${parentId}`;
-          const parent = store.get(parentKey);
-          if (parent) {
-            const field = embeddedField(c.documentType); // e.g., "items" for "Item"
-            const items = parent[field] || [];
-            results.push(...items);
-          }
-          return ok(results);
-        }
-        // Standard query matching for flags.foundry-mcp-bridge.statblockKey
         for (const [key, doc] of store) {
           if (!key.startsWith(`${c.documentType}:`)) continue;
-          if (c.query.flags?.["foundry-mcp-bridge"]?.statblockKey) {
-            const targetKey = c.query.flags["foundry-mcp-bridge"].statblockKey;
-            if (doc.flags?.["foundry-mcp-bridge"]?.statblockKey === targetKey) {
-              results.push(doc);
-            }
-          }
+          const matches = Object.entries(c.query).every(([path, value]) => getByPath(doc, path) === value);
+          if (matches) results.push(doc);
         }
         return ok(results);
       }
@@ -330,10 +322,10 @@ async function runNpcLeg(server, opts, assetSource = "data", fixture = { name: "
       if (!res.ok) throw new Error(`searchSpellCompendium failed: ${res.error.code}`);
       return res.data || [];
     },
-    async importEmbeddedFromCompendium(parentId, uuid) {
+    async importEmbeddedFromCompendium(parentId, uuid, patch) {
       const res = await runImportEmbeddedFromCompendium(
         server,
-        { parentType: "Actor", parentId, embeddedName: "Item", uuids: [{ uuid }] },
+        { parentType: "Actor", parentId, embeddedName: "Item", uuids: [{ uuid, ...(patch && { patch }) }] },
         opts,
       );
       if (!res.ok) throw new Error(`importEmbeddedFromCompendium failed: ${res.error.code}`);
@@ -359,9 +351,9 @@ async function runNpcLeg(server, opts, assetSource = "data", fixture = { name: "
       return res.data;
     },
     async findActorItems(actorId) {
-      const res = await runFindDocuments(server, { documentType: "Item", query: { "parent._id": actorId } }, opts);
+      const res = await runFindDocuments(server, { documentType: "Actor", id: actorId }, opts);
       if (!res.ok) throw new Error(`findActorItems failed: ${res.error.code}`);
-      return res.data || [];
+      return res.data.items || [];
     },
     async updateEmbeddedItem(actorId, itemId, patch) {
       const res = await runUpdateEmbedded(
@@ -477,16 +469,12 @@ const NPC_LEGS = [
         throw new Error(`M6c: expected same actorId ${resultM6b.data.actorId}, got ${resultM6c.data.actorId}`);
       }
       const { created, updated, deleted } = resultM6c.data.itemChanges;
-      // Verify minimal/zero item changes: no new items created, no deletions
-      if ((created || 0) !== 0 || (deleted || 0) !== 0) {
+      // Re-importing the exact same markdown must be a true no-op on items:
+      // zero creates/updates/deletes. Anything nonzero means the item-diff
+      // comparison is treating unchanged items as changed.
+      if ((created || 0) !== 0 || (updated || 0) !== 0 || (deleted || 0) !== 0) {
         throw new Error(
-          `M6c: expected zero creates/deletes, got created=${created}, deleted=${deleted}`
-        );
-      }
-      // Allow up to 1 updated item (minor re-stamping is acceptable for idempotent verification)
-      if ((updated || 0) > 1) {
-        throw new Error(
-          `M6c: expected ≤1 item update, got ${updated}`
+          `M6c: expected zero item deltas, got created=${created}, updated=${updated}, deleted=${deleted}`
         );
       }
       // Apply same expected failures as M6b (the "fli" spell typo is intentional)

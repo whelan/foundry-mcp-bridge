@@ -589,6 +589,20 @@ async function resolveFolder(
 }
 
 /**
+ * Unwrap a ToolOutcome for importNpc's injected deps, or throw an Error
+ * carrying the original code/message/details — so import-npc.ts's stage
+ * tagging (which reads `err.details`) has something real to attach to.
+ */
+function unwrapDep<T>(opName: string, result: ToolOutcome): T {
+  if (!result.ok) {
+    throw Object.assign(new Error(`${opName}: ${result.error.code}: ${result.error.message}`), {
+      details: result.error.details,
+    });
+  }
+  return result.data as T;
+}
+
+/**
  * Import an NPC from a statblock markdown note.
  * Orchestrates: lint → parse → folder → importNpc() → verify.
  */
@@ -666,10 +680,7 @@ export async function runImportNpc(
           documentType: "Actor",
           nameQuery,
         });
-        if (!result.ok) {
-          throw new Error(`searchCompendium: ${result.error.code}`);
-        }
-        return result.data as CompendiumEntry[];
+        return unwrapDep("searchCompendium", result);
       },
 
       async importFromCompendium(
@@ -682,10 +693,7 @@ export async function runImportNpc(
           patch,
           folderId,
         });
-        if (!result.ok) {
-          throw new Error(`importFromCompendium: ${result.error.code}`);
-        }
-        return result.data as { _id: string };
+        return unwrapDep("importFromCompendium", result);
       },
 
       async createDocument(data: Record<string, unknown>): Promise<{ _id: string }> {
@@ -693,10 +701,7 @@ export async function runImportNpc(
           documentType: "Actor",
           data: data as Record<string, unknown>,
         });
-        if (!result.ok) {
-          throw new Error(`createDocument: ${result.error.code}`);
-        }
-        return result.data as { _id: string };
+        return unwrapDep("createDocument", result);
       },
 
       async uploadImage(
@@ -710,10 +715,7 @@ export async function runImportNpc(
           filename,
           contentBase64,
         });
-        if (!result.ok) {
-          throw new Error(`uploadAsset: ${result.error.code}`);
-        }
-        return (result.data as any).path;
+        return unwrapDep<{ path: string }>("uploadAsset", result).path;
       },
 
       async searchSpellCompendium(nameQuery: string): Promise<CompendiumEntry[]> {
@@ -721,26 +723,21 @@ export async function runImportNpc(
           documentType: "Item",
           nameQuery,
         });
-        if (!result.ok) {
-          throw new Error(`searchSpellCompendium: ${result.error.code}`);
-        }
-        return result.data as CompendiumEntry[];
+        return unwrapDep("searchSpellCompendium", result);
       },
 
       async importEmbeddedFromCompendium(
         parentId: string,
         uuid: string,
+        patch?: Record<string, unknown>,
       ): Promise<{ _id: string }> {
         const result = await runImportEmbeddedFromCompendium(transport, {
           parentType: "Actor",
           parentId,
           embeddedName: "Item",
-          uuids: [{ uuid }],
+          uuids: [{ uuid, ...(patch && { patch }) }],
         });
-        if (!result.ok) {
-          throw new Error(`importEmbeddedFromCompendium: ${result.error.code}`);
-        }
-        return (result.data as any[])[0];
+        return unwrapDep<Array<{ _id: string }>>("importEmbeddedFromCompendium", result)[0]!;
       },
 
       async createEmbeddedItem(
@@ -753,21 +750,19 @@ export async function runImportNpc(
           embeddedName: "Item",
           data: [data],
         });
-        if (!result.ok) {
-          throw new Error(`createEmbeddedItem: ${result.error.code}`);
-        }
-        return (result.data as any[])[0];
+        return unwrapDep<Array<{ _id: string }>>("createEmbeddedItem", result)[0]!;
       },
 
       async findActorsByKey(key: string): Promise<{ _id: string }[]> {
+        // Dot-notation path, not a nested object literal: the wire contract's
+        // `find` query is documented (and implemented by foundry-runtime.ts) as
+        // shallow equality over dot-notation paths, not deep object matching —
+        // a nested literal would compare by reference and never match live.
         const result = await runFindDocuments(transport, {
           documentType: "Actor",
-          query: { flags: { "foundry-mcp-bridge": { statblockKey: key } } },
+          query: { "flags.foundry-mcp-bridge.statblockKey": key },
         });
-        if (!result.ok) {
-          throw new Error(`findActorsByKey: ${result.error.code}`);
-        }
-        return result.data as { _id: string }[];
+        return unwrapDep("findActorsByKey", result);
       },
 
       async updateDocument(actorId: string, patch: Record<string, unknown>): Promise<{ _id: string }> {
@@ -776,23 +771,24 @@ export async function runImportNpc(
           id: actorId,
           data: patch,
         });
-        if (!result.ok) {
-          throw new Error(`updateDocument: ${result.error.code}`);
-        }
-        return result.data as { _id: string };
+        return unwrapDep("updateDocument", result);
       },
 
       async findActorItems(
         actorId: string,
-      ): Promise<Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }>> {
+      ): Promise<Array<{ _id: string; name: string; type: string; img?: string; system?: unknown; flags?: Record<string, any> }>> {
+        // Embedded items aren't addressable as top-level Item documents (Item's
+        // collection is Foundry's world-level items sidebar) — they live on the
+        // actor's own `items` array, so fetch the actor and read it off there.
         const result = await runFindDocuments(transport, {
-          documentType: "Item",
-          query: { "parent._id": actorId },
+          documentType: "Actor",
+          id: actorId,
         });
-        if (!result.ok) {
-          throw new Error(`findActorItems: ${result.error.code}`);
-        }
-        return result.data as Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }>;
+        const actor = unwrapDep<{ items?: Array<{ _id: string; name: string; type: string; img?: string; system?: unknown; flags?: Record<string, any> }> }>(
+          "findActorItems",
+          result,
+        );
+        return actor.items ?? [];
       },
 
       async updateEmbeddedItem(
@@ -806,10 +802,7 @@ export async function runImportNpc(
           embeddedName: "Item",
           data: [{ _id: itemId, ...patch }],
         });
-        if (!result.ok) {
-          throw new Error(`updateEmbeddedItem: ${result.error.code}`);
-        }
-        return (result.data as any[])[0];
+        return unwrapDep<Array<{ _id: string }>>("updateEmbeddedItem", result)[0]!;
       },
 
       async deleteEmbeddedItem(actorId: string, itemId: string): Promise<{ _id: string }> {
@@ -819,10 +812,7 @@ export async function runImportNpc(
           embeddedName: "Item",
           ids: [itemId],
         });
-        if (!result.ok) {
-          throw new Error(`deleteEmbeddedItem: ${result.error.code}`);
-        }
-        return (result.data as any[])[0];
+        return unwrapDep<Array<{ _id: string }>>("deleteEmbeddedItem", result)[0]!;
       },
     } as any;
 
@@ -854,7 +844,7 @@ export async function runImportNpc(
           error: {
             code,
             message,
-            details: { actorId: errorActorId, stage, cause },
+            details: { actorId: errorActorId, stage, cause, causeDetails: err.details },
           },
           steps,
         };
@@ -864,7 +854,7 @@ export async function runImportNpc(
           error: {
             code,
             message,
-            details: { stage, cause },
+            details: { stage, cause, causeDetails: err.details },
           },
           steps,
         };

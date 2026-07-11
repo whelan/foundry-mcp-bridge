@@ -20,7 +20,7 @@
  * mechanical actor, just without statblock-specific overrides applied.
  */
 
-import type { CompendiumEntry } from "@foundry-mcp-bridge/shared";
+import { isSubset, type CompendiumEntry } from "@foundry-mcp-bridge/shared";
 import type { StatblockData } from "./schema.js";
 import { statblockToFoundryActor, type Dnd5eActorDocument } from "./to-foundry.js";
 import { matchStatblock } from "./match.js";
@@ -49,7 +49,7 @@ export interface ImportNpcDeps {
   /** Search Item compendia (all packs) for a spell by name. */
   searchSpellCompendium(nameQuery: string): Promise<CompendiumEntry[]>;
   /** Clone a compendium Item as an embedded Item on the given actor. */
-  importEmbeddedFromCompendium(parentId: string, uuid: string): Promise<{ _id: string }>;
+  importEmbeddedFromCompendium(parentId: string, uuid: string, patch?: Record<string, unknown>): Promise<{ _id: string }>;
   /** Create a literal (non-compendium) embedded Item on the given actor. */
   createEmbeddedItem(parentId: string, data: Record<string, unknown>): Promise<{ _id: string }>;
   /** Find actors by their statblockKey flag. */
@@ -57,7 +57,7 @@ export interface ImportNpcDeps {
   /** Update an actor document by ID. */
   updateDocument(actorId: string, patch: Record<string, unknown>): Promise<{ _id: string }>;
   /** Find all items on an actor. */
-  findActorItems(actorId: string): Promise<Array<{ _id: string; name: string; type: string; flags?: Record<string, any> }>>;
+  findActorItems(actorId: string): Promise<Array<{ _id: string; name: string; type: string; img?: string; system?: unknown; flags?: Record<string, any> }>>;
   /** Update an embedded item on an actor. */
   updateEmbeddedItem(actorId: string, itemId: string, patch: Record<string, unknown>): Promise<{ _id: string }>;
   /** Delete an embedded item from an actor. */
@@ -121,23 +121,7 @@ export async function importNpc(
   // UPDATE PATH
   if (matchedActorId && (mode === "upsert" || mode === "update")) {
     try {
-      // Build patch of statblock-owned fields only
-      let resolvedImagePath: string | undefined;
-      if (imageContent && deps.uploadImage) {
-        try {
-          resolvedImagePath = await deps.uploadImage(
-            imageContent.filename,
-            imageContent.contentBase64,
-            `worlds/npcs/${statblock.data.name.replace(/\s+/g, "-").toLowerCase()}`
-          );
-        } catch (e) {
-          const err = e as any;
-          err.actorId = undefined;
-          err.stage = "uploadImage";
-          throw err;
-        }
-      }
-
+      const resolvedImagePath = await resolveImagePath(statblock, imageContent, deps);
       const patch = buildNpcUpdatePatch(statblock, resolvedImagePath, folderId);
       const updateResult = await deps.updateDocument(matchedActorId, patch);
       actorId = updateResult._id;
@@ -155,13 +139,15 @@ export async function importNpc(
     }
 
     // Item diffing for upsert (Tier 3 only for v1)
+    let preDiffItems: Array<{ _id: string; flags?: Record<string, any> }> = [];
     try {
-      const itemChanges = await diffAndApplyItems(
+      const { currentItems, ...itemChanges } = await diffAndApplyItems(
         matchedActorId,
         statblock,
         deps
       );
       result.itemChanges = itemChanges;
+      preDiffItems = currentItems;
     } catch (e) {
       const err = e as any;
       err.actorId = actorId;
@@ -169,18 +155,7 @@ export async function importNpc(
       throw err;
     }
 
-    // Attach spells if needed
-    try {
-      if (statblock.spellcasting) {
-        await attachSpells(statblock.spellcasting, actorId, deps);
-      }
-    } catch (e) {
-      const err = e as any;
-      err.actorId = actorId;
-      err.stage = "attachSpells";
-      throw err;
-    }
-
+    await attachSpellsTagged(statblock, actorId, deps, preDiffItems);
     return result;
   }
 
@@ -190,27 +165,19 @@ export async function importNpc(
     const plan = matchStatblock(statblock, index);
 
     if (plan.tier === 1) {
-      const doc = await deps.importFromCompendium(plan.uuid, plan.patch, folderId);
+      // Stamp statblockKey even though Tier 1 isn't an upsert target in v1
+      // (see design doc's Non-goals) — so a later Tier 1 re-sync has
+      // something to match against without needing a data migration.
+      const tier1Patch = {
+        ...plan.patch,
+        flags: { "foundry-mcp-bridge": { statblockKey: key } },
+      };
+      const doc = await deps.importFromCompendium(plan.uuid, tier1Patch, folderId);
       actorId = doc._id;
       action = "created";
       result = { actorId, tier: 1, matchedUuid: plan.uuid, action };
     } else {
-      let resolvedImagePath: string | undefined;
-      if (imageContent && deps.uploadImage) {
-        try {
-          resolvedImagePath = await deps.uploadImage(
-            imageContent.filename,
-            imageContent.contentBase64,
-            `worlds/npcs/${statblock.data.name.replace(/\s+/g, "-").toLowerCase()}`
-          );
-        } catch (e) {
-          const err = e as any;
-          err.actorId = undefined;
-          err.stage = "uploadImage";
-          throw err;
-        }
-      }
-
+      const resolvedImagePath = await resolveImagePath(statblock, imageContent, deps);
       const actorData = statblockToFoundryActor(statblock, resolvedImagePath);
       if (folderId) {
         actorData.folder = folderId;
@@ -231,10 +198,41 @@ export async function importNpc(
     throw err;
   }
 
-  // Attach spells
+  await attachSpellsTagged(statblock, actorId, deps);
+  return result;
+}
+
+/** Upload the NPC's portrait image, if provided, tagging upload failures for the outer error handler. */
+async function resolveImagePath(
+  statblock: StatblockData,
+  imageContent: { filename: string; contentBase64: string } | undefined,
+  deps: ImportNpcDeps
+): Promise<string | undefined> {
+  if (!imageContent || !deps.uploadImage) return undefined;
+  try {
+    return await deps.uploadImage(
+      imageContent.filename,
+      imageContent.contentBase64,
+      `worlds/npcs/${statblock.data.name.replace(/\s+/g, "-").toLowerCase()}`
+    );
+  } catch (e) {
+    const err = e as any;
+    err.actorId = undefined;
+    err.stage = "uploadImage";
+    throw err;
+  }
+}
+
+/** Attach the statblock's spell list (if any) to the actor, tagging failures with actorId/stage. */
+async function attachSpellsTagged(
+  statblock: StatblockData,
+  actorId: string,
+  deps: ImportNpcDeps,
+  currentItems: Array<{ _id: string; flags?: Record<string, any> }> = []
+): Promise<void> {
   try {
     if (statblock.spellcasting) {
-      await attachSpells(statblock.spellcasting, actorId, deps);
+      await attachSpells(statblock.spellcasting, actorId, deps, currentItems);
     }
   } catch (e) {
     const err = e as any;
@@ -242,8 +240,6 @@ export async function importNpc(
     err.stage = "attachSpells";
     throw err;
   }
-
-  return result;
 }
 
 /**
@@ -350,10 +346,35 @@ export function buildNpcUpdatePatch(
 async function attachSpells(
   spellcasting: NonNullable<StatblockData["spellcasting"]>,
   actorId: string,
-  deps: ImportNpcDeps
+  deps: ImportNpcDeps,
+  currentItems: Array<{ _id: string; flags?: Record<string, any> }> = []
 ): Promise<void> {
+  // Skip spells already attached from a prior import (matched by their own
+  // statblockKey flag) — re-searching and re-cloning a spell that's already
+  // correctly attached would duplicate it on every re-import instead of
+  // resolving only new/changed entries (see design doc's item-diff intent).
+  // `currentItems` is the actor's full item list, already fetched by the
+  // update path's diffAndApplyItems — passed in rather than re-fetched here
+  // to avoid a second full-actor round trip on every upsert.
+  const existingSpellItems = currentItems.filter((i) => {
+    const key = i.flags?.["foundry-mcp-bridge"]?.statblockKey;
+    return typeof key === "string" && key.startsWith("spell/");
+  });
+  const existingSpellKeys = new Set(
+    existingSpellItems.map((i) => i.flags!["foundry-mcp-bridge"]!.statblockKey as string),
+  );
+
+  const freshSpellKeys = new Set<string>();
   for (const level of spellcasting.levels) {
     for (const spellName of level.spellNames) {
+      const key = `spell/${statblockKey(spellName)}`;
+      freshSpellKeys.add(key);
+      // Also skip a duplicate spell name within this same statblock (checked
+      // against keys already processed this call, not just ones from a prior
+      // import) — existingSpellKeys alone only guards cross-run duplicates.
+      if (existingSpellKeys.has(key)) continue;
+      existingSpellKeys.add(key);
+
       const results = await deps.searchSpellCompendium(spellName);
       const exactIn = (pack: string) =>
         results.find(
@@ -362,14 +383,27 @@ async function attachSpells(
       const match = exactIn("dnd5e.spells24") ?? exactIn("dnd5e.spells");
 
       if (match) {
-        await deps.importEmbeddedFromCompendium(actorId, match.uuid);
+        await deps.importEmbeddedFromCompendium(actorId, match.uuid, {
+          flags: { "foundry-mcp-bridge": { statblockKey: key } },
+        });
       } else {
         await deps.createEmbeddedItem(actorId, {
           name: spellName,
           type: "spell",
           img: "icons/svg/book.svg",
+          flags: { "foundry-mcp-bridge": { statblockKey: key } },
         });
       }
+    }
+  }
+
+  // Delete spells removed from the note on re-import — the design doc groups
+  // spells with actions/feats under the same create/update/delete key-diff
+  // contract; only re-resolving unchanged keys is skipped, not deletion.
+  for (const item of existingSpellItems) {
+    const key = item.flags!["foundry-mcp-bridge"]!.statblockKey as string;
+    if (!freshSpellKeys.has(key)) {
+      await deps.deleteEmbeddedItem(actorId, item._id);
     }
   }
 }
@@ -380,13 +414,21 @@ async function attachSpells(
  * new items are created, removed items are deleted, and GM-added unflagged items
  * are preserved.
  *
- * Returns a summary of changes: { created, updated, deleted, unchanged }.
+ * Returns a summary of changes plus the actor's full pre-diff item list, so the
+ * caller (importNpc's update path) can hand it to attachSpells instead of
+ * re-fetching the same actor a second time.
  */
 async function diffAndApplyItems(
   actorId: string,
   statblock: StatblockData,
   deps: ImportNpcDeps
-): Promise<{ created: number; updated: number; deleted: number; unchanged: number }> {
+): Promise<{
+  created: number;
+  updated: number;
+  deleted: number;
+  unchanged: number;
+  currentItems: Array<{ _id: string; name: string; type: string; img?: string; system?: unknown; flags?: Record<string, any> }>;
+}> {
   // Fetch current items
   const currentItems = await deps.findActorItems(actorId);
 
@@ -394,9 +436,17 @@ async function diffAndApplyItems(
   const freshActor = statblockToFoundryActor(statblock);
   const freshItems = freshActor.items;
 
-  // Partition current items by flag presence
-  const flaggedItems = currentItems.filter(i => i.flags?.["foundry-mcp-bridge"]?.statblockKey);
-  const unflaggedItems = currentItems.filter(i => !i.flags?.["foundry-mcp-bridge"]?.statblockKey);
+  // Partition current items by flag presence. Unflagged (GM-added) items are
+  // preserved implicitly: they're excluded from currentByKey below, so none
+  // of the create/update/delete loops ever touch them. Spell items (flagged
+  // "spell/...") are also excluded here even though they're tool-created:
+  // they're synthesized and diffed separately by attachSpells, not by
+  // statblockToFoundryActor's actor.items — treating them as "in scope" here
+  // would make this loop delete them right before attachSpells re-adds them.
+  const flaggedItems = currentItems.filter((i) => {
+    const key = i.flags?.["foundry-mcp-bridge"]?.statblockKey;
+    return typeof key === "string" && !key.startsWith("spell/");
+  });
 
   // Build maps for diffing
   const currentByKey = new Map(
@@ -423,30 +473,27 @@ async function diffAndApplyItems(
     const freshItem = freshByKey.get(currentKey);
     if (!freshItem) continue; // Delete handled below
 
-    if (currentItem.name === freshItem.name) {
-      // No name change, just check if system/img changed
-      const changed = JSON.stringify(currentItem) !== JSON.stringify(freshItem);
-      if (changed) {
-        // Build minimal patch: name, img, system
-        const patch = {
-          name: freshItem.name,
-          img: freshItem.img,
-          system: freshItem.system,
-        };
-        await deps.updateEmbeddedItem(actorId, currentItem._id, patch);
-        updated++;
-      } else {
-        unchanged++;
-      }
-    } else {
-      // Name changed, update it
-      const patch = {
+    // Compare only the fields we own (name/img/system), and only that our
+    // own leaves are still present — not whole-object equality. A real
+    // Foundry/dnd5e item is normalized on create/read with extra derived
+    // fields our synthesis never populates (and never will), so isSubset
+    // (actual ⊇ expected) is what "nothing meaningful changed" means here;
+    // JSON.stringify equality reported every real item as "changed" on every
+    // re-import even when the statblock was untouched.
+    const changed =
+      currentItem.name !== freshItem.name ||
+      currentItem.img !== freshItem.img ||
+      !isSubset(currentItem.system, freshItem.system);
+
+    if (changed) {
+      await deps.updateEmbeddedItem(actorId, currentItem._id, {
         name: freshItem.name,
         img: freshItem.img,
         system: freshItem.system,
-      };
-      await deps.updateEmbeddedItem(actorId, currentItem._id, patch);
+      });
       updated++;
+    } else {
+      unchanged++;
     }
   }
 
@@ -458,5 +505,5 @@ async function diffAndApplyItems(
     }
   }
 
-  return { created, updated, deleted, unchanged };
+  return { created, updated, deleted, unchanged, currentItems };
 }
