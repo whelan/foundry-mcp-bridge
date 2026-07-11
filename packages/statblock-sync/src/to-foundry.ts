@@ -281,6 +281,7 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
     flags: {
       "foundry-mcp-bridge": {
         statblockKey: statblockKey(statblock.data.name),
+        tier: 3,
       },
     },
   };

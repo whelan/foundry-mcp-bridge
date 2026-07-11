@@ -66,4 +66,10 @@ describe("statblockToFoundryActor", () => {
     expect(key).toMatch(/^[a-z0-9-]+$/);
     expect(key).not.toMatch(/^-|-$/); // No leading/trailing hyphens
   });
+
+  it("stamps tier 3 on the synthesized actor flag", () => {
+    const statblock = loadFixture("test-archmage.md");
+    const actor = statblockToFoundryActor(statblock);
+    expect(actor.flags?.["foundry-mcp-bridge"]?.tier).toBe(3);
+  });
 });
