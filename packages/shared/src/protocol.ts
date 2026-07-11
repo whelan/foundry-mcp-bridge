@@ -321,6 +321,7 @@ export const Command = z.discriminatedUnion("action", [
   SearchCompendiumCommand,
   ImportFromCompendiumCommand,
   ImportEmbeddedFromCompendiumCommand,
+  GetCompendiumDocumentCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 
