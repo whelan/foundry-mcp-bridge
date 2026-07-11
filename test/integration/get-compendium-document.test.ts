@@ -7,7 +7,6 @@ describe("runGetCompendiumDocument", () => {
   it("reads a compendium actor's data + items over the transport", async () => {
     const transport = new MockTransport(new MockFoundry());
     const result = await runGetCompendiumDocument(transport, {
-      documentType: "Actor",
       uuid: "Compendium.dnd5e.actors24.gravemire-stalker",
     });
     expect(result.ok).toBe(true);

@@ -505,7 +505,6 @@ export async function runImportFromCompendium(
 // --- get_compendium_document ------------------------------------------------
 
 export const GetCompendiumDocumentShape = {
-  documentType: DocumentType,
   uuid: z.string().min(1),
 };
 const GetCompendiumDocument = z.object(GetCompendiumDocumentShape);

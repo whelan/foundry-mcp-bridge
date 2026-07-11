@@ -839,7 +839,6 @@ export function searchCompendiumReliable(
 }
 
 export interface GetCompendiumDocumentInput {
-  documentType: DocumentType;
   uuid: string;
 }
 
