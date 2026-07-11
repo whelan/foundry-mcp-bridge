@@ -681,9 +681,7 @@ export class MockFoundry {
       effects: Array.isArray(item.effects) ? item.effects : undefined,
     })) ?? [];
     return ok(id, {
-      uuid: cmd.uuid,
       name: String(data.name ?? ""),
-      type: String(data.type ?? record.documentType),
       img: typeof data.img === "string" ? data.img : undefined,
       system: (data.system as Record<string, unknown>) ?? {},
       items,
