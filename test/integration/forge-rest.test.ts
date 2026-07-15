@@ -58,18 +58,28 @@ describe("ForgeRestClient", () => {
     expect(() => new ForgeRestClient({ userId: "u", apiKey: "" })).toThrow(/apiKey/);
   });
 
-  it("browseAssets calls the user assets endpoint with the auth header", async () => {
+  it("browseAssets POSTs to /assets/browse and surfaces file urls + dir names", async () => {
     const { fetch, calls } = fakeFetch({
-      body: JSON.stringify({ files: ["a.webp", 1, "b.png"], dirs: ["sub"] }),
+      body: JSON.stringify({
+        files: [
+          { name: "a.webp", path: "s/a.webp", url: "https://cdn/s/a.webp", size: 1 },
+          { name: "b.png", path: "s/b.png", url: "https://cdn/s/b.png", size: 2 },
+        ],
+        dirs: [{ name: "sub", path: "s/sub/" }],
+      }),
     });
     const res = await client(fetch).browseAssets({ path: "worlds/strahd/scenes" });
 
-    expect(res).toEqual({ files: ["a.webp", "b.png"], dirs: ["sub"] });
+    expect(res).toEqual({
+      files: ["https://cdn/s/a.webp", "https://cdn/s/b.png"],
+      dirs: ["sub"],
+    });
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe(
-      `${BASE}/user/u1/assets?path=${encodeURIComponent("worlds/strahd/scenes")}`,
-    );
-    expect(calls[0]!.init?.method).toBe("GET");
+    expect(calls[0]!.url).toBe(`${BASE}/assets/browse`);
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({
+      path: "worlds/strahd/scenes",
+    });
     expect(headerOf(calls[0]!.init, "Authorization")).toBe("secret");
   });
 
@@ -78,9 +88,13 @@ describe("ForgeRestClient", () => {
     expect(await client(fetch).browseAssets({ path: "x" })).toEqual({ files: [], dirs: [] });
   });
 
-  it("uploadAsset posts multipart and returns the stored path", async () => {
+  it("uploadAsset posts multipart with the full dest path and returns the cdn url", async () => {
     const { fetch, calls } = fakeFetch({
-      body: JSON.stringify({ path: "worlds/strahd/scenes/village.webp" }),
+      body: JSON.stringify({
+        success: true,
+        path: "worlds/strahd/scenes/village.webp",
+        url: "https://cdn/worlds/strahd/scenes/village.webp",
+      }),
     });
     const res = await client(fetch).uploadAsset({
       target: "worlds/strahd/scenes",
@@ -89,13 +103,26 @@ describe("ForgeRestClient", () => {
       mimeType: "image/webp",
     });
 
-    expect(res).toEqual({ path: "worlds/strahd/scenes/village.webp" });
+    expect(res).toEqual({ path: "https://cdn/worlds/strahd/scenes/village.webp" });
     expect(calls[0]!.url).toBe(`${BASE}/assets/upload`);
     expect(calls[0]!.init?.method).toBe("POST");
     expect(calls[0]!.init?.body).toBeInstanceOf(FormData);
     const form = calls[0]!.init?.body as FormData;
-    expect(form.get("target")).toBe("worlds/strahd/scenes");
+    // Full destination path (dir + filename), not a bare directory.
+    expect(form.get("path")).toBe("worlds/strahd/scenes/village.webp");
     expect(form.get("file")).toBeInstanceOf(Blob);
+  });
+
+  it("uploadAsset falls back to the relative path when the response omits url", async () => {
+    const { fetch } = fakeFetch({
+      body: JSON.stringify({ success: true, path: "t/f.webp" }),
+    });
+    const res = await client(fetch).uploadAsset({
+      target: "t",
+      filename: "f.webp",
+      contentBase64: "AA==",
+    });
+    expect(res).toEqual({ path: "t/f.webp" });
   });
 
   it("uploadAsset throws when the response has no path", async () => {
@@ -105,13 +132,13 @@ describe("ForgeRestClient", () => {
     ).rejects.toBeInstanceOf(ForgeRestError);
   });
 
-  it("createFolder PUTs the path and defaults success to true", async () => {
+  it("createFolder POSTs to /assets/new-folder and defaults success to true", async () => {
     const { fetch, calls } = fakeFetch({ body: JSON.stringify({}) });
     const res = await client(fetch).createFolder({ path: "worlds/strahd/tokens" });
 
     expect(res).toEqual({ success: true });
-    expect(calls[0]!.url).toBe(`${BASE}/user/u1/assets`);
-    expect(calls[0]!.init?.method).toBe("PUT");
+    expect(calls[0]!.url).toBe(`${BASE}/assets/new-folder`);
+    expect(calls[0]!.init?.method).toBe("POST");
     expect(JSON.parse(calls[0]!.init?.body as string)).toEqual({ path: "worlds/strahd/tokens" });
   });
 
@@ -138,7 +165,8 @@ describe("ForgeRestClient", () => {
   it("batchUploadAssets skips existing files by basename, returning the real CDN path", async () => {
     const cdnUrl = "https://cdn.forge/u1/worlds/strahd/maps/map1.webp?token=abc";
     const { fetch, calls } = queuedFetch([
-      { body: JSON.stringify({ files: [cdnUrl], dirs: [] }) }, // pre-browse
+      // pre-browse: real Forge shape (file objects carrying the cdn url)
+      { body: JSON.stringify({ files: [{ url: cdnUrl, name: "map1.webp" }], dirs: [] }) },
       { body: JSON.stringify({ path: "worlds/strahd/maps/map2.webp" }) }, // map2 upload
     ]);
     const res = await client(fetch).batchUploadAssets({
@@ -154,7 +182,7 @@ describe("ForgeRestClient", () => {
       { filename: "map2.webp", path: "worlds/strahd/maps/map2.webp" },
     ]);
     // browse + exactly one upload (map1 was not re-uploaded).
-    expect(calls.map((c) => c.init?.method)).toEqual(["GET", "POST"]);
+    expect(calls.map((c) => c.init?.method)).toEqual(["POST", "POST"]);
   });
 
   it("batchUploadAssets skips an in-batch duplicate, echoing the first upload path", async () => {
@@ -174,7 +202,7 @@ describe("ForgeRestClient", () => {
       { filename: "dup.webp", path: "worlds/strahd/maps/dup.webp" },
       { filename: "dup.webp", path: "worlds/strahd/maps/dup.webp", skipped: true },
     ]);
-    expect(calls.map((c) => c.init?.method)).toEqual(["GET", "POST"]);
+    expect(calls.map((c) => c.init?.method)).toEqual(["POST", "POST"]);
   });
 
   it("surfaces non-2xx as a ForgeRestError carrying the status + parsed details", async () => {

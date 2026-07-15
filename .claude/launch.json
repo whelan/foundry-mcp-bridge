@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mcp-server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/start-mcp-server.mjs"],
+      "port": 8787
+    }
+  ]
+}

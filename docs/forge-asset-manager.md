@@ -62,22 +62,29 @@ Base URL: https://forge-vtt.com/api   (override with FORGE_API_BASE_URL)
 (endpoint paths below are relative to Base URL — they are NOT re-prefixed with /api)
 
 # Browse assets
-GET {baseUrl}/user/{userId}/assets?path={path}
+POST {baseUrl}/assets/browse
 Authorization: {FORGE_API_KEY}
-→ { files: [...], dirs: [...] }
+Content-Type: application/json
+Body: { path: "worlds/strahd/scenes" }
+→ { dirs: [{ name, path }], files: [{ name, path, url, size }], folder, bazaar }
+   (the client surfaces file `url`s and dir `name`s)
 
 # Upload asset
 POST {baseUrl}/assets/upload
 Authorization: {FORGE_API_KEY}
 Content-Type: multipart/form-data
-Body: { target: "worlds/strahd/scenes", file: <binary> }
-→ { path: "worlds/strahd/scenes/village.webp" }
+Body: { path: "worlds/strahd/scenes/village.webp", file: <binary> }
+   (path is the FULL destination — dir + filename, not a bare directory)
+→ { success: true, path: "worlds/strahd/scenes/village.webp", url: "https://assets.forge-vtt.com/{userId}/worlds/strahd/scenes/village.webp" }
 
 # Create folder
-PUT {baseUrl}/user/{userId}/assets
+POST {baseUrl}/assets/new-folder
 Authorization: {FORGE_API_KEY}
+Content-Type: application/json
 Body: { path: "worlds/strahd/tokens" }
 → { success: true }
+
+# EU-region accounts: set FORGE_API_BASE_URL=https://eu.forge-vtt.com/api
 ```
 
 ### Server wiring

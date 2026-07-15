@@ -90,13 +90,19 @@ export class ForgeRestClient {
 
   /** List files + sub-directories under `path` in The Forge bucket. */
   async browseAssets(input: { path: string }): Promise<ForgeBrowseResult> {
-    const url = `${this.baseUrl}/user/${encodeURIComponent(this.userId)}/assets?path=${encodeURIComponent(
-      input.path,
-    )}`;
-    const body = await this.requestJson(url, { method: "GET" });
+    // The Forge browse endpoint is POST /assets/browse with the path in the JSON
+    // body, and it answers with object entries — files carry {name,path,url,size}
+    // and dirs carry {name,path}. We surface the file's full CDN `url` (directly
+    // embeddable, and `assetBaseName` extracts its basename for dedup) and the
+    // dir's `name`.
+    const body = await this.requestJson(`${this.baseUrl}/assets/browse`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: input.path }),
+    });
     return {
-      files: asStringArray(body, "files"),
-      dirs: asStringArray(body, "dirs"),
+      files: asEntryArray(body, "files", ["url", "path"]),
+      dirs: asEntryArray(body, "dirs", ["name", "path"]),
     };
   }
 
@@ -109,7 +115,13 @@ export class ForgeRestClient {
   }): Promise<ForgeUploadResult> {
     const bytes = decodeBase64(input.contentBase64);
     const form = new FormData();
-    form.append("target", input.target);
+    // The upload endpoint keys off `path` = the full destination (dir + filename),
+    // NOT a bare `target` directory. Omitting the filename makes The Forge 500 on
+    // an undefined `.replace()`.
+    const dest = input.target
+      ? `${input.target.replace(/\/+$/, "")}/${input.filename}`
+      : input.filename;
+    form.append("path", dest);
     form.append(
       "file",
       new Blob([bytes], { type: input.mimeType ?? "application/octet-stream" }),
@@ -119,7 +131,9 @@ export class ForgeRestClient {
       method: "POST",
       body: form,
     });
-    const path = readString(body, "path");
+    // Response is { success, path, url }; prefer the full CDN `url` (directly
+    // usable), falling back to the relative `path`.
+    const path = readString(body, "url") ?? readString(body, "path");
     if (!path) {
       throw new ForgeRestError("Forge upload returned no path", undefined, body);
     }
@@ -167,9 +181,9 @@ export class ForgeRestClient {
 
   /** Create a folder at `path` in The Forge bucket (idempotent on The Forge). */
   async createFolder(input: { path: string }): Promise<ForgeFolderResult> {
-    const url = `${this.baseUrl}/user/${encodeURIComponent(this.userId)}/assets`;
+    const url = `${this.baseUrl}/assets/new-folder`;
     const body = await this.requestJson(url, {
-      method: "PUT",
+      method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ path: input.path }),
     });
@@ -240,9 +254,30 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
-function asStringArray(body: unknown, key: string): string[] {
+/**
+ * Extract a string list from a Forge listing array. Each entry is either a bare
+ * string (legacy/tolerant) or an object; for objects the first present key in
+ * `prefer` wins (e.g. ["url","path"] for files, ["name","path"] for dirs).
+ */
+function asEntryArray(body: unknown, key: string, prefer: string[]): string[] {
   const arr = asRecord(body)[key];
-  return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [];
+  if (!Array.isArray(arr)) return [];
+  const out: string[] = [];
+  for (const item of arr) {
+    if (typeof item === "string") {
+      out.push(item);
+      continue;
+    }
+    const rec = asRecord(item);
+    for (const p of prefer) {
+      const v = rec[p];
+      if (typeof v === "string") {
+        out.push(v);
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 function readString(body: unknown, key: string): string | undefined {
