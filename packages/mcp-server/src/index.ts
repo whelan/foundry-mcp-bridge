@@ -59,6 +59,18 @@ async function start(): Promise<void> {
         `forge ${forge ? "on" : "off"}, trace on`,
     );
   }
+  // The MCP client (Claude Code) closing our stdin -- because it quit, crashed,
+  // or was killed by a Mac sleep/wake hiccup -- otherwise leaves this process
+  // running forever: StdioServerTransport only listens for stdin "data"/"error",
+  // never "end", and the open relay WebSocketServer keeps the event loop alive
+  // regardless. An orphan like that squats the relay port, so the *next*
+  // session's server can never bind it and fails immediately on connect. Exit
+  // as soon as our input ends so the port is free for the next attempt.
+  process.stdin.on("end", () => {
+    console.error("[foundry-mcp-bridge] stdin closed (client gone); shutting down");
+    transport.close();
+    process.exit(0);
+  });
   await server.connect(new StdioServerTransport());
 }
 
