@@ -105,4 +105,66 @@ describe("RelayServer end-to-end (real WebSocket)", () => {
     expect(out.ok).toBe(false);
     if (!out.ok) expect(out.error.code).toBe("TIMEOUT");
   });
+
+  // A Mac sleep/wake cycle (or any transient network blip) delivers a socket
+  // "error" — ECONNRESET, EPIPE, ENETDOWN — to the underlying `ws` objects
+  // before (or sometimes instead of) a clean "close". `ws` sockets are plain
+  // Node EventEmitters: an "error" event with no listener throws synchronously
+  // and takes the whole MCP server process down with it, which is why a sleep
+  // cycle looked like *both* foundry and forge tools vanishing at once (they
+  // share one process). These two tests assert the server survives an errored
+  // client socket and an errored listen socket without crashing, and keeps
+  // serving new connections afterwards.
+  it("survives a connected module's socket erroring, and serves a reconnect", async () => {
+    const { server, module } = await harness();
+    if (!module) throw new Error("harness() with connectModule=true always returns module");
+    const clientSocket = (server as unknown as { client: WebSocket }).client;
+    expect(clientSocket).toBeDefined();
+
+    // Simulate the OS-level error a sleep/wake network reset delivers.
+    clientSocket.emit("error", new Error("simulated ECONNRESET"));
+    module.close();
+    await new Promise((r) => setTimeout(r, 20)); // let the close handler drain
+
+    // The process (and this test) is still alive: the reconnect path works.
+    const port = server.address();
+    const reconnected = new WebSocket(`ws://localhost:${port}?token=${TOKEN}`);
+    cleanups.push(() => reconnected.close());
+    const mock2 = new MockFoundry();
+    reconnected.on("message", async (data) => {
+      const envelope = CommandEnvelope.parse(JSON.parse(data.toString()));
+      const result = await mock2.execute(envelope);
+      reconnected.send(JSON.stringify(result));
+    });
+    await new Promise<void>((resolve, reject) => {
+      reconnected.on("open", () => resolve());
+      reconnected.on("error", reject);
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    const out = await runCreateDocument(
+      server,
+      { documentType: "Actor", data: { name: "After Reconnect" } },
+      { token: TOKEN, timeoutMs: 1000 },
+    );
+    expect(out.ok).toBe(true);
+  });
+
+  it("survives the listen socket itself erroring", async () => {
+    const { server } = await harness(TOKEN, false);
+    const wss = (server as unknown as { wss: { emit(event: string, err: Error): void } }).wss;
+
+    // Must not throw / crash the process.
+    expect(() => wss.emit("error", new Error("simulated EADDRINUSE"))).not.toThrow();
+
+    // The server is still usable afterwards (times out cleanly, doesn't hang
+    // or crash, since no module is connected in this test).
+    const out = await runCreateDocument(
+      server,
+      { documentType: "Actor", data: { name: "Still Alive" } },
+      { token: TOKEN, timeoutMs: 50 },
+    );
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe("TIMEOUT");
+  });
 });
