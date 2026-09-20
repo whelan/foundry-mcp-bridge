@@ -11,6 +11,8 @@ import {
   type DocumentType,
   PROTOCOL_VERSION,
   type CompendiumDocument,
+  type ChatLog,
+  type ChatLogWindow,
 } from "@foundry-mcp-bridge/shared";
 import { MockFoundry } from "./mock-foundry.js";
 import {
@@ -142,6 +144,19 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
         { action: "importEmbeddedFromCompendium", parentType, parentId, embeddedName, uuids },
         opts,
       )) as DocData[];
+    },
+    async getChatLog(window: ChatLogWindow) {
+      // The mock re-derives the window from ISO bounds, so hand it back the
+      // same interval this call was resolved to.
+      return (await run(
+        {
+          action: "getChatLog",
+          start: window.start === null ? undefined : new Date(window.start).toISOString(),
+          end: window.end === null ? undefined : new Date(window.end).toISOString(),
+          limit: window.limit,
+        },
+        { dryRun: false },
+      )) as ChatLog;
     },
     async getCompendiumDocument(uuid) {
       return (await run(

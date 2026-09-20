@@ -63,6 +63,12 @@ export class RelayServer implements RelayTransport {
       path: this.endpoint.path === "/" ? undefined : this.endpoint.path,
     });
     this.wss.on("connection", (socket, req) => this.onConnection(socket, req.url));
+    // `ws` objects are plain EventEmitters: an "error" with no listener throws
+    // synchronously and takes the whole process down with it. A Mac sleep/wake
+    // cycle (or any transient network blip) is exactly the kind of thing that
+    // delivers a listen-socket error (e.g. a stale bind on wake), so this must
+    // be handled, not left to the default EventEmitter behavior.
+    this.wss.on("error", (e) => this.log("error", `relay listen socket error: ${(e as Error).message}`));
   }
 
   /** Resolves once the server is listening (test convenience). */
@@ -97,6 +103,16 @@ export class RelayServer implements RelayTransport {
     for (const wake of this.clientWaiters.splice(0)) wake();
 
     socket.on("message", (data) => this.pending.settle(data.toString()));
+    // Same reasoning as the wss-level handler above: a sleep/wake network
+    // reset typically delivers an "error" (ECONNRESET/EPIPE/ENETDOWN) to the
+    // client socket, sometimes before its "close". Without this listener that
+    // error is uncaught and crashes the MCP server process — which is why a
+    // sleep cycle looked like both the foundry and forge tools disconnecting
+    // at once (they're served from the same process). The existing "close"
+    // handler below still runs afterwards and does the actual cleanup.
+    socket.on("error", (e) =>
+      this.log("warn", `Foundry module socket error: ${(e as Error).message}`),
+    );
     socket.on("close", () => {
       // Ignore a superseded/old socket closing — only the active client dropping
       // should fail in-flight requests (which were sent to that client).

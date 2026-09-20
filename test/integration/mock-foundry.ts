@@ -26,6 +26,8 @@ import {
   getByPath,
   applyUpdate,
   isPlainObject,
+  buildChatLog,
+  chatLogWindow,
 } from "@foundry-mcp-bridge/shared";
 import type { WorldInfo, CompendiumEntry } from "../../packages/foundry-module/src/protocol-executor.js";
 import { loadSrdFixtures, PACK_NAME_BY_TYPE } from "../fixtures/dnd5e-srd/loader.js";
@@ -204,6 +206,13 @@ export class MockFoundry {
   readonly worldInfo: WorldInfo;
   /** Compendium entries loaded from fixtures. */
   readonly compendium = new Map<string, CompendiumRecord>();
+  /**
+   * Raw ChatMessage sources. Chat is not a DocumentType — nothing creates or
+   * deletes one through the protocol — so tests seed it directly.
+   */
+  readonly chatMessages: Json[] = [];
+  /** User id → name, for resolving a chat message's author. */
+  readonly users = new Map<string, string>();
 
   constructor(options: MockFoundryOptions = {}) {
     this.isGM = options.isGM ?? true;
@@ -234,6 +243,11 @@ export class MockFoundry {
         this.compendium.set(uuid, { documentType: type as DocumentType, pack, data });
       }
     }
+  }
+
+  /** Seed a raw ChatMessage source, as Foundry would store it. */
+  addChatMessage(raw: Json): void {
+    this.chatMessages.push(raw);
   }
 
   /** Queue a one-shot injected failure consumed by the next execute(). */
@@ -345,6 +359,12 @@ export class MockFoundry {
         return this.importEmbeddedFromCompendium(id, command, dryRun);
       case "getCompendiumDocument":
         return this.getCompendiumDocument(id, command);
+      case "getChatLog": {
+        const resolved = chatLogWindow(command.start, command.end, command.limit);
+        if ("error" in resolved) return err(id, "VALIDATION", resolved.error);
+        const log = buildChatLog(this.chatMessages, resolved.window, (uid) => this.users.get(uid));
+        return ok(id, log as unknown as Json);
+      }
     }
   }
 

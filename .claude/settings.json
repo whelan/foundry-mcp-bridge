@@ -5,6 +5,7 @@
     "allow": [
       "mcp__foundry",
       "mcp__foundry__get_world_info",
+      "mcp__foundry__get_chat_log",
       "mcp__foundry__find_documents",
       "mcp__foundry__browse_assets",
       "mcp__foundry__upload_asset",

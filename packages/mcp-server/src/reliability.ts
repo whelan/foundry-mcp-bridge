@@ -106,6 +106,8 @@ function commandSummary(c: Command): string {
       return `${c.parentType}/${c.embeddedName} parent=${c.parentId} n=${c.uuids.length}`;
     case "getCompendiumDocument":
       return `uuid=${c.uuid.slice(0, 20)}...`;
+    case "getChatLog":
+      return `${c.start ?? "-"}..${c.end ?? "now"} limit=${c.limit}`;
   }
 }
 
@@ -840,6 +842,17 @@ export function searchCompendiumReliable(
 
 export interface GetCompendiumDocumentInput {
   uuid: string;
+}
+
+/** Read-only: no dry-run, no read-back — chat is never written by the bridge. */
+export function getChatLogReliable(
+  transport: RelayTransport,
+  start: string | undefined,
+  end: string | undefined,
+  limit: number,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runRead(transport, { action: "getChatLog", start, end, limit }, "get-chat-log", opts);
 }
 
 export function getCompendiumDocumentReliable(

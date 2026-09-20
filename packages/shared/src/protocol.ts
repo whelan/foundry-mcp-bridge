@@ -302,6 +302,23 @@ export interface CompendiumDocument {
   items: CompendiumDocumentItem[];
 }
 
+/**
+ * Read the world's chat log — the GM's roll and whisper record for a session.
+ * Read-only by construction: there is no command that writes a ChatMessage,
+ * and ChatMessage is deliberately absent from {@link DocumentType} so the
+ * create/update/delete tools cannot address it.
+ */
+export const GetChatLogCommand = z.object({
+  action: z.literal("getChatLog"),
+  /** Inclusive lower bound, ISO 8601. Omit for "from the oldest message". */
+  start: z.string().min(1).optional(),
+  /** Exclusive upper bound, ISO 8601. Omit for "up to now". */
+  end: z.string().min(1).optional(),
+  /** Cap on returned messages, oldest first. */
+  limit: z.number().int().min(1).max(5000).default(2000),
+});
+export type GetChatLogCommand = z.infer<typeof GetChatLogCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -322,6 +339,7 @@ export const Command = z.discriminatedUnion("action", [
   ImportFromCompendiumCommand,
   ImportEmbeddedFromCompendiumCommand,
   GetCompendiumDocumentCommand,
+  GetChatLogCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 
