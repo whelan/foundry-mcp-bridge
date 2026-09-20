@@ -101,7 +101,16 @@ Tools are added incrementally; each ships with the full reliability pipeline.
 8. `get_world_info` — read-only world snapshot (Foundry/system versions, world
    id/title, folders) so the AI can resolve folder placement and system fields
    before importing. No mutation, no read-back.
-9. `upload_asset` — upload a base64 file to Foundry storage via `FilePicker`
+9. `get_chat_log` — read-only chat log for a time window (`start` inclusive,
+   `end` exclusive, both ISO 8601; `limit` oldest-first). Returns each message's
+   id, UTC time, author, speaker alias, visibility (public/whisper/blind),
+   plain-text flavor/content, and each roll's formula, total and individual
+   dice including discarded results. `ChatMessage` is deliberately **not** a
+   `DocumentType`, so no tool can write or delete chat; deleted messages are
+   gone from the world and cannot be read back. The mapping (HTML → text, rolls
+   stored as JSON strings, nested pool terms) lives in `shared/chat.ts` so the
+   module and the mock shape a log identically and it is covered by tests.
+10. `upload_asset` — upload a base64 file to Foundry storage via `FilePicker`
    (local `data` or `forgevtt`), returning the stored path to reference as a
    scene background / token image. Terminal write (dry-run validates, write
    uploads); no read-back.

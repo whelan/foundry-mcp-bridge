@@ -37,6 +37,7 @@ import {
   batchUploadAssetsReliable,
   searchCompendiumReliable,
   getCompendiumDocumentReliable,
+  getChatLogReliable,
   importFromCompendiumReliable,
   importEmbeddedFromCompendiumReliable,
   runRead,
@@ -274,6 +275,26 @@ export function runGetWorldInfo(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return runRead(transport, { action: "getWorldInfo" }, "get-world-info", opts);
+}
+
+// --- get_chat_log -----------------------------------------------------------
+
+export const GetChatLogShape = {
+  /** Inclusive lower bound, ISO 8601 (e.g. "2026-09-24T17:00:00Z"). */
+  start: z.string().min(1).optional(),
+  /** Exclusive upper bound, ISO 8601. */
+  end: z.string().min(1).optional(),
+  limit: z.number().int().min(1).max(5000).default(2000),
+};
+const GetChatLog = z.object(GetChatLogShape);
+export type GetChatLogArgs = z.infer<typeof GetChatLog>;
+
+export function runGetChatLog(
+  transport: RelayTransport,
+  args: GetChatLogArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return getChatLogReliable(transport, args.start, args.end, args.limit, opts);
 }
 
 // --- upload_asset -----------------------------------------------------------

@@ -14,6 +14,9 @@ import {
   type ErrorCode,
   type CompendiumEntry,
   type CompendiumDocument,
+  type ChatLog,
+  type ChatLogWindow,
+  chatLogWindow,
   checkEnvelopeGuards,
   ok,
   err,
@@ -156,6 +159,8 @@ export interface FoundryDocumentApi {
     opts: ExecuteOptions,
   ): Promise<DocData[]>;
   getCompendiumDocument(uuid: string): Promise<CompendiumDocument>;
+  /** Read-only: the world's chat log within a time window. */
+  getChatLog(window: ChatLogWindow): Promise<ChatLog>;
 }
 
 export interface ExecutorContext {
@@ -283,5 +288,12 @@ async function dispatch(
       );
     case "getCompendiumDocument":
       return api.getCompendiumDocument(command.uuid);
+    case "getChatLog": {
+      const resolved = chatLogWindow(command.start, command.end, command.limit);
+      if ("error" in resolved) {
+        throw new CommandExecutionError("VALIDATION", resolved.error);
+      }
+      return api.getChatLog(resolved.window);
+    }
   }
 }

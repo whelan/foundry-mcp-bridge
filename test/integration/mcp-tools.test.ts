@@ -11,6 +11,7 @@ import {
   runDuplicateDocument,
   runFindDocuments,
   runGetWorldInfo,
+  runGetChatLog,
   runUploadAsset,
   runBrowseAssets,
   runBatchUploadAssets,
@@ -1116,5 +1117,131 @@ describe("quest hierarchies and rewards", () => {
     expect(quest.status).toBe("completed");
     expect(quest.rewards.xp).toBe(500);
     expect(quest.rewards.gold).toBe(250);
+  });
+});
+
+describe("get_chat_log", () => {
+  /** Seeds the mock the way Foundry stores chat: rolls as JSON strings. */
+  function seedChat(mock: MockFoundry) {
+    mock.users.set("u-lars", "Lars");
+    mock.addChatMessage({
+      _id: "msg-public",
+      timestamp: Date.parse("2026-09-24T18:00:00Z"),
+      author: "u-lars",
+      speaker: { alias: "Ireena" },
+      flavor: "<b>Perception</b>",
+      content: "<p>18</p>",
+      rolls: [
+        JSON.stringify({
+          formula: "2d20kh + 5",
+          total: 18,
+          terms: [
+            {
+              faces: 20,
+              results: [
+                { result: 13, active: true },
+                { result: 4, active: false },
+              ],
+            },
+          ],
+        }),
+      ],
+    });
+    mock.addChatMessage({
+      _id: "msg-blind",
+      timestamp: Date.parse("2026-09-24T19:00:00Z"),
+      author: "u-lars",
+      blind: true,
+      whisper: ["u-lars"],
+      speaker: { alias: "Strahd" },
+      content: "hemmelig",
+      rolls: [],
+    });
+    mock.addChatMessage({
+      _id: "msg-next-week",
+      timestamp: Date.parse("2026-10-01T18:00:00Z"),
+      author: "u-lars",
+      content: "another session",
+      rolls: [],
+    });
+  }
+
+  it("returns the session's messages with rolls, dice and visibility", async () => {
+    const { mock, transport } = setup();
+    seedChat(mock);
+    const out = await runGetChatLog(transport, {
+      start: "2026-09-24T17:00:00Z",
+      end: "2026-09-24T22:00:00Z",
+      limit: 2000,
+    });
+    expect(out.ok).toBe(true);
+    expect(out.steps).toEqual(["get-chat-log"]);
+    const log = out.ok ? (out.data as any) : null;
+    expect(log.matched).toBe(2);
+    expect(log.truncated).toBe(false);
+    expect(log.messages.map((m: any) => m._id)).toEqual(["msg-public", "msg-blind"]);
+    const first = log.messages[0];
+    expect(first.authorName).toBe("Lars");
+    expect(first.speakerName).toBe("Ireena");
+    expect(first.visibility).toBe("public");
+    expect(first.flavor).toBe("Perception");
+    expect(first.time).toBe("2026-09-24T18:00:00.000Z");
+    // The discarded d20 survives the round-trip — that is the evidence value.
+    expect(first.rolls[0]).toEqual({
+      formula: "2d20kh + 5",
+      total: 18,
+      dice: [
+        {
+          faces: 20,
+          results: [
+            { result: 13, discarded: false },
+            { result: 4, discarded: true },
+          ],
+        },
+      ],
+    });
+    expect(log.messages[1].visibility).toBe("blind");
+  });
+
+  it("truncates to the limit and reports how many matched", async () => {
+    const { mock, transport } = setup();
+    seedChat(mock);
+    const out = await runGetChatLog(transport, {
+      start: "2026-09-24T17:00:00Z",
+      end: "2026-09-24T22:00:00Z",
+      limit: 1,
+    });
+    const log = out.ok ? (out.data as any) : null;
+    expect(log.messages).toHaveLength(1);
+    expect(log.matched).toBe(2);
+    expect(log.truncated).toBe(true);
+  });
+
+  it("rejects an unparsable interval with VALIDATION", async () => {
+    const { transport } = setup();
+    expectErr(
+      await runGetChatLog(transport, { start: "torsdag aften", limit: 2000 }),
+      "VALIDATION",
+    );
+  });
+
+  it("rejects an interval that does not move forward", async () => {
+    const { transport } = setup();
+    expectErr(
+      await runGetChatLog(transport, {
+        start: "2026-09-24T22:00:00Z",
+        end: "2026-09-24T17:00:00Z",
+        limit: 2000,
+      }),
+      "VALIDATION",
+    );
+  });
+
+  it("reads an empty log rather than failing when nothing was said", async () => {
+    const { transport } = setup();
+    const out = await runGetChatLog(transport, { limit: 2000 });
+    expect(out.ok).toBe(true);
+    const log = out.ok ? (out.data as any) : null;
+    expect(log).toMatchObject({ matched: 0, truncated: false, messages: [] });
   });
 });

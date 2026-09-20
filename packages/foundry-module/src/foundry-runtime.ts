@@ -6,7 +6,7 @@
  * protocol logic is tested against the mock. Kept thin and obvious on purpose.
  */
 
-import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, type DocumentType, type CompendiumDocument } from "@foundry-mcp-bridge/shared";
+import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, buildChatLog, type DocumentType, type CompendiumDocument, type ChatLog, type ChatLogWindow } from "@foundry-mcp-bridge/shared";
 import type {
   DocData,
   ExecuteOptions,
@@ -146,6 +146,14 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       return docs.filter((doc) =>
         entries.every(([path, value]) => getByPath(doc, path) === value),
       );
+    },
+
+    async getChatLog(window: ChatLogWindow): Promise<ChatLog> {
+      // `toObject()` gives the stored source — rolls as JSON strings, the
+      // author as a user id — which is exactly what buildChatLog expects.
+      const raws: unknown[] = ((game as any).messages?.contents ?? []).map((m: any) => m.toObject());
+      const users: any = (game as any).users;
+      return buildChatLog(raws, window, (id) => users?.get(id)?.name);
     },
 
     async getWorldInfo(): Promise<WorldInfo> {
