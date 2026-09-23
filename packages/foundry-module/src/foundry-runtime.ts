@@ -14,11 +14,17 @@ import type {
   FoundryDocumentApi,
   UploadAssetParams,
   BatchUploadAssetsParams,
+  ShowImageParams,
+  ShowImageResult,
   WorldInfo,
   CompendiumEntry,
 } from "./protocol-executor.js";
 import { CommandExecutionError } from "./protocol-executor.js";
 import { ensureDirectory } from "./ensure-directory.js";
+import { resolveFilePicker } from "./file-picker.js";
+
+/** Resolved per call: CONFIG.ux is populated by the time the relay runs a command. */
+const filePicker = () => resolveFilePicker(globalThis);
 
 export const MODULE_ID = "foundry-mcp-bridge";
 
@@ -156,6 +162,33 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       return buildChatLog(raws, window, (id) => users?.get(id)?.name);
     },
 
+    async showImage(params: ShowImageParams, opts): Promise<ShowImageResult> {
+      if (opts.dryRun) return { src: params.src, shown: false };
+      const g = globalThis as any;
+      const title = params.title ?? "";
+      // v13+: ApplicationV2 ImagePopout(options); v12: legacy ImagePopout(src, options).
+      const Popout = g.foundry?.applications?.apps?.ImagePopout ?? g.ImagePopout;
+      const AppV2 = g.foundry?.applications?.api?.ApplicationV2;
+      try {
+        const popout = AppV2 && Popout?.prototype instanceof AppV2
+          ? new Popout({ src: params.src, uuid: params.uuid, window: { title } })
+          : new Popout(params.src, { title, uuid: params.uuid, shareable: true });
+        await popout.render(true); // the GM sees what the table sees
+        await popout.shareImage();
+        return { src: params.src, shown: true, via: "popout" };
+      } catch (e) {
+        // A page UUID gives a second road: show the journal page itself.
+        if (!params.uuid) {
+          throw new CommandExecutionError("INTERNAL", `Could not share image: ${(e as Error).message}`);
+        }
+        const doc = await g.fromUuid(params.uuid);
+        if (!doc) throw new CommandExecutionError("NOT_FOUND", `No document ${params.uuid}`);
+        const Journal = g.foundry?.documents?.collections?.Journal ?? g.Journal;
+        await Journal.show(doc, { force: true });
+        return { src: params.src, shown: true, via: "journal" };
+      }
+    },
+
     async getWorldInfo(): Promise<WorldInfo> {
       const folders: any[] = (game as any).folders?.contents ?? [];
       return {
@@ -187,10 +220,10 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       if (opts.dryRun) return { path: `${target}/${params.filename}` };
       // Unlike the mock, real FilePicker.upload fails silently (no path, no
       // throw) when target doesn't exist yet — create it first.
-      await ensureDirectory(FilePicker as any, params.source, target);
+      await ensureDirectory(filePicker(), params.source, target);
       const bytes = Uint8Array.from(atob(params.contentBase64), (c) => c.charCodeAt(0));
       const file = new File([bytes], params.filename, params.mimeType ? { type: params.mimeType } : undefined);
-      const result = await (FilePicker as any).upload(params.source, target, file, {});
+      const result = await filePicker().upload(params.source, target, file, {});
       const path = result?.path;
       if (typeof path !== "string" || !path) {
         throw new CommandExecutionError("INTERNAL", "FilePicker.upload returned no path");
@@ -204,7 +237,7 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       if (opts.dryRun) return { dirs: [], files: [], target };
       const options: Record<string, unknown> = {};
       if (params.extensions?.length) options.extensions = params.extensions;
-      const result = await (FilePicker as any).browse(params.source, target, options);
+      const result = await filePicker().browse(params.source, target, options);
       return {
         dirs: (result?.dirs ?? []) as string[],
         files: (result?.files ?? []) as string[],
@@ -220,7 +253,7 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       }
       // Unlike the mock, real FilePicker.upload/browse fail on a target that
       // doesn't exist yet — create it first.
-      await ensureDirectory(FilePicker as any, params.source, target);
+      await ensureDirectory(filePicker(), params.source, target);
       // Optional skip: pre-browse the directory to find existing files. Match by
       // basename, not full path: on The Forge `FilePicker.browse("forgevtt", …)`
       // returns absolute CDN URLs (with the user-id prefix / query strings) rather
@@ -231,7 +264,7 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       // reconstructed `target/filename` that wouldn't resolve there.
       const existing = new Map<string, string>();
       if (params.skipExisting) {
-        const browse = await (FilePicker as any).browse(params.source, target, {});
+        const browse = await filePicker().browse(params.source, target, {});
         for (const f of browse?.files ?? []) existing.set(assetBaseName(String(f)), String(f));
       }
       const results: Array<{ filename: string; path: string; skipped?: boolean }> = [];
@@ -243,7 +276,7 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         }
         const bytes = Uint8Array.from(atob(entry.contentBase64), (c) => c.charCodeAt(0));
         const file = new File([bytes], entry.filename, entry.mimeType ? { type: entry.mimeType } : undefined);
-        const result = await (FilePicker as any).upload(params.source, target, file, {});
+        const result = await filePicker().upload(params.source, target, file, {});
         const storedPath = result?.path;
         if (typeof storedPath !== "string" || !storedPath) {
           throw new CommandExecutionError("INTERNAL", `FilePicker.upload failed for ${entry.filename}`);

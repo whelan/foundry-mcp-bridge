@@ -86,6 +86,8 @@ on mismatch). Categories differ in which steps apply and why:
 | quest create/update/delete | dry-run, write | quests aren't queryable via `find` and Forien's Quest Log normalizes fields (e.g. status casing), so content isn't re-verified; a successful write (with an `_id` for create) is the confirmation; delete is terminal. |
 | find / get_world_info / get_chat_log | find / get-world-info / get-chat-log | read-only; not mutations; single round-trip via the shared `runRead` helper. |
 | upload_asset | dry-run, write | terminal: FilePicker upload, no read-back. |
+| show_image | dry-run, write | terminal side effect: image popout shared to the players (falls back to `Journal.show` on the page `uuid`); nothing to read back. |
+| show_image_file | read-file, upload, journal, page, [show] | composite: reads a local image server-side (no base64 through the model), then chains `upload_asset` → `find_documents`/`create_document` (JournalEntry) → `create_embedded` (image page) → `show_image`, each with its own pipeline. |
 
 Step names accumulate in the `steps: string[]` returned in the `ToolOutcome`
 (`{ ok, data|error, steps }`) so a caller can see exactly how far a command got.

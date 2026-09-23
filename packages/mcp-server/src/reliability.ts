@@ -108,6 +108,8 @@ function commandSummary(c: Command): string {
       return `uuid=${c.uuid.slice(0, 20)}...`;
     case "getChatLog":
       return `${c.start ?? "-"}..${c.end ?? "now"} limit=${c.limit}`;
+    case "showImage":
+      return c.src;
   }
 }
 
@@ -853,6 +855,28 @@ export function getChatLogReliable(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return runRead(transport, { action: "getChatLog", start, end, limit }, "get-chat-log", opts);
+}
+
+export interface ShowImageInput {
+  src: string;
+  title?: string;
+  uuid?: string;
+}
+
+/**
+ * Terminal side effect: dry-run validates, write pops the image up for the
+ * players. Nothing to read back — a shown image leaves no document behind.
+ */
+export function showImageReliable(
+  transport: RelayTransport,
+  input: ShowImageInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runTerminal(
+    transport,
+    { action: "showImage", src: input.src, title: input.title, uuid: input.uuid },
+    opts,
+  );
 }
 
 export function getCompendiumDocumentReliable(

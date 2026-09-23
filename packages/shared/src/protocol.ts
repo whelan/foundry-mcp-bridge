@@ -319,6 +319,22 @@ export const GetChatLogCommand = z.object({
 });
 export type GetChatLogCommand = z.infer<typeof GetChatLogCommand>;
 
+/**
+ * Pop an image up on the players' screens (Foundry's "Show Players" for an
+ * image). A side effect, not a document write: nothing to read back. Dry-run
+ * validates without showing.
+ */
+export const ShowImageCommand = z.object({
+  action: z.literal("showImage"),
+  /** Stored image path or URL, e.g. the path upload_asset returned. */
+  src: z.string().min(1),
+  /** Popout window title the players see. */
+  title: z.string().optional(),
+  /** Optional UUID of the document the image belongs to (e.g. a JournalEntryPage). */
+  uuid: z.string().min(1).optional(),
+});
+export type ShowImageCommand = z.infer<typeof ShowImageCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -340,6 +356,7 @@ export const Command = z.discriminatedUnion("action", [
   ImportEmbeddedFromCompendiumCommand,
   GetCompendiumDocumentCommand,
   GetChatLogCommand,
+  ShowImageCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

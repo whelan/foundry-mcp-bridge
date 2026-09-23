@@ -48,6 +48,9 @@ function stubApi(): FoundryDocumentApi {
     async find() {
       return [];
     },
+    async showImage(params, opts) {
+      return { src: params.src, shown: !opts.dryRun };
+    },
     async getChatLog() {
       return { interval: { start: null, end: null }, matched: 0, truncated: false, messages: [] };
     },

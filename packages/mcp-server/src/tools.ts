@@ -8,6 +8,8 @@
  * (reusing the shared scene builders) and update_document.
  */
 
+import { readFile, stat } from "node:fs/promises";
+import { extname, isAbsolute, basename } from "node:path";
 import { z } from "zod";
 import {
   DocumentType,
@@ -38,6 +40,7 @@ import {
   searchCompendiumReliable,
   getCompendiumDocumentReliable,
   getChatLogReliable,
+  showImageReliable,
   importFromCompendiumReliable,
   importEmbeddedFromCompendiumReliable,
   runRead,
@@ -295,6 +298,167 @@ export function runGetChatLog(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return getChatLogReliable(transport, args.start, args.end, args.limit, opts);
+}
+
+// --- show_image --------------------------------------------------------------
+
+export const ShowImageShape = {
+  /** Stored image path or URL (e.g. what upload_asset returned). */
+  src: z.string().min(1),
+  /** Popout title the players see. */
+  title: z.string().optional(),
+  /** Optional UUID of the owning document, e.g. a JournalEntryPage. */
+  uuid: z.string().min(1).optional(),
+};
+const ShowImage = z.object(ShowImageShape);
+export type ShowImageArgs = z.infer<typeof ShowImage>;
+
+export function runShowImage(
+  transport: RelayTransport,
+  args: ShowImageArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return showImageReliable(transport, args, opts);
+}
+
+// --- show_image_file ---------------------------------------------------------
+
+const IMAGE_MIME: Record<string, string> = {
+  ".webp": "image/webp",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+};
+/** Well above any table picture; stops a stray path from shipping a huge file. */
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+
+export const ShowImageFileShape = {
+  /** Absolute path to a local image (.webp/.png/.jpg/.jpeg/.gif) on the machine running the MCP server. */
+  filePath: z.string().min(1),
+  /** Page name and popout title — what the players see. */
+  title: z.string().min(1),
+  /** Journal the image is filed in; created (players: Observer) if missing. */
+  journal: z.string().min(1).default("Shown to Players"),
+  /** Upload directory. */
+  target: z.string().min(1).default("shown-images"),
+  source: z.enum(["data", "forgevtt"]).default("data"),
+  /** false files the page hidden (ownership None) without showing it. */
+  show: z.boolean().default(true),
+};
+const ShowImageFile = z.object(ShowImageFileShape);
+export type ShowImageFileArgs = z.infer<typeof ShowImageFile>;
+
+/** `20260924-193012-kistemagerens-vaerksted.webp` — unique, so a CDN never serves an older picture. */
+export function showImageFilename(title: string, ext: string, now: Date = new Date()): string {
+  const stamp = now.toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
+  const slug =
+    title
+      .replace(/[æÆ]/g, "ae").replace(/[øØ]/g, "oe").replace(/[åÅ]/g, "aa")
+      .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+      .slice(0, 40).replace(/-+$/g, "") || "image";
+  return `${stamp}-${slug}${ext}`;
+}
+
+/**
+ * The whole "show the players this picture" flow in one call, reading the file
+ * server-side so no base64 passes through the model's context:
+ * read → upload_asset → find/create journal → create image page → show_image.
+ */
+export async function runShowImageFile(
+  transport: RelayTransport,
+  input: ShowImageFileArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const steps: string[] = [];
+  const failWith = (code: "VALIDATION" | "INTERNAL", message: string, details?: unknown): ToolOutcome => ({
+    ok: false,
+    error: { code, message, ...(details === undefined ? {} : { details }) },
+    steps,
+  });
+
+  steps.push("read-file");
+  const ext = extname(input.filePath).toLowerCase();
+  const mimeType = IMAGE_MIME[ext];
+  if (!isAbsolute(input.filePath)) return failWith("VALIDATION", "filePath must be absolute");
+  if (!mimeType) return failWith("VALIDATION", `Not an image file: ${basename(input.filePath)} (want ${Object.keys(IMAGE_MIME).join(", ")})`);
+  let bytes: Buffer;
+  try {
+    const info = await stat(input.filePath);
+    if (!info.isFile()) return failWith("VALIDATION", `Not a file: ${input.filePath}`);
+    if (info.size > MAX_IMAGE_BYTES) return failWith("VALIDATION", `Image is ${info.size} bytes; the limit is ${MAX_IMAGE_BYTES}`);
+    bytes = await readFile(input.filePath);
+  } catch (e) {
+    return failWith("VALIDATION", `Cannot read ${input.filePath}: ${(e as Error).message}`);
+  }
+
+  try {
+    steps.push("upload");
+    const { path: src } = unwrapDep<{ path: string }>(
+      "uploadAsset",
+      await runUploadAsset(transport, {
+        source: input.source,
+        target: input.target,
+        filename: showImageFilename(input.title, ext),
+        contentBase64: bytes.toString("base64"),
+        mimeType,
+      }, opts),
+    );
+
+    steps.push("journal");
+    const found = unwrapDep<Array<{ _id: string }>>(
+      "findJournal",
+      await runFindDocuments(transport, { documentType: "JournalEntry", query: { name: input.journal }, fields: ["_id"] }, opts),
+    );
+    let journalId = found[0]?._id;
+    if (!journalId) {
+      const created = unwrapDep<{ _id: string }>(
+        "createJournal",
+        await runCreateDocument(transport, {
+          documentType: "JournalEntry",
+          data: { name: input.journal, ownership: { default: 2 } }, // players: Observer
+        }, opts),
+      );
+      journalId = created._id;
+    }
+
+    steps.push("page");
+    const [page] = unwrapDep<Array<{ _id: string }>>(
+      "createPage",
+      await runCreateEmbedded(transport, {
+        parentType: "JournalEntry",
+        parentId: journalId,
+        embeddedName: "JournalEntryPage",
+        data: [{
+          name: input.title,
+          type: "image",
+          src,
+          // Newest on top: a later page gets a lower sort.
+          sort: -Math.floor(Date.now() / 1000),
+          // Shown pages inherit the journal's Observer; a saved-for-later page stays hidden.
+          ownership: { default: input.show ? -1 : 0 },
+        }],
+      }, opts),
+    );
+    if (!page?._id) return failWith("INTERNAL", "Journal page create returned no _id");
+    const pageUuid = `JournalEntry.${journalId}.JournalEntryPage.${page._id}`;
+
+    let shown = false;
+    let via: unknown;
+    if (input.show) {
+      steps.push("show");
+      const result = unwrapDep<{ shown: boolean; via?: string }>(
+        "showImage",
+        await runShowImage(transport, { src, title: input.title, uuid: pageUuid }, opts),
+      );
+      shown = result.shown;
+      via = result.via;
+    }
+    return { ok: true, data: { src, journalId, pageId: page._id, pageUuid, shown, ...(via ? { via } : {}) }, steps };
+  } catch (e) {
+    return failWith("INTERNAL", (e as Error).message, (e as { details?: unknown }).details);
+  }
 }
 
 // --- upload_asset -----------------------------------------------------------
