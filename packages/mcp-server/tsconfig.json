@@ -4,7 +4,7 @@
     "rootDir": "./src",
     "outDir": "./dist"
   },
-  "references": [{ "path": "../shared" }],
+  "references": [{ "path": "../shared" }, { "path": "../statblock-sync" }],
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts"]
 }
