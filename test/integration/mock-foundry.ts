@@ -211,6 +211,8 @@ export class MockFoundry {
    * deletes one through the protocol — so tests seed it directly.
    */
   readonly chatMessages: Json[] = [];
+  /** Images shared to the players via showImage, in order. */
+  readonly shownImages: Array<{ src: string; title?: string; uuid?: string }> = [];
   /** User id → name, for resolving a chat message's author. */
   readonly users = new Map<string, string>();
 
@@ -364,6 +366,11 @@ export class MockFoundry {
         if ("error" in resolved) return err(id, "VALIDATION", resolved.error);
         const log = buildChatLog(this.chatMessages, resolved.window, (uid) => this.users.get(uid));
         return ok(id, log as unknown as Json);
+      }
+      case "showImage": {
+        if (dryRun) return ok(id, { src: command.src, shown: false });
+        this.shownImages.push({ src: command.src, title: command.title, uuid: command.uuid });
+        return ok(id, { src: command.src, shown: true, via: "popout" });
       }
     }
   }

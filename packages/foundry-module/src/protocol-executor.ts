@@ -72,6 +72,21 @@ export interface UploadAssetParams {
   mimeType?: string;
 }
 
+/** Parameters for showing an image to the players. */
+export interface ShowImageParams {
+  src: string;
+  title?: string;
+  uuid?: string;
+}
+
+export interface ShowImageResult {
+  src: string;
+  /** False on a dry run. */
+  shown: boolean;
+  /** How it reached the players: an image popout, or the journal page as a fallback. */
+  via?: "popout" | "journal";
+}
+
 /** Parameters for browsing assets via Foundry's FilePicker. */
 export interface BrowseAssetsParams {
   source: "data" | "forgevtt";
@@ -161,6 +176,8 @@ export interface FoundryDocumentApi {
   getCompendiumDocument(uuid: string): Promise<CompendiumDocument>;
   /** Read-only: the world's chat log within a time window. */
   getChatLog(window: ChatLogWindow): Promise<ChatLog>;
+  /** Show an image to every connected player (image popout share). */
+  showImage(params: ShowImageParams, opts: ExecuteOptions): Promise<ShowImageResult>;
 }
 
 export interface ExecutorContext {
@@ -295,5 +312,7 @@ async function dispatch(
       }
       return api.getChatLog(resolved.window);
     }
+    case "showImage":
+      return api.showImage({ src: command.src, title: command.title, uuid: command.uuid }, opts);
   }
 }

@@ -110,6 +110,15 @@ Tools are added incrementally; each ships with the full reliability pipeline.
    gone from the world and cannot be read back. The mapping (HTML → text, rolls
    stored as JSON strings, nested pool terms) lives in `shared/chat.ts` so the
    module and the mock shape a log identically and it is covered by tests.
+10. `show_image` / `show_image_file` — show the players a picture mid-session.
+   `show_image` shares an already-stored image as a popout (GM sees it too);
+   `show_image_file` takes an absolute local path, uploads it under a unique
+   timestamped name (so Forge's CDN never serves an older picture), files it as
+   an image page — newest first — in a named journal (created with players as
+   Observer), and shows it. `show:false` files the page hidden (ownership None).
+   Uploads resolve the picker via `CONFIG.ux.FilePicker` first: on Foundry v14
+   The Forge installs its upload-capable class there, and the bare global
+   `FilePicker` browses `forgevtt` but uploads nothing.
 10. `upload_asset` — upload a base64 file to Foundry storage via `FilePicker`
    (local `data` or `forgevtt`), returning the stored path to reference as a
    scene background / token image. Terminal write (dry-run validates, write

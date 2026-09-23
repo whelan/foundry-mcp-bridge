@@ -22,7 +22,7 @@ See the design docs:
 | --- | --- |
 | `packages/shared` | Wire protocol (zod `Command`/`CommandEnvelope`/`CommandResult`), object helpers, V14 scene builders. |
 | `packages/foundry-module` | Foundry module (v13..v14): WebSocket relay client, GM-only command executor, settings. |
-| `packages/mcp-server` | MCP server: config, relay transport, reliability pipeline, tools (`create_document`, `create_scene`, `update_document`). |
+| `packages/mcp-server` | MCP server: config, relay transport, reliability pipeline, tools (`create_document`, `create_scene`, `update_document`, `show_image_file`, …). |
 | `test/integration` | In-memory `mock-foundry` (Foundry key conventions, FilePicker `data`/`forgevtt`, injectable failures) used to test everything without a real Foundry. |
 
 ## Develop

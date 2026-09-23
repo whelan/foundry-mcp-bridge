@@ -9,6 +9,8 @@
       "mcp__foundry__find_documents",
       "mcp__foundry__browse_assets",
       "mcp__foundry__upload_asset",
+      "mcp__foundry__show_image",
+      "mcp__foundry__show_image_file",
       "mcp__foundry__batch_upload_assets",
       "mcp__foundry__forge_browse_assets",
       "mcp__foundry__forge_upload_asset",

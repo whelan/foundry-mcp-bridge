@@ -18,6 +18,8 @@ import { MockFoundry } from "./mock-foundry.js";
 import {
   CommandExecutionError,
   type BatchUploadAssetsParams,
+  type ShowImageParams,
+  type ShowImageResult,
   type DocData,
   type ExecuteOptions,
   type FindSelector,
@@ -157,6 +159,9 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
         },
         { dryRun: false },
       )) as ChatLog;
+    },
+    async showImage(params: ShowImageParams, opts) {
+      return (await run({ action: "showImage", ...params }, opts)) as ShowImageResult;
     },
     async getCompendiumDocument(uuid) {
       return (await run(
