@@ -13,4 +13,5 @@ export * from "./match.js";
 export * from "./import-npc.js";
 export * from "./verify-npc.js";
 export * from "./compat.js";
+export * from "./slug.js";
 export { lintStatblockNote, type LintFinding } from "./lint.js";

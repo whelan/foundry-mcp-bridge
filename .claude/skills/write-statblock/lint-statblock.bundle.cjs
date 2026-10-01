@@ -11977,6 +11977,28 @@ var ImportEmbeddedFromCompendiumCommand = external_exports.object({
   /** Batched so a whole spell list attaches in one round-trip. */
   uuids: external_exports.array(ImportEmbeddedFromCompendiumEntry).min(1)
 });
+var GetCompendiumDocumentCommand = external_exports.object({
+  action: external_exports.literal("getCompendiumDocument"),
+  uuid: external_exports.string().min(1)
+});
+var GetChatLogCommand = external_exports.object({
+  action: external_exports.literal("getChatLog"),
+  /** Inclusive lower bound, ISO 8601. Omit for "from the oldest message". */
+  start: external_exports.string().min(1).optional(),
+  /** Exclusive upper bound, ISO 8601. Omit for "up to now". */
+  end: external_exports.string().min(1).optional(),
+  /** Cap on returned messages, oldest first. */
+  limit: external_exports.number().int().min(1).max(5e3).default(2e3)
+});
+var ShowImageCommand = external_exports.object({
+  action: external_exports.literal("showImage"),
+  /** Stored image path or URL, e.g. the path upload_asset returned. */
+  src: external_exports.string().min(1),
+  /** Popout window title the players see. */
+  title: external_exports.string().optional(),
+  /** Optional UUID of the document the image belongs to (e.g. a JournalEntryPage). */
+  uuid: external_exports.string().min(1).optional()
+});
 var Command = external_exports.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -11995,7 +12017,10 @@ var Command = external_exports.discriminatedUnion("action", [
   BatchUploadAssetsCommand,
   SearchCompendiumCommand,
   ImportFromCompendiumCommand,
-  ImportEmbeddedFromCompendiumCommand
+  ImportEmbeddedFromCompendiumCommand,
+  GetCompendiumDocumentCommand,
+  GetChatLogCommand,
+  ShowImageCommand
 ]);
 var CommandEnvelope = external_exports.object({
   /** Correlation id (uuid) tying a result back to its command. */

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Bundles scripts/lint-statblock.mjs plus its @foundry-mcp-bridge/statblock-sync
+// Bundles scripts/lint-statblock.mjs and scripts/statblock-to-actor.mjs, each with its @foundry-mcp-bridge/statblock-sync
 // dependency (and the transitive @foundry-mcp-bridge/shared randomID helper,
 // zod, and yaml) into a single dependency-free .cjs, written into
 // .claude/skills/write-statblock/. That makes the whole
@@ -18,7 +18,14 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
-const outfile = path.join(root, ".claude/skills/write-statblock/lint-statblock.bundle.cjs");
+const skillDir = path.join(root, ".claude/skills/write-statblock");
+
+// Two CLIs share the skill folder: the lint, and the converter that writes the
+// actor JSON a lint-clean block imports as (scripts/statblock-to-actor.mjs).
+const entries = [
+  ["scripts/lint-statblock.mjs", "lint-statblock.bundle.cjs"],
+  ["scripts/statblock-to-actor.mjs", "statblock-to-actor.bundle.cjs"],
+];
 
 // CommonJS, not ESM: yaml's dependency tree has CJS modules that call
 // require() for node builtins (e.g. "process") at load time. In a real .cjs
@@ -27,13 +34,15 @@ const outfile = path.join(root, ".claude/skills/write-statblock/lint-statblock.b
 // supported" the moment such a module loads. A .cjs file also sidesteps the
 // package.json "type": "module" (or lack of one) in whatever repo this gets
 // copied into -- the extension alone decides how node loads it.
-await build({
-  entryPoints: [path.join(root, "scripts/lint-statblock.mjs")],
-  bundle: true,
-  platform: "node",
-  format: "cjs",
-  target: "node20",
-  outfile,
-});
-
-console.log(`Bundled -> ${path.relative(root, outfile)}`);
+for (const [entry, out] of entries) {
+  const outfile = path.join(skillDir, out);
+  await build({
+    entryPoints: [path.join(root, entry)],
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node20",
+    outfile,
+  });
+  console.log(`Bundled -> ${path.relative(root, outfile)}`);
+}

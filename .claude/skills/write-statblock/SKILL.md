@@ -97,15 +97,28 @@ If the note is meant to become a permanent test fixture, put it in
 `statblock-import.test.ts`'s pattern. Otherwise it's ready to import as-is via
 the `import_npc` flow (see `docs/statblock-import-execution-plan.md`).
 
+## Turn a lint-clean block into actor JSON
+
+`statblock-to-actor.bundle.cjs` (source: `scripts/statblock-to-actor.mjs`) runs the
+importer's own `statblockToFoundryActor` offline and prints the dnd5e actor document,
+items included, for each ```statblock fence in a note. Use it whenever an actor file is
+needed on disk; never write actor JSON by hand. It lints each block first and refuses
+one with a FAIL.
+```bash
+node .claude/skills/write-statblock/statblock-to-actor.bundle.cjs note.md --name "Vasha" > actor.json
+node .claude/skills/write-statblock/statblock-to-actor.bundle.cjs note.md --out actors/
+```
+
 ## Using this skill from another repo (e.g. an Obsidian vault)
 
 This whole `.claude/skills/write-statblock/` folder is copy-paste portable.
 Alongside `SKILL.md` it contains `lint-statblock.bundle.cjs` — a single
 dependency-free bundle of `scripts/lint-statblock.mjs` plus its
 `@foundry-mcp-bridge/statblock-sync` dependency (zod, yaml, and the tiny
-`randomID` helper from `@foundry-mcp-bridge/shared` are bundled in too). It
-needs nothing from this monorepo: no `npm install`, no workspace resolution,
-just a `node` binary.
+`randomID` helper from `@foundry-mcp-bridge/shared` are bundled in too), and
+`statblock-to-actor.bundle.cjs`, the same kind of bundle for the converter.
+Neither needs anything from this monorepo: no `npm install`, no workspace
+resolution, just a `node` binary.
 
 To copy it: take the whole `write-statblock/` folder as-is into the other
 repo's `.claude/skills/`, then in that repo lint with:
