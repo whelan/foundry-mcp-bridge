@@ -54,6 +54,15 @@ function stubApi(): FoundryDocumentApi {
     async runMacro(params, opts) {
       return { macroId: params.id ?? "m1", name: params.name ?? "Macro", ran: !opts.dryRun };
     },
+    async activateScene(params, opts) {
+      return { _id: params.id, name: "Scene", mode: params.mode, done: !opts.dryRun };
+    },
+    async getSceneState() {
+      return {};
+    },
+    async toggleCondition(params, opts) {
+      return { tokenId: params.tokenId, statusId: params.statusId, active: params.active ?? !opts.dryRun };
+    },
     async getChatLog() {
       return { interval: { start: null, end: null }, matched: 0, truncated: false, messages: [] };
     },

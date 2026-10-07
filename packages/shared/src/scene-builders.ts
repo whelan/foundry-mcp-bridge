@@ -234,3 +234,114 @@ export function buildSceneVerify(input: BuildSceneInput): Json {
   const { name, width, height, padding, grid } = buildScene(input);
   return { name, width, height, padding, grid };
 }
+
+// ---------------------------------------------------------------------------
+// Grid helpers (let callers speak in grid squares instead of pixels)
+// ---------------------------------------------------------------------------
+
+/** Top-left pixel of a grid square (square grids; gridless scenes use size as-is). */
+export function gridToPixels(
+  col: number,
+  row: number,
+  gridSize: number,
+  origin: { x?: number; y?: number } = {},
+): { x: number; y: number } {
+  return { x: (origin.x ?? 0) + col * gridSize, y: (origin.y ?? 0) + row * gridSize };
+}
+
+/** Grid square containing a pixel point (inverse of {@link gridToPixels}). */
+export function pixelsToGrid(
+  x: number,
+  y: number,
+  gridSize: number,
+  origin: { x?: number; y?: number } = {},
+): { col: number; row: number } {
+  return {
+    col: Math.floor((x - (origin.x ?? 0)) / gridSize),
+    row: Math.floor((y - (origin.y ?? 0)) / gridSize),
+  };
+}
+
+/**
+ * Pixel origin of grid square (0,0): Foundry pads the canvas around the scene rect,
+ * rounded up to a whole grid square (`Scene#getDimensions`). Takes the scene's stored
+ * `width`, `height`, `padding` and `grid.size`.
+ */
+export function sceneOrigin(scene: { width: number; height: number; padding?: number; grid: { size: number } }): {
+  x: number;
+  y: number;
+} {
+  const padding = scene.padding ?? 0.25;
+  const size = scene.grid.size;
+  return { x: Math.ceil((scene.width * padding) / size) * size, y: Math.ceil((scene.height * padding) / size) * size };
+}
+
+/** Foundry wall document from a grid-coordinate segment (corners, not squares). */
+export function buildWallFromGrid(
+  seg: { x1: number; y1: number; x2: number; y2: number; kind?: "wall" | "door" | "secretDoor" | "window" },
+  gridSize: number,
+  origin: { x?: number; y?: number } = {},
+): Json {
+  const a = gridToPixels(seg.x1, seg.y1, gridSize, origin);
+  const b = gridToPixels(seg.x2, seg.y2, gridSize, origin);
+  const kind = seg.kind ?? "wall";
+  // CONST.WALL_DOOR_TYPES: 0 none, 1 door, 2 secret. Window = sight-only (limited=10 light/sight).
+  const door = kind === "door" ? 1 : kind === "secretDoor" ? 2 : 0;
+  const wall: Json = {
+    _id: randomID(),
+    c: [a.x, a.y, b.x, b.y],
+    door,
+    ds: 0,
+    move: 20,
+    sight: 20,
+    light: 20,
+    sound: 20,
+    dir: 0,
+  };
+  if (kind === "window") {
+    wall.sight = 10;
+    wall.light = 10;
+  }
+  return wall;
+}
+
+type Doc = Record<string, any>;
+const pick = (doc: Doc, keys: string[]): Json => {
+  const out: Json = {};
+  for (const k of keys) if (doc[k] !== undefined) out[k] = doc[k];
+  return out;
+};
+
+/**
+ * Compact, planning-friendly snapshot of a Scene's stored data (plain object, as
+ * from `toObject()`). Pure so the module and the mock return the same shape.
+ */
+export function buildSceneState(scene: Doc): Json {
+  const grid = scene.grid ?? {};
+  const list = (arr: unknown): Doc[] => (Array.isArray(arr) ? (arr as Doc[]) : []);
+  return {
+    _id: scene._id,
+    name: scene.name,
+    active: scene.active ?? false,
+    width: scene.width,
+    height: scene.height,
+    padding: scene.padding,
+    grid: { type: grid.type, size: grid.size, distance: grid.distance, units: grid.units },
+    background: scene.background?.src ?? null,
+    tokens: list(scene.tokens).map((t) => ({
+      ...pick(t, ["_id", "name", "x", "y", "width", "height", "actorId", "hidden", "disposition"]),
+      conditions: Array.isArray(t.statuses) ? t.statuses : undefined,
+    })),
+    walls: list(scene.walls).map((w) => pick(w, ["_id", "c", "door", "move", "sight"])),
+    lights: list(scene.lights).map((l) => ({
+      ...pick(l, ["_id", "x", "y"]),
+      bright: l.config?.bright,
+      dim: l.config?.dim,
+    })),
+    tiles: list(scene.tiles).map((t) => ({
+      ...pick(t, ["_id", "x", "y", "width", "height", "hidden"]),
+      src: t.texture?.src,
+    })),
+    notes: list(scene.notes).map((n) => pick(n, ["_id", "x", "y", "entryId", "text"])),
+  };
+}

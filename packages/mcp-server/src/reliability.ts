@@ -112,6 +112,12 @@ function commandSummary(c: Command): string {
       return c.src;
     case "runMacro":
       return c.id ? `id=${c.id}` : `name=${c.name}`;
+    case "activateScene":
+      return `${c.mode} id=${c.id}`;
+    case "getSceneState":
+      return c.id ? `id=${c.id}` : "viewed scene";
+    case "toggleCondition":
+      return `${c.statusId} token=${c.tokenId} scene=${c.sceneId}`;
   }
 }
 
@@ -901,6 +907,40 @@ export function runMacroReliable(
     { action: "runMacro", id: input.id, name: input.name, args: input.args },
     opts,
   );
+}
+
+/** Terminal side effect: dry-run resolves the scene, the write switches to it. */
+export function activateSceneReliable(
+  transport: RelayTransport,
+  input: { id: string; mode?: "activate" | "view" },
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runTerminal(
+    transport,
+    { action: "activateScene", id: input.id, mode: input.mode ?? "activate" },
+    opts,
+  );
+}
+
+/** Read-only scene snapshot (the viewed scene when `id` is omitted). */
+export function getSceneStateReliable(
+  transport: RelayTransport,
+  input: { id?: string },
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runRead(transport, { action: "getSceneState", id: input.id }, "get-scene-state", opts);
+}
+
+/**
+ * Terminal: dry-run validates the token, actor and condition id; the write toggles it.
+ * The module reports the resulting state, which is the confirmation (no separate read-back).
+ */
+export function toggleConditionReliable(
+  transport: RelayTransport,
+  input: { sceneId: string; tokenId: string; statusId: string; active?: boolean },
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runTerminal(transport, { action: "toggleCondition", ...input }, opts);
 }
 
 export function getCompendiumDocumentReliable(

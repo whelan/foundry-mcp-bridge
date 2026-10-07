@@ -353,6 +353,40 @@ export const RunMacroCommand = z.object({
 });
 export type RunMacroCommand = z.infer<typeof RunMacroCommand>;
 
+/**
+ * Make a scene the one the table sees (`activate`, like clicking "Activate") or only
+ * show it to the GM (`view`). A side effect, not a document write: nothing to read back.
+ */
+export const ActivateSceneCommand = z.object({
+  action: z.literal("activateScene"),
+  id: z.string().min(1),
+  mode: z.enum(["activate", "view"]).default("activate"),
+});
+export type ActivateSceneCommand = z.infer<typeof ActivateSceneCommand>;
+
+/**
+ * Read-only snapshot of a scene for planning: grid, size, and compact lists of its
+ * tokens, walls, lights, tiles and notes. Omit `id` for the scene the GM is viewing.
+ */
+export const GetSceneStateCommand = z.object({
+  action: z.literal("getSceneState"),
+  id: z.string().min(1).optional(),
+});
+export type GetSceneStateCommand = z.infer<typeof GetSceneStateCommand>;
+
+/**
+ * Toggle a status condition (e.g. "prone", "poisoned") on a token's actor via
+ * Foundry's `toggleStatusEffect`. `active` forces on/off; omit to flip.
+ */
+export const ToggleConditionCommand = z.object({
+  action: z.literal("toggleCondition"),
+  sceneId: z.string().min(1),
+  tokenId: z.string().min(1),
+  statusId: z.string().min(1),
+  active: z.boolean().optional(),
+});
+export type ToggleConditionCommand = z.infer<typeof ToggleConditionCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -376,6 +410,9 @@ export const Command = z.discriminatedUnion("action", [
   GetChatLogCommand,
   ShowImageCommand,
   RunMacroCommand,
+  ActivateSceneCommand,
+  GetSceneStateCommand,
+  ToggleConditionCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

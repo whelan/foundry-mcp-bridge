@@ -200,6 +200,38 @@ export interface FoundryDocumentApi {
    * "Allow the bridge to run macros" world setting; the bridge cannot change it.
    */
   runMacro(params: RunMacroParams, opts: ExecuteOptions): Promise<RunMacroResult>;
+  /** Switch the active scene, or just the GM's view of one. */
+  activateScene(params: ActivateSceneParams, opts: ExecuteOptions): Promise<ActivateSceneResult>;
+  /** Read-only: compact snapshot of a scene (the viewed one when `id` is omitted). */
+  getSceneState(id: string | undefined): Promise<SceneState>;
+  /** Turn a status condition on/off for a token's actor. */
+  toggleCondition(params: ToggleConditionParams, opts: ExecuteOptions): Promise<ToggleConditionResult>;
+}
+
+export interface ActivateSceneParams {
+  id: string;
+  mode: "activate" | "view";
+}
+export interface ActivateSceneResult {
+  _id: string;
+  name: string;
+  mode: "activate" | "view";
+  /** False on dry-run (the scene was resolved but not switched). */
+  done: boolean;
+}
+/** Compact scene snapshot returned by getSceneState (see {@link buildSceneState}). */
+export type SceneState = Record<string, unknown>;
+export interface ToggleConditionParams {
+  sceneId: string;
+  tokenId: string;
+  statusId: string;
+  active?: boolean;
+}
+export interface ToggleConditionResult {
+  tokenId: string;
+  statusId: string;
+  /** Whether the condition is on after the call (the intended state on dry-run). */
+  active: boolean;
 }
 
 export interface ExecutorContext {
@@ -341,5 +373,14 @@ async function dispatch(
         throw new CommandExecutionError("VALIDATION", "runMacro needs exactly one of id or name");
       }
       return api.runMacro({ id: command.id, name: command.name, args: command.args }, opts);
+    case "activateScene":
+      return api.activateScene({ id: command.id, mode: command.mode }, opts);
+    case "getSceneState":
+      return api.getSceneState(command.id);
+    case "toggleCondition":
+      return api.toggleCondition(
+        { sceneId: command.sceneId, tokenId: command.tokenId, statusId: command.statusId, active: command.active },
+        opts,
+      );
   }
 }

@@ -60,6 +60,17 @@ import {
   runImportNpc,
 } from "./tools.js";
 import {
+  ListScenesShape, runListScenes,
+  GetSceneStateShape, runGetSceneState,
+  SwitchSceneShape, runSwitchScene,
+  PlaceTokenShape, runPlaceToken,
+  MoveTokensShape, runMoveTokens,
+  RemoveTokensShape, runRemoveTokens,
+  ToggleConditionShape, runToggleCondition,
+  AddWallsShape, runAddWalls,
+  AddLightsShape, runAddLights,
+} from "./scene-tools.js";
+import {
   ForgeBrowseAssetsShape,
   ForgeUploadAssetShape,
   ForgeBatchUploadAssetsShape,
@@ -319,6 +330,61 @@ export function buildServer(
     "Import a Fantasy Statblocks note into a Foundry world as an NPC actor with rollable actions, spells, and optional folder placement.",
     ImportNpcShape,
     runImportNpc,
+  );
+
+  register(
+    "list_scenes",
+    "List the world's scenes: id, name, whether active, grid size, pixel size, token count. Read-only.",
+    ListScenesShape,
+    runListScenes,
+  );
+  register(
+    "get_scene_state",
+    "Compact snapshot of a scene for planning: grid (type/size/distance), size, background and lists of tokens (with conditions), walls, lights, tiles and notes. Omit id for the scene the GM is viewing. Read-only.",
+    GetSceneStateShape,
+    runGetSceneState,
+  );
+  register(
+    "switch_scene",
+    "Make a scene the one the players see (mode activate) or only change the GM's view (mode view). Dry-run only resolves the scene.",
+    SwitchSceneShape,
+    runSwitchScene,
+  );
+  register(
+    "place_token",
+    "Put a token on a scene at a grid square (col,row; 0,0 = top-left square of the map). Give an actorId (name taken from the actor) or a name. Square/gridless scenes only. Runs the embedded-create pipeline with read-back.",
+    PlaceTokenShape,
+    runPlaceToken,
+  );
+  register(
+    "move_tokens",
+    "Move tokens to grid squares (col,row). Read-back verifies the new positions and restores them on mismatch. Square/gridless scenes only.",
+    MoveTokensShape,
+    runMoveTokens,
+  );
+  register(
+    "remove_tokens",
+    "Delete tokens from a scene by id. Terminal: no rollback.",
+    RemoveTokensShape,
+    runRemoveTokens,
+  );
+  register(
+    "toggle_condition",
+    "Turn a status condition (e.g. prone, poisoned, blinded, dead) on/off for a token's actor, or flip it. Unknown condition ids are rejected in dry-run.",
+    ToggleConditionShape,
+    runToggleCondition,
+  );
+  register(
+    "add_walls",
+    "Add walls, doors, secret doors or windows to a scene from grid CORNER coordinates (0,0 = top-left corner of the map). Square/gridless scenes only.",
+    AddWallsShape,
+    runAddWalls,
+  );
+  register(
+    "add_lights",
+    "Add ambient lights at grid positions (fractions allowed; col 3.5,row 2.5 = centre of a square) with bright/dim radii in the scene's distance units and an optional hex colour. Square/gridless scenes only.",
+    AddLightsShape,
+    runAddLights,
   );
 
   return server;

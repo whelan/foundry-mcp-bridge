@@ -6,7 +6,7 @@
  * protocol logic is tested against the mock. Kept thin and obvious on purpose.
  */
 
-import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, buildChatLog, type DocumentType, type CompendiumDocument, type ChatLog, type ChatLogWindow } from "@foundry-mcp-bridge/shared";
+import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, buildChatLog, buildSceneState, type DocumentType, type CompendiumDocument, type ChatLog, type ChatLogWindow } from "@foundry-mcp-bridge/shared";
 import type {
   DocData,
   ExecuteOptions,
@@ -17,6 +17,9 @@ import type {
   ShowImageParams,
   ShowImageResult,
   RunMacroParams,
+  ActivateSceneResult,
+  SceneState,
+  ToggleConditionResult,
   RunMacroResult,
   WorldInfo,
   CompendiumEntry,
@@ -243,6 +246,38 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         result = String(returned);
       }
       return { macroId: macro.id, name: macro.name, ran: true, result };
+    },
+
+    async activateScene(params, opts): Promise<ActivateSceneResult> {
+      const scene = requireDoc("Scene", params.id);
+      const base = { _id: String(scene.id), name: String(scene.name), mode: params.mode };
+      if (opts.dryRun) return { ...base, done: false };
+      if (params.mode === "view") await scene.view();
+      else await scene.activate();
+      return { ...base, done: true };
+    },
+
+    async getSceneState(id?: string): Promise<SceneState> {
+      const g = globalThis as any;
+      const scene = id ? requireDoc("Scene", id) : g.canvas?.scene ?? g.game.scenes?.viewed;
+      if (!scene) throw new CommandExecutionError("NOT_FOUND", "No scene to describe: pass an id or view a scene");
+      return buildSceneState({ ...scene.toObject(), active: Boolean(scene.active) });
+    },
+
+    async toggleCondition(params, opts): Promise<ToggleConditionResult> {
+      const scene = requireDoc("Scene", params.sceneId);
+      const token = scene.tokens.get(params.tokenId);
+      if (!token) throw new CommandExecutionError("NOT_FOUND", `No token ${params.tokenId} in scene ${params.sceneId}`);
+      const actor = token.actor;
+      if (!actor) throw new CommandExecutionError("VALIDATION", `Token ${params.tokenId} has no actor`);
+      const known = ((globalThis as any).CONFIG?.statusEffects ?? []).some((s: any) => s.id === params.statusId);
+      if (!known) throw new CommandExecutionError("VALIDATION", `Unknown status condition "${params.statusId}"`);
+      const now = actor.statuses?.has(params.statusId) ?? false;
+      const want = params.active ?? !now;
+      if (opts.dryRun) return { tokenId: params.tokenId, statusId: params.statusId, active: want };
+      // v14: toggleStatusEffect(statusId, {active}) returns the effect, or false/undefined when removed.
+      await actor.toggleStatusEffect(params.statusId, { active: want });
+      return { tokenId: params.tokenId, statusId: params.statusId, active: Boolean(actor.statuses?.has(params.statusId)) };
     },
 
     async getWorldInfo(): Promise<WorldInfo> {

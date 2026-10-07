@@ -27,6 +27,7 @@ import {
   applyUpdate,
   isPlainObject,
   buildChatLog,
+  buildSceneState,
   chatLogWindow,
 } from "@foundry-mcp-bridge/shared";
 import type { WorldInfo, CompendiumEntry } from "../../packages/foundry-module/src/protocol-executor.js";
@@ -221,6 +222,11 @@ export class MockFoundry {
   allowMacros: boolean;
   /** Macros the bridge ran: what was run and the scope it was given, in order. */
   readonly macroRuns: Array<{ id: string; name: string; scope: Json }> = [];
+  /** Scene the table sees (activateScene "activate") and the one the GM views. */
+  activeSceneId: string | null = null;
+  viewedSceneId: string | null = null;
+  /** Conditions the world knows (CONFIG.statusEffects ids). */
+  readonly knownStatuses = new Set(["prone", "poisoned", "blinded", "dead", "invisible"]);
   /** What the next macro run returns, keyed by macro name (default null). */
   readonly macroResults = new Map<string, unknown>();
 
@@ -394,6 +400,39 @@ export class MockFoundry {
         if (dryRun) return ok(id, { ...base, ran: false });
         this.macroRuns.push({ id: base.macroId, name: base.name, scope: (command.args ?? {}) as Json });
         return ok(id, { ...base, ran: true, result: this.macroResults.get(base.name) ?? null });
+      }
+      case "activateScene": {
+        const scene = this.get("Scene", command.id);
+        if (!scene) return err(id, "NOT_FOUND", `Scene ${command.id} not found`);
+        const base = { _id: command.id, name: String(scene.name), mode: command.mode };
+        if (dryRun) return ok(id, { ...base, done: false });
+        this.viewedSceneId = command.id;
+        if (command.mode === "activate") this.activeSceneId = command.id;
+        return ok(id, { ...base, done: true });
+      }
+      case "getSceneState": {
+        const sceneId = command.id ?? this.viewedSceneId ?? this.activeSceneId;
+        const scene = sceneId ? this.get("Scene", sceneId) : undefined;
+        if (!scene) return err(id, "NOT_FOUND", "No scene to describe: pass an id or view a scene");
+        return ok(id, buildSceneState({ ...scene, active: scene._id === this.activeSceneId }));
+      }
+      case "toggleCondition": {
+        const scene = this.get("Scene", command.sceneId);
+        if (!scene) return err(id, "NOT_FOUND", `Scene ${command.sceneId} not found`);
+        const token = this.embeddedArray(scene, "Token").find((t) => t._id === command.tokenId);
+        if (!token) return err(id, "NOT_FOUND", `No token ${command.tokenId} in scene ${command.sceneId}`);
+        if (!token.actorId) return err(id, "VALIDATION", `Token ${command.tokenId} has no actor`);
+        if (!this.knownStatuses.has(command.statusId)) {
+          return err(id, "VALIDATION", `Unknown status condition "${command.statusId}"`);
+        }
+        const statuses = new Set<string>(Array.isArray(token.statuses) ? (token.statuses as string[]) : []);
+        const want = command.active ?? !statuses.has(command.statusId);
+        if (!dryRun) {
+          if (want) statuses.add(command.statusId);
+          else statuses.delete(command.statusId);
+          token.statuses = [...statuses];
+        }
+        return ok(id, { tokenId: command.tokenId, statusId: command.statusId, active: want });
       }
       case "showImage": {
         if (dryRun) return ok(id, { src: command.src, shown: false });

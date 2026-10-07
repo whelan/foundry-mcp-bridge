@@ -111,3 +111,14 @@ describe("buildNote", () => {
     expect(linked).toMatchObject({ entryId: "j1", text: "Here" });
   });
 });
+
+describe("grid helpers", () => {
+  it("converts squares to pixels and back, honouring the origin", async () => {
+    const { gridToPixels, pixelsToGrid, sceneOrigin } = await import("./scene-builders.js");
+    const origin = sceneOrigin({ width: 2000, height: 1000, padding: 0.25, grid: { size: 100 } });
+    expect(origin).toEqual({ x: 500, y: 300 });
+    const p = gridToPixels(3, 2, 100, origin);
+    expect(p).toEqual({ x: 800, y: 500 });
+    expect(pixelsToGrid(p.x + 40, p.y + 99, 100, origin)).toEqual({ col: 3, row: 2 });
+  });
+});
