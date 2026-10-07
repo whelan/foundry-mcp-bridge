@@ -7,6 +7,7 @@
  * so advanced fields stay reachable without re-specifying defaults.
  */
 
+import { z } from "zod";
 import { type Json, deepMerge } from "./objects.js";
 
 const ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -233,4 +234,168 @@ export function buildSceneVerify(input: BuildSceneInput): Json {
   // pick only the version-stable fields.
   const { name, width, height, padding, grid } = buildScene(input);
   return { name, width, height, padding, grid };
+}
+
+// ---------------------------------------------------------------------------
+// Grid helpers (let callers speak in grid squares instead of pixels)
+// ---------------------------------------------------------------------------
+
+/** Top-left pixel of a grid square (square grids; gridless scenes use size as-is). */
+export function gridToPixels(
+  col: number,
+  row: number,
+  gridSize: number,
+  origin: { x?: number; y?: number } = {},
+): { x: number; y: number } {
+  return { x: (origin.x ?? 0) + col * gridSize, y: (origin.y ?? 0) + row * gridSize };
+}
+
+/** Grid square containing a pixel point (inverse of {@link gridToPixels}). */
+export function pixelsToGrid(
+  x: number,
+  y: number,
+  gridSize: number,
+  origin: { x?: number; y?: number } = {},
+): { col: number; row: number } {
+  return {
+    col: Math.floor((x - (origin.x ?? 0)) / gridSize),
+    row: Math.floor((y - (origin.y ?? 0)) / gridSize),
+  };
+}
+
+/** CONST.WALL_MOVEMENT_TYPES / WALL_SENSE_TYPES / WALL_DOOR_TYPES (stable across v13–v14). */
+export const WALL_MOVEMENT_TYPES = { NONE: 0, NORMAL: 20 } as const;
+export const WALL_SENSE_TYPES = { NONE: 0, LIMITED: 10, NORMAL: 20 } as const;
+export const WALL_DOOR_TYPES = { NONE: 0, DOOR: 1, SECRET: 2 } as const;
+
+export type WallKind = "wall" | "door" | "secretDoor" | "limited";
+
+/**
+ * Foundry wall document from a grid-coordinate segment (corners, not squares).
+ * `limited` blocks movement but is a Limited sight/light wall: perception passes
+ * through one such wall and is stopped by a second. It is NOT Foundry's distance-based
+ * "Window" (Proximity) wall, which needs threshold configuration — create that one with
+ * create_embedded if you need it.
+ */
+export function buildWallFromGrid(
+  seg: { x1: number; y1: number; x2: number; y2: number; kind?: WallKind },
+  gridSize: number,
+  origin: { x?: number; y?: number } = {},
+): Json {
+  const a = gridToPixels(seg.x1, seg.y1, gridSize, origin);
+  const b = gridToPixels(seg.x2, seg.y2, gridSize, origin);
+  const kind = seg.kind ?? "wall";
+  const door = kind === "door" ? WALL_DOOR_TYPES.DOOR : kind === "secretDoor" ? WALL_DOOR_TYPES.SECRET : WALL_DOOR_TYPES.NONE;
+  const senses = kind === "limited" ? WALL_SENSE_TYPES.LIMITED : WALL_SENSE_TYPES.NORMAL;
+  return {
+    _id: randomID(),
+    c: [a.x, a.y, b.x, b.y],
+    door,
+    ds: 0,
+    move: WALL_MOVEMENT_TYPES.NORMAL,
+    sight: senses,
+    light: senses,
+    sound: WALL_SENSE_TYPES.NORMAL,
+    dir: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Scene state: the one contract between producer (module/mock) and consumers (tools)
+// ---------------------------------------------------------------------------
+
+export const SceneStateSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  active: z.boolean(),
+  width: z.number(),
+  height: z.number(),
+  padding: z.number().optional(),
+  grid: z.object({
+    type: z.number(),
+    size: z.number().positive(),
+    distance: z.number().optional(),
+    units: z.string().optional(),
+  }),
+  /**
+   * Pixel position of grid square (0,0) as Foundry computes it (`scene.dimensions.sceneX/Y`,
+   * including padding rounding and shifts). Token/wall/light pixels are relative to the canvas,
+   * so tools must add this to grid → pixel conversions.
+   */
+  origin: z.object({ x: z.number(), y: z.number() }),
+  /** Pre-V14 top-level background; null on V14 scenes (see `levels`). */
+  background: z.string().nullable(),
+  /** V14 levels with their own backgrounds. Which one the GM currently views is not reported. */
+  levels: z.array(z.object({ _id: z.string(), name: z.string().optional(), background: z.string().nullable() })),
+  tokens: z.array(
+    z.object({
+      _id: z.string(),
+      name: z.string().optional(),
+      x: z.number(),
+      y: z.number(),
+      width: z.number().optional(),
+      height: z.number().optional(),
+      actorId: z.string().nullable().optional(),
+      hidden: z.boolean().optional(),
+      disposition: z.number().optional(),
+      /** Active status ids on the token's resolved actor (empty without an actor). */
+      conditions: z.array(z.string()),
+    }),
+  ),
+  walls: z.array(z.object({ _id: z.string(), c: z.array(z.number()), door: z.number().optional(), ds: z.number().optional(), move: z.number().optional(), sight: z.number().optional() })),
+  lights: z.array(z.object({ _id: z.string(), x: z.number(), y: z.number(), bright: z.number().optional(), dim: z.number().optional() })),
+  tiles: z.array(z.object({ _id: z.string(), x: z.number(), y: z.number(), width: z.number().optional(), height: z.number().optional(), hidden: z.boolean().optional(), src: z.string().nullable().optional() })),
+  notes: z.array(z.object({ _id: z.string(), x: z.number(), y: z.number(), entryId: z.string().nullable().optional(), text: z.string().optional() })),
+});
+export type SceneState = z.infer<typeof SceneStateSchema>;
+
+/** Facts only the runtime can resolve; the pure builder takes them as input. */
+export interface SceneStateFacts {
+  active: boolean;
+  origin: { x: number; y: number };
+  /** token _id → active status ids of its resolved (linked or synthetic) actor. */
+  conditions: Record<string, string[]>;
+}
+
+type Raw = Record<string, any>;
+const arr = (v: unknown): Raw[] => (Array.isArray(v) ? (v as Raw[]) : []);
+const drop = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
+
+/**
+ * Compact, planning-friendly snapshot of a Scene's stored data (as from `toObject()`),
+ * normalising the V13 (top-level background) and V14 (levels) shapes. Pure so the module
+ * and the mock produce the same {@link SceneState}.
+ */
+export function buildSceneState(scene: Raw, facts: SceneStateFacts): SceneState {
+  const grid = scene.grid ?? {};
+  return {
+    _id: String(scene._id),
+    name: String(scene.name ?? ""),
+    active: facts.active,
+    width: scene.width,
+    height: scene.height,
+    padding: scene.padding,
+    grid: drop({ type: grid.type, size: grid.size, distance: grid.distance, units: grid.units }),
+    origin: facts.origin,
+    background: scene.background?.src ?? null,
+    levels: arr(scene.levels).map((l) => drop({ _id: String(l._id), name: l.name, background: l.background?.src ?? null })),
+    tokens: arr(scene.tokens).map((t) =>
+      drop({
+        _id: String(t._id),
+        name: t.name,
+        x: t.x,
+        y: t.y,
+        width: t.width,
+        height: t.height,
+        actorId: t.actorId,
+        hidden: t.hidden,
+        disposition: t.disposition,
+        conditions: facts.conditions[t._id] ?? [],
+      }),
+    ),
+    walls: arr(scene.walls).map((w) => drop({ _id: String(w._id), c: w.c, door: w.door, ds: w.ds, move: w.move, sight: w.sight })),
+    lights: arr(scene.lights).map((l) => drop({ _id: String(l._id), x: l.x, y: l.y, bright: l.config?.bright, dim: l.config?.dim })),
+    tiles: arr(scene.tiles).map((t) => drop({ _id: String(t._id), x: t.x, y: t.y, width: t.width, height: t.height, hidden: t.hidden, src: t.texture?.src })),
+    notes: arr(scene.notes).map((n) => drop({ _id: String(n._id), x: n.x, y: n.y, entryId: n.entryId, text: n.text })),
+  };
 }

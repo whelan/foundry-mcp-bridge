@@ -22,6 +22,9 @@ import {
   type ShowImageResult,
   type RunMacroParams,
   type RunMacroResult,
+  type ActivateSceneResult,
+  type SceneState,
+  type ToggleConditionResult,
   type DocData,
   type ExecuteOptions,
   type FindSelector,
@@ -167,6 +170,15 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
     },
     async runMacro(params: RunMacroParams, opts) {
       return (await run({ action: "runMacro", ...params }, opts)) as RunMacroResult;
+    },
+    async activateScene(params, opts) {
+      return (await run({ action: "activateScene", ...params }, opts)) as ActivateSceneResult;
+    },
+    async getSceneState(id) {
+      return (await run({ action: "getSceneState", id }, { dryRun: false })) as SceneState;
+    },
+    async toggleCondition(params, opts) {
+      return (await run({ action: "toggleCondition", ...params }, opts)) as ToggleConditionResult;
     },
     async getCompendiumDocument(uuid) {
       return (await run(

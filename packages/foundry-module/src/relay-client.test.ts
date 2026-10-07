@@ -54,6 +54,19 @@ function stubApi(): FoundryDocumentApi {
     async runMacro(params, opts) {
       return { macroId: params.id ?? "m1", name: params.name ?? "Macro", ran: !opts.dryRun };
     },
+    async activateScene(params, opts) {
+      return { _id: params.id, name: "Scene", mode: params.mode, done: !opts.dryRun };
+    },
+    async getSceneState(id) {
+      return {
+        _id: id ?? "s1", name: "Scene", active: false, width: 1000, height: 1000,
+        grid: { type: 1, size: 100 }, origin: { x: 0, y: 0 }, background: null,
+        levels: [], tokens: [], walls: [], lights: [], tiles: [], notes: [],
+      };
+    },
+    async toggleCondition(params, opts) {
+      return { tokenId: params.tokenId, statusId: params.statusId, active: params.active ?? !opts.dryRun };
+    },
     async getChatLog() {
       return { interval: { start: null, end: null }, matched: 0, truncated: false, messages: [] };
     },

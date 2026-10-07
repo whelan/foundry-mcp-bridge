@@ -25,6 +25,12 @@ See the design docs:
 | `packages/mcp-server` | MCP server: config, relay transport, reliability pipeline, tools (`create_document`, `create_scene`, `update_document`, `show_image_file`, …). |
 | `test/integration` | In-memory `mock-foundry` (Foundry key conventions, FilePicker `data`/`forgevtt`, injectable failures) used to test everything without a real Foundry. |
 
+## Scene & token tools
+
+`list_scenes`, `get_scene_state`, `switch_scene`, `place_token`, `move_tokens`, `remove_tokens`,
+`toggle_condition`, `add_walls`, `add_lights` — all addressed in grid squares (square/gridless scenes).
+Arbitrary canvas objects (tiles, drawings, notes, regions) go through `create_embedded` with pixel coordinates.
+
 ## Develop
 
 ```bash

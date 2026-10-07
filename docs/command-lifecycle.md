@@ -88,6 +88,9 @@ on mismatch). Categories differ in which steps apply and why:
 | upload_asset | dry-run, write | terminal: FilePicker upload, no read-back. |
 | show_image | dry-run, write | terminal side effect: image popout shared to the players (falls back to `Journal.show` on the page `uuid`); nothing to read back. |
 | run_macro | dry-run, write | terminal side effect: runs an existing **script** macro in the GM's browser (`args` becomes its `scope`) and returns its JSON-safe return value. Arbitrary code, so it refuses with `UNSUPPORTED` until a GM switches on the world setting "Allow the bridge to run macros" (off by default, not settable through the bridge). Dry-run resolves the macro and the setting without running it. Nothing is read back or rolled back. |
+| activate_scene / toggle_condition | dry-run, write | terminal side effects: `switch_scene` (activate or GM-only view) and `toggle_condition` (Foundry `toggleStatusEffect`; dry-run rejects unknown condition ids and tokens without an actor). The module reports the resulting state, which is the confirmation. |
+| get_scene_state / list_scenes | read | read-only compact scene snapshot (`buildSceneState` in `shared`). |
+| place_token / move_tokens / add_walls / add_lights | (scene read), then embedded create/update | composite grid-square tools in `mcp-server/src/scene-tools.ts`: read the scene grid once (`getSceneState`), convert squares → pixels with `gridToPixels`/`sceneOrigin`, then run the ordinary embedded pipelines. Square/gridless scenes only (hex → `UNSUPPORTED`). |
 | show_image_file | read-file, upload, journal, page, [show] | composite: reads a local image server-side (no base64 through the model), then chains `upload_asset` → `find_documents`/`create_document` (JournalEntry) → `create_embedded` (image page) → `show_image`, each with its own pipeline. |
 
 Step names accumulate in the `steps: string[]` returned in the `ToolOutcome`
