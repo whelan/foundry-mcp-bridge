@@ -110,6 +110,8 @@ function commandSummary(c: Command): string {
       return `${c.start ?? "-"}..${c.end ?? "now"} limit=${c.limit}`;
     case "showImage":
       return c.src;
+    case "runMacro":
+      return c.id ? `id=${c.id}` : `name=${c.name}`;
   }
 }
 
@@ -875,6 +877,28 @@ export function showImageReliable(
   return runTerminal(
     transport,
     { action: "showImage", src: input.src, title: input.title, uuid: input.uuid },
+    opts,
+  );
+}
+
+export interface RunMacroInput {
+  id?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+}
+
+/**
+ * Terminal side effect: dry-run resolves the macro (and the GM's opt-in setting) without
+ * running it, the write runs it. Nothing to read back — a macro's effects are its own.
+ */
+export function runMacroReliable(
+  transport: RelayTransport,
+  input: RunMacroInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runTerminal(
+    transport,
+    { action: "runMacro", id: input.id, name: input.name, args: input.args },
     opts,
   );
 }

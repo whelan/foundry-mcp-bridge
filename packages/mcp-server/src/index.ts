@@ -33,6 +33,8 @@ async function start(): Promise<void> {
     log: (level, message) =>
       console.error(`[foundry-mcp-bridge] ${level}: ${message}`),
   });
+  // Do not advertise working tools when another process owns the relay port.
+  await transport.listening();
   // Phase 2: enable the direct Forge REST tools only when both credentials are
   // present (they're optional; the forge_* tools report UNSUPPORTED otherwise).
   const forge =

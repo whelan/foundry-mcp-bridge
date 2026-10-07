@@ -87,6 +87,23 @@ export interface ShowImageResult {
   via?: "popout" | "journal";
 }
 
+/** Parameters for running a script macro. Exactly one of id / name. */
+export interface RunMacroParams {
+  id?: string;
+  name?: string;
+  /** Becomes the macro's `scope` object. */
+  args?: Record<string, unknown>;
+}
+
+export interface RunMacroResult {
+  macroId: string;
+  name: string;
+  /** False on a dry run. */
+  ran: boolean;
+  /** The macro's return value, made JSON-safe. Absent on a dry run. */
+  result?: unknown;
+}
+
 /** Parameters for browsing assets via Foundry's FilePicker. */
 export interface BrowseAssetsParams {
   source: "data" | "forgevtt";
@@ -178,6 +195,11 @@ export interface FoundryDocumentApi {
   getChatLog(window: ChatLogWindow): Promise<ChatLog>;
   /** Show an image to every connected player (image popout share). */
   showImage(params: ShowImageParams, opts: ExecuteOptions): Promise<ShowImageResult>;
+  /**
+   * Run an existing script macro. Refuses (UNSUPPORTED) unless a GM has switched on the
+   * "Allow the bridge to run macros" world setting; the bridge cannot change it.
+   */
+  runMacro(params: RunMacroParams, opts: ExecuteOptions): Promise<RunMacroResult>;
 }
 
 export interface ExecutorContext {
@@ -314,5 +336,10 @@ async function dispatch(
     }
     case "showImage":
       return api.showImage({ src: command.src, title: command.title, uuid: command.uuid }, opts);
+    case "runMacro":
+      if (Boolean(command.id) === Boolean(command.name)) {
+        throw new CommandExecutionError("VALIDATION", "runMacro needs exactly one of id or name");
+      }
+      return api.runMacro({ id: command.id, name: command.name, args: command.args }, opts);
   }
 }

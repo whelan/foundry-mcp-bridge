@@ -16,6 +16,8 @@ import type {
   BatchUploadAssetsParams,
   ShowImageParams,
   ShowImageResult,
+  RunMacroParams,
+  RunMacroResult,
   WorldInfo,
   CompendiumEntry,
 } from "./protocol-executor.js";
@@ -57,6 +59,17 @@ export function registerSettings(): void {
     config: true,
     type: String,
     default: "",
+  });
+  game.settings.register(MODULE_ID, "allowMacros", {
+    name: "Allow the bridge to run macros",
+    hint:
+      "OFF by default. When on, a connected AI client can run any script macro in this world as the GM " +
+      "(and it can also create macros), which is the same as letting it run code in your browser. " +
+      "Turn it on only for a session you trust, and off again afterwards.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
   });
 }
 
@@ -187,6 +200,49 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         await Journal.show(doc, { force: true });
         return { src: params.src, shown: true, via: "journal" };
       }
+    },
+
+    async runMacro(params: RunMacroParams, opts): Promise<RunMacroResult> {
+      const g = globalThis as any;
+      if (!g.game.settings.get(MODULE_ID, "allowMacros")) {
+        throw new CommandExecutionError(
+          "UNSUPPORTED",
+          'Running macros through the bridge is switched off. A GM can turn on "Allow the bridge to run macros" in Module Settings.',
+        );
+      }
+      const macros = g.game.macros;
+      const matches: any[] = params.id
+        ? [macros.get(params.id)].filter(Boolean)
+        : macros.filter((m: any) => m.name === params.name);
+      if (matches.length === 0) {
+        throw new CommandExecutionError("NOT_FOUND", `No macro ${params.id ? `with id ${params.id}` : `named "${params.name}"`}`);
+      }
+      if (matches.length > 1) {
+        throw new CommandExecutionError("CONFLICT", `More than one macro is named "${params.name}"; pass the id`, {
+          ids: matches.map((m) => m.id),
+        });
+      }
+      const macro = matches[0];
+      if (macro.type !== "script") {
+        throw new CommandExecutionError("VALIDATION", `Macro "${macro.name}" is a ${macro.type} macro; only script macros can run`);
+      }
+      if (opts.dryRun) return { macroId: macro.id, name: macro.name, ran: false };
+
+      console.warn(`[${MODULE_ID}] running macro "${macro.name}" (${macro.id}) at the request of the MCP client`);
+      g.ui?.notifications?.info(`Foundry MCP Bridge is running the macro "${macro.name}".`);
+      let returned: unknown;
+      try {
+        returned = await macro.execute({ ...(params.args ?? {}) });
+      } catch (e) {
+        throw new CommandExecutionError("INTERNAL", `Macro "${macro.name}" threw: ${(e as Error).message}`);
+      }
+      let result: unknown = null;
+      try {
+        result = JSON.parse(JSON.stringify(returned ?? null));
+      } catch {
+        result = String(returned);
+      }
+      return { macroId: macro.id, name: macro.name, ran: true, result };
     },
 
     async getWorldInfo(): Promise<WorldInfo> {

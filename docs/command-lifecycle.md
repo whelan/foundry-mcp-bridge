@@ -87,6 +87,7 @@ on mismatch). Categories differ in which steps apply and why:
 | find / get_world_info / get_chat_log | find / get-world-info / get-chat-log | read-only; not mutations; single round-trip via the shared `runRead` helper. |
 | upload_asset | dry-run, write | terminal: FilePicker upload, no read-back. |
 | show_image | dry-run, write | terminal side effect: image popout shared to the players (falls back to `Journal.show` on the page `uuid`); nothing to read back. |
+| run_macro | dry-run, write | terminal side effect: runs an existing **script** macro in the GM's browser (`args` becomes its `scope`) and returns its JSON-safe return value. Arbitrary code, so it refuses with `UNSUPPORTED` until a GM switches on the world setting "Allow the bridge to run macros" (off by default, not settable through the bridge). Dry-run resolves the macro and the setting without running it. Nothing is read back or rolled back. |
 | show_image_file | read-file, upload, journal, page, [show] | composite: reads a local image server-side (no base64 through the model), then chains `upload_asset` → `find_documents`/`create_document` (JournalEntry) → `create_embedded` (image page) → `show_image`, each with its own pipeline. |
 
 Step names accumulate in the `steps: string[]` returned in the `ToolOutcome`

@@ -187,6 +187,8 @@ export interface MockFoundryOptions {
   token?: string;
   /** Override the world snapshot returned by getWorldInfo. */
   worldInfo?: Partial<WorldInfo>;
+  /** The GM's "Allow the bridge to run macros" setting (off by default, as in the module). */
+  allowMacros?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,9 +217,16 @@ export class MockFoundry {
   readonly shownImages: Array<{ src: string; title?: string; uuid?: string }> = [];
   /** User id → name, for resolving a chat message's author. */
   readonly users = new Map<string, string>();
+  /** The GM's "Allow the bridge to run macros" setting; flip it in a test. */
+  allowMacros: boolean;
+  /** Macros the bridge ran: what was run and the scope it was given, in order. */
+  readonly macroRuns: Array<{ id: string; name: string; scope: Json }> = [];
+  /** What the next macro run returns, keyed by macro name (default null). */
+  readonly macroResults = new Map<string, unknown>();
 
   constructor(options: MockFoundryOptions = {}) {
     this.isGM = options.isGM ?? true;
+    this.allowMacros = options.allowMacros ?? false;
     this.token = options.token;
     this.worldInfo = {
       foundryVersion: "13.0.0",
@@ -366,6 +375,25 @@ export class MockFoundry {
         if ("error" in resolved) return err(id, "VALIDATION", resolved.error);
         const log = buildChatLog(this.chatMessages, resolved.window, (uid) => this.users.get(uid));
         return ok(id, log as unknown as Json);
+      }
+      case "runMacro": {
+        if (Boolean(command.id) === Boolean(command.name)) {
+          return err(id, "VALIDATION", "runMacro needs exactly one of id or name");
+        }
+        if (!this.allowMacros) {
+          return err(id, "UNSUPPORTED", "Running macros through the bridge is switched off.");
+        }
+        const found = this.list("Macro").filter((m) =>
+          command.id ? m._id === command.id : m.name === command.name,
+        );
+        if (found.length === 0) return err(id, "NOT_FOUND", "No such macro");
+        if (found.length > 1) return err(id, "CONFLICT", "More than one macro has that name");
+        const macro = found[0]!;
+        if (macro.type !== "script") return err(id, "VALIDATION", "Only script macros can run");
+        const base = { macroId: String(macro._id), name: String(macro.name) };
+        if (dryRun) return ok(id, { ...base, ran: false });
+        this.macroRuns.push({ id: base.macroId, name: base.name, scope: (command.args ?? {}) as Json });
+        return ok(id, { ...base, ran: true, result: this.macroResults.get(base.name) ?? null });
       }
       case "showImage": {
         if (dryRun) return ok(id, { src: command.src, shown: false });

@@ -41,6 +41,7 @@ import {
   getCompendiumDocumentReliable,
   getChatLogReliable,
   showImageReliable,
+  runMacroReliable,
   importFromCompendiumReliable,
   importEmbeddedFromCompendiumReliable,
   runRead,
@@ -319,6 +320,36 @@ export function runShowImage(
   opts: PipelineOptions = {},
 ): Promise<ToolOutcome> {
   return showImageReliable(transport, args, opts);
+}
+
+// --- run_macro ---------------------------------------------------------------
+
+export const RunMacroShape = {
+  /** Macro id. Pass exactly one of id or name. */
+  id: z.string().min(1).optional(),
+  /** Exact macro name (must be unique in the world). */
+  name: z.string().min(1).optional(),
+  /** Passed to the macro as its `scope` object, e.g. { mode: "test" }. */
+  args: z.record(z.unknown()).optional(),
+  /** How long to wait for the macro to finish, in milliseconds (default 120000, max 600000). */
+  timeoutMs: z.number().int().min(1000).max(600000).optional(),
+};
+const RunMacro = z.object(RunMacroShape);
+export type RunMacroArgs = z.infer<typeof RunMacro>;
+
+export function runRunMacro(
+  transport: RelayTransport,
+  args: RunMacroArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  if (Boolean(args.id) === Boolean(args.name)) {
+    return Promise.resolve({
+      ok: false,
+      error: { code: "VALIDATION", message: "run_macro needs exactly one of id or name" },
+      steps: [],
+    });
+  }
+  return runMacroReliable(transport, args, { ...opts, timeoutMs: args.timeoutMs ?? opts.timeoutMs ?? 120000 });
 }
 
 // --- show_image_file ---------------------------------------------------------
