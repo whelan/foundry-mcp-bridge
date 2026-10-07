@@ -5,6 +5,17 @@ description: Generate an image with a local backend (stable-diffusion.cpp / Comf
 
 # Generate an image with a local AI and upload it into Foundry
 
+> **Codex? Use the `generate_image` MCP tool instead of the steps below.** It runs
+> `scripts/gen-image.mjs --backend codex` on the MCP server's machine, uploads the
+> result and can apply it in one call: `generate_image { prompt, kind: portrait |
+> token | battlemap | handout | item, apply: { to: actor | actorToken | item |
+> sceneBackground | newScene | journal, ... } }`. It returns a `jobId` if the image
+> takes longer than `waitSeconds`; poll with `check_image_job`, stop with
+> `cancel_image_job`. Needs `codex login` once, and `CODEX_BIN` set to the absolute
+> path of `codex` when the MCP client starts the server with a minimal PATH (on macOS
+> typically `/opt/homebrew/bin/codex`). The rest of this skill is for the other
+> backends (stable-diffusion.cpp, Automatic1111/SD-Forge, a custom CLI).
+
 This wires a **local** image generator to the live Foundry path. There are two
 halves, and they stay separate on purpose:
 

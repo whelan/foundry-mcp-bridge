@@ -92,6 +92,24 @@ function withWarnings(out: ToolOutcome, callOpts: PipelineOptions): ToolOutcome 
   return warnings.length ? { ...out, warnings } : out;
 }
 
+import {
+  CancelImageJobShape,
+  CheckImageJobShape,
+  GenerateImageShape,
+  runCancelImageJob,
+  runCheckImageJob,
+  runGenerateImage,
+  type ImageJobRegistry,
+} from "./image-tools.js";
+
+/** Codex image generation: the job registry plus where finished files are written. */
+export interface ImageGeneration {
+  jobs: ImageJobRegistry;
+  outputDir: string;
+}
+
+const NO_IMAGES: ToolOutcome = { ok: false, error: { code: "UNSUPPORTED", message: "Image generation is not configured on this server" }, steps: [] };
+
 function toCallResult(outcome: ToolOutcome) {
   // Compact (no pretty-print): the result is consumed by an LLM, so indentation
   // whitespace is pure token cost with no benefit.
@@ -106,6 +124,7 @@ export function buildServer(
   opts: PipelineOptions = {},
   forge: ForgeClientRef = null,
   changeLog: ChangeLog | null = null,
+  images: ImageGeneration | null = null,
 ): McpServer {
   const server = new McpServer({ name: "foundry-mcp-bridge", version: "0.1.0" });
   const log = opts.log;
@@ -416,6 +435,25 @@ export function buildServer(
     "Reverse a logged change by id, or every change of one tool call by requestId (newest first, stopping at the first failure). Creates are deleted, updates restored to their previous values, deletes re-created with the same id (embedded children get new ids). Runs through the normal reliability pipeline and is itself logged. Subject to the GM's bridge permissions: undoing a create needs delete permission.",
     UndoChangeShape,
     (transport, args, callOpts) => runUndoChange(changeLog, transport, args, callOpts),
+  );
+
+  register(
+    "generate_image",
+    "Generate art with the OpenAI Codex CLI (`codex login` first; set CODEX_BIN to its absolute path under a minimal PATH) and put it into Foundry. kind picks the style and default size: portrait, token, battlemap (top-down, no grid), handout or item. The image is uploaded to Foundry, and `apply` can also set it as an actor portrait/token (to: actor | actorToken), an item image (item), a scene background (sceneBackground; V14 levels supported, pass levelId when there are several), a brand-new scene sized to the image (newScene) or a hidden journal page (journal). Those writes are verified, logged and undoable. Generation takes a minute or more: if it is not done within waitSeconds the result is { jobId, status: \"running\" } — poll with check_image_job.",
+    GenerateImageShape,
+    (transport, args, callOpts) => (images ? runGenerateImage(images.jobs, images.outputDir, transport, args, callOpts) : Promise.resolve(NO_IMAGES)),
+  );
+  register(
+    "check_image_job",
+    "Check an image started by generate_image. Waits up to waitSeconds for it, and when it has finished uploads it and applies it as requested (once). Jobs live in the MCP server's memory and are forgotten on restart; the file itself stays in the output directory.",
+    CheckImageJobShape,
+    (transport, args, callOpts) => (images ? runCheckImageJob(images.jobs, transport, args, callOpts) : Promise.resolve(NO_IMAGES)),
+  );
+  register(
+    "cancel_image_job",
+    "Cancel a running image generation (stops the Codex process).",
+    CancelImageJobShape,
+    (_transport, args) => Promise.resolve(images ? runCancelImageJob(images.jobs, args) : NO_IMAGES),
   );
 
   return server;

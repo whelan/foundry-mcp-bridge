@@ -37,7 +37,8 @@
 //            .imagegen.json, or $IMAGE_GEN_CODEX_MODEL (else codex's default).
 //            --steps/--negative are diffusion-specific and ignored; --width/
 //            --height become a size hint in the prompt. Timeout:
-//            $IMAGE_GEN_TIMEOUT_MS (default 300000).
+//            $IMAGE_GEN_TIMEOUT_MS (default 300000). Binary: $IMAGE_GEN_CODEX_BIN
+//            (default "codex"; use an absolute path under a minimal PATH).
 //            Codex's built-in tool always writes PNG; if --out/--name asks for
 //            a different extension (e.g. --name portrait.webp — smaller files
 //            for committing into a repo/Obsidian vault), this script converts
@@ -324,7 +325,8 @@ function outputTail(lines) {
 function runCodex(argv) {
   return new Promise((resolvePromise, reject) => {
     // stdin must be ignored: `codex exec` reads a piped stdin as extra prompt.
-    const child = spawn("codex", argv, { stdio: ["ignore", "pipe", "inherit"] });
+    // IMAGE_GEN_CODEX_BIN: an absolute path when the parent (e.g. an MCP client) starts us with a minimal PATH.
+    const child = spawn(process.env.IMAGE_GEN_CODEX_BIN ?? "codex", argv, { stdio: ["ignore", "pipe", "inherit"] });
     const timeoutMs = Number(process.env.IMAGE_GEN_TIMEOUT_MS ?? 300_000);
     let out = "";
     const timer = setTimeout(() => {

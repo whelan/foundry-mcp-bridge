@@ -193,6 +193,10 @@ wrong URL/token, or the world tab is closed).
 | `relayToken` | `RELAY_TOKEN` | optional* | — | Shared secret. When set, the module must present it (`?token=…`) and every command carries it; mismatches are rejected (`AUTH`). *Use one for anything beyond localhost. |
 | `requestTimeoutMs` | `RELAY_TIMEOUT_MS` | optional | `10000` | Per-command transport timeout (ms). A slow/unreachable module yields a `TIMEOUT` error. |
 
+| `codexBin` | `CODEX_BIN` | optional | `codex` | The OpenAI Codex CLI used by `generate_image`. Set an absolute path (macOS Homebrew: `/opt/homebrew/bin/codex`) when your MCP client starts the server with a minimal `PATH`. Run `codex login` once. |
+| `imageOutputDir` | `IMAGE_GEN_OUTPUT_DIR` | optional | state dir `/generated-images` | Where generated images are written before upload. |
+| `imageCodexModel` | `IMAGE_GEN_CODEX_MODEL` | optional | Codex default | Model passed to `codex exec -m`. |
+| `imageTimeoutMs` | `IMAGE_GEN_TIMEOUT_MS` | optional | `300000` | Per-image timeout. |
 | `changeLog` | `CHANGE_LOG` | optional | on | `0`/`false` turns the change log (and `list_changes` / `undo_change`) off. |
 | `changeLogDir` | `CHANGE_LOG_DIR` | optional | macOS `~/Library/Application Support/foundry-mcp-bridge`, else `$XDG_STATE_HOME` or `~/.local/state/foundry-mcp-bridge` | Directory of `changes.jsonl`, the append-only change log. |
 

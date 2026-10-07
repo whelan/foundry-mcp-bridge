@@ -2,7 +2,7 @@
   "id": "foundry-mcp-bridge",
   "title": "Foundry MCP Bridge",
   "description": "Lets an AI (via an MCP server) create/update/delete documents in this running world. GM-only; connects out to a configured relay.",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "compatibility": {
     "minimum": "13",
     "verified": "14"

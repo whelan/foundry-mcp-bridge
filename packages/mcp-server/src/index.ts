@@ -10,6 +10,8 @@ import { RelayServer } from "./relay-server.js";
 import { buildServer } from "./server.js";
 import { ForgeRestClient } from "./forge-rest.js";
 import { ChangeLog } from "./change-log.js";
+import { createCodexRunner, ImageJobs } from "./image-gen.js";
+import type { ImageJobMeta } from "./image-tools.js";
 
 export { loadConfig } from "./config.js";
 export * from "./relay-transport.js";
@@ -21,6 +23,8 @@ export * from "./forge-tools.js";
 export * from "./change-log.js";
 export * from "./change-tools.js";
 export * from "./scene-tools.js";
+export * from "./image-gen.js";
+export * from "./image-tools.js";
 export { buildServer } from "./server.js";
 
 async function start(): Promise<void> {
@@ -59,6 +63,12 @@ async function start(): Promise<void> {
     },
     forge,
     config.changeLogFile ? new ChangeLog(config.changeLogFile) : null,
+    {
+      jobs: new ImageJobs<ImageJobMeta>(
+        createCodexRunner({ codexBin: config.imageGen.codexBin, model: config.imageGen.model, timeoutMs: config.imageGen.timeoutMs }),
+      ),
+      outputDir: config.imageGen.outputDir,
+    },
   );
   if (config.trace) {
     console.error(
