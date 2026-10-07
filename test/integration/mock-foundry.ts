@@ -28,6 +28,7 @@ import {
   isPlainObject,
   buildChatLog,
   buildSceneState,
+  type SceneState,
   chatLogWindow,
 } from "@foundry-mcp-bridge/shared";
 import type { WorldInfo, CompendiumEntry } from "../../packages/foundry-module/src/protocol-executor.js";
@@ -289,6 +290,29 @@ export class MockFoundry {
     return this.list(type);
   }
 
+  /**
+   * getSceneState as the module computes it. The origin is an APPROXIMATION of Foundry's
+   * `scene.dimensions.sceneX/Y` (padding rounded up to a grid square; shifts ignored) — the
+   * real value is only verifiable in a live world.
+   */
+  private sceneState(scene: Json): SceneState {
+    const size = (scene.grid as Json).size as number;
+    const padding = (scene.padding as number | undefined) ?? 0.25;
+    const conditions: Record<string, string[]> = {};
+    for (const token of this.embeddedArray(scene, "Token")) {
+      const holder = token.actorLink ? this.get("Actor", String(token.actorId)) : token;
+      conditions[String(token._id)] = Array.isArray(holder?.statuses) ? (holder!.statuses as string[]) : [];
+    }
+    return buildSceneState(scene, {
+      active: scene._id === this.activeSceneId,
+      origin: {
+        x: Math.ceil(((scene.width as number) * padding) / size) * size,
+        y: Math.ceil(((scene.height as number) * padding) / size) * size,
+      },
+      conditions,
+    });
+  }
+
   private list(type: DocumentType): Json[] {
     const prefix = `!${COLLECTIONS[type]}!`;
     return [...this.store.entries()]
@@ -414,7 +438,7 @@ export class MockFoundry {
         const sceneId = command.id ?? this.viewedSceneId ?? this.activeSceneId;
         const scene = sceneId ? this.get("Scene", sceneId) : undefined;
         if (!scene) return err(id, "NOT_FOUND", "No scene to describe: pass an id or view a scene");
-        return ok(id, buildSceneState({ ...scene, active: scene._id === this.activeSceneId }));
+        return ok(id, this.sceneState(scene) as unknown as Json);
       }
       case "toggleCondition": {
         const scene = this.get("Scene", command.sceneId);
@@ -425,12 +449,16 @@ export class MockFoundry {
         if (!this.knownStatuses.has(command.statusId)) {
           return err(id, "VALIDATION", `Unknown status condition "${command.statusId}"`);
         }
-        const statuses = new Set<string>(Array.isArray(token.statuses) ? (token.statuses as string[]) : []);
+        // Foundry semantics: a linked token shares its world actor's statuses; an unlinked token
+        // has its own synthetic actor, so only that token changes.
+        const holder = token.actorLink ? this.get("Actor", String(token.actorId)) : token;
+        if (!holder) return err(id, "NOT_FOUND", `Actor ${String(token.actorId)} not found`);
+        const statuses = new Set<string>(Array.isArray(holder.statuses) ? (holder.statuses as string[]) : []);
         const want = command.active ?? !statuses.has(command.statusId);
         if (!dryRun) {
           if (want) statuses.add(command.statusId);
           else statuses.delete(command.statusId);
-          token.statuses = [...statuses];
+          holder.statuses = [...statuses];
         }
         return ok(id, { tokenId: command.tokenId, statusId: command.statusId, active: want });
       }

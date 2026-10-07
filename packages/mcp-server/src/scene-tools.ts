@@ -8,12 +8,13 @@
 import { z } from "zod";
 import {
   GRID_TYPES,
+  SceneStateSchema,
   TOKEN_DISPOSITIONS,
   buildLight,
   buildToken,
   buildWallFromGrid,
   gridToPixels,
-  sceneOrigin,
+  type SceneState,
 } from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
 import {
@@ -34,9 +35,14 @@ const fail = (code: "VALIDATION" | "UNSUPPORTED" | "NOT_FOUND", message: string)
   steps: [],
 });
 
-interface GridInfo {
+/** Prefix the preparatory read steps onto a write outcome so traces keep the whole path. */
+const withSteps = (before: string[], out: ToolOutcome): ToolOutcome => ({ ...out, steps: [...before, ...out.steps] });
+
+interface GridResult {
   size: number;
+  /** Foundry's own pixel origin of grid square (0,0), straight from the module. */
   origin: { x: number; y: number };
+  steps: string[];
 }
 
 /** Grid size + origin of a scene, or a structured failure (hex grids are not mapped to squares). */
@@ -44,20 +50,27 @@ async function loadGrid(
   transport: RelayTransport,
   sceneId: string,
   opts: PipelineOptions,
-): Promise<{ grid: GridInfo } | { outcome: ToolOutcome }> {
-  const state = await getSceneStateReliable(transport, { id: sceneId }, opts);
-  if (!state.ok) return { outcome: state };
-  const s = state.data as { width: number; height: number; padding?: number; grid: { type: number; size: number } };
-  if (s.grid.type !== GRID_TYPES.SQUARE && s.grid.type !== GRID_TYPES.GRIDLESS) {
+): Promise<GridResult | ToolOutcome> {
+  const read = await getSceneStateReliable(transport, { id: sceneId }, opts);
+  if (!read.ok) return read;
+  const parsed = SceneStateSchema.safeParse(read.data);
+  if (!parsed.success) {
+    return { ok: false, error: { code: "INTERNAL", message: `Module returned a malformed scene state: ${parsed.error.message}` }, steps: read.steps };
+  }
+  const state: SceneState = parsed.data;
+  if (state.grid.type !== GRID_TYPES.SQUARE && state.grid.type !== GRID_TYPES.GRIDLESS) {
     return {
-      outcome: fail(
+      ...fail(
         "UNSUPPORTED",
         "Grid-square coordinates only work on square or gridless scenes; use create_embedded with pixel x/y on hex grids",
       ),
+      steps: read.steps,
     };
   }
-  return { grid: { size: s.grid.size, origin: sceneOrigin(s) } };
+  return { size: state.grid.size, origin: state.origin, steps: read.steps };
 }
+
+const isOutcome = (r: GridResult | ToolOutcome): r is ToolOutcome => "ok" in r;
 
 const sceneId = z.string().min(1).describe("Scene id");
 const square = z.number().int().describe("Grid column/row, 0 = top-left square of the map (not the padding)");
@@ -66,28 +79,25 @@ const DISPOSITIONS = { friendly: TOKEN_DISPOSITIONS.FRIENDLY, neutral: TOKEN_DIS
 // --- list_scenes / get_scene_state / switch_scene ----------------------------
 
 export const ListScenesShape = {};
-export function runListScenes(transport: RelayTransport, _a: object = {}, opts: PipelineOptions = {}): Promise<ToolOutcome> {
-  return runRead(transport, { action: "find", documentType: "Scene" }, "find", opts).then((out) =>
-    out.ok && Array.isArray(out.data)
-      ? {
-          ...out,
-          data: (out.data as Array<Record<string, any>>).map((s) => ({
-            _id: s._id,
-            name: s.name,
-            active: s.active ?? false,
-            grid: s.grid?.size,
-            size: [s.width, s.height],
-            tokens: Array.isArray(s.tokens) ? s.tokens.length : 0,
-          })),
-        }
-      : out,
-  );
+export async function runListScenes(transport: RelayTransport, _args: object = {}, opts: PipelineOptions = {}): Promise<ToolOutcome> {
+  const out = await runRead(transport, { action: "find", documentType: "Scene" }, "find", opts);
+  if (!out.ok || !Array.isArray(out.data)) return out;
+  const scenes = (out.data as Array<Record<string, any>>).map((scene) => ({
+    _id: scene._id,
+    name: scene.name,
+    active: scene.active ?? false,
+    grid: scene.grid?.size,
+    size: [scene.width, scene.height],
+    tokens: Array.isArray(scene.tokens) ? scene.tokens.length : 0,
+  }));
+  return { ...out, data: scenes };
 }
 
 export const GetSceneStateShape = {
   id: z.string().min(1).optional().describe("Scene id; omit for the scene the GM is viewing"),
 };
-export function runGetSceneState(transport: RelayTransport, args: { id?: string }, opts: PipelineOptions = {}) {
+export type GetSceneStateArgs = z.infer<z.ZodObject<typeof GetSceneStateShape>>;
+export function runGetSceneState(transport: RelayTransport, args: GetSceneStateArgs, opts: PipelineOptions = {}) {
   return getSceneStateReliable(transport, args, opts);
 }
 
@@ -95,7 +105,8 @@ export const SwitchSceneShape = {
   id: sceneId,
   mode: z.enum(["activate", "view"]).default("activate").describe("activate = the table sees it; view = only the GM"),
 };
-export function runSwitchScene(transport: RelayTransport, args: { id: string; mode?: "activate" | "view" }, opts: PipelineOptions = {}) {
+export type SwitchSceneArgs = z.input<z.ZodObject<typeof SwitchSceneShape>>;
+export function runSwitchScene(transport: RelayTransport, args: SwitchSceneArgs, opts: PipelineOptions = {}) {
   return activateSceneReliable(transport, args, opts);
 }
 
@@ -117,16 +128,24 @@ export const PlaceTokenShape = {
 export type PlaceTokenArgs = z.infer<z.ZodObject<typeof PlaceTokenShape>>;
 
 export async function runPlaceToken(transport: RelayTransport, args: PlaceTokenArgs, opts: PipelineOptions = {}): Promise<ToolOutcome> {
+  const steps: string[] = [];
   let name = args.name;
-  if (!name && args.actorId) {
+  let src = args.src;
+  if (args.actorId) {
+    // Always resolve the actor: a missing actor fails before any write, and its prototype
+    // token art is the default image (an explicit `src` still wins).
     const actor = await runRead(transport, { action: "find", documentType: "Actor", id: args.actorId }, "find", opts);
     if (!actor.ok) return actor;
-    name = String((actor.data as { name?: string }).name ?? "Token");
+    steps.push(...actor.steps);
+    const doc = actor.data as { name?: string; img?: string; prototypeToken?: { texture?: { src?: string } } };
+    name ??= doc.name ?? "Token";
+    src ??= doc.prototypeToken?.texture?.src ?? doc.img;
   }
   if (!name) return fail("VALIDATION", "place_token needs a name or an actorId");
-  const g = await loadGrid(transport, args.sceneId, opts);
-  if ("outcome" in g) return g.outcome;
-  const { x, y } = gridToPixels(args.col, args.row, g.grid.size, g.grid.origin);
+  const gridResult = await loadGrid(transport, args.sceneId, opts);
+  if (isOutcome(gridResult)) return gridResult;
+  steps.push(...gridResult.steps);
+  const { x, y } = gridToPixels(args.col, args.row, gridResult.size, gridResult.origin);
   const token = buildToken({
     name,
     x,
@@ -134,15 +153,14 @@ export async function runPlaceToken(transport: RelayTransport, args: PlaceTokenA
     actorId: args.actorId,
     width: args.width,
     height: args.height,
-    src: args.src,
+    src,
     hidden: args.hidden,
     disposition: args.disposition ? DISPOSITIONS[args.disposition] : undefined,
     actorLink: args.actorLink,
   });
-  return createEmbeddedReliable(
-    transport,
-    { parentType: "Scene", parentId: args.sceneId, embeddedName: "Token", data: [token] },
-    opts,
+  return withSteps(
+    steps,
+    await createEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "Token", data: [token] }, opts),
   );
 }
 
@@ -150,19 +168,20 @@ export const MoveTokensShape = {
   sceneId,
   moves: z.array(z.object({ tokenId: z.string().min(1), col: square, row: square })).min(1),
 };
-export async function runMoveTokens(
-  transport: RelayTransport,
-  args: { sceneId: string; moves: Array<{ tokenId: string; col: number; row: number }> },
-  opts: PipelineOptions = {},
-): Promise<ToolOutcome> {
-  const g = await loadGrid(transport, args.sceneId, opts);
-  if ("outcome" in g) return g.outcome;
-  const data = args.moves.map((m) => ({ _id: m.tokenId, ...gridToPixels(m.col, m.row, g.grid.size, g.grid.origin) }));
-  return updateEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "Token", data }, opts);
+export type MoveTokensArgs = z.infer<z.ZodObject<typeof MoveTokensShape>>;
+export async function runMoveTokens(transport: RelayTransport, args: MoveTokensArgs, opts: PipelineOptions = {}): Promise<ToolOutcome> {
+  const gridResult = await loadGrid(transport, args.sceneId, opts);
+  if (isOutcome(gridResult)) return gridResult;
+  const data = args.moves.map((move) => ({ _id: move.tokenId, ...gridToPixels(move.col, move.row, gridResult.size, gridResult.origin) }));
+  return withSteps(
+    gridResult.steps,
+    await updateEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "Token", data }, opts),
+  );
 }
 
 export const RemoveTokensShape = { sceneId, tokenIds: z.array(z.string().min(1)).min(1) };
-export function runRemoveTokens(transport: RelayTransport, args: { sceneId: string; tokenIds: string[] }, opts: PipelineOptions = {}) {
+export type RemoveTokensArgs = z.infer<z.ZodObject<typeof RemoveTokensShape>>;
+export function runRemoveTokens(transport: RelayTransport, args: RemoveTokensArgs, opts: PipelineOptions = {}) {
   return deleteEmbeddedReliable(
     transport,
     { parentType: "Scene", parentId: args.sceneId, embeddedName: "Token", ids: args.tokenIds },
@@ -176,11 +195,8 @@ export const ToggleConditionShape = {
   statusId: z.string().min(1).describe('Status id such as "prone", "poisoned", "blinded", "dead"'),
   active: z.boolean().optional().describe("Force on/off; omit to flip"),
 };
-export function runToggleCondition(
-  transport: RelayTransport,
-  args: { sceneId: string; tokenId: string; statusId: string; active?: boolean },
-  opts: PipelineOptions = {},
-) {
+export type ToggleConditionArgs = z.infer<z.ZodObject<typeof ToggleConditionShape>>;
+export function runToggleCondition(transport: RelayTransport, args: ToggleConditionArgs, opts: PipelineOptions = {}) {
   return toggleConditionReliable(transport, args, opts);
 }
 
@@ -195,20 +211,20 @@ export const AddWallsShape = {
         y1: z.number(),
         x2: z.number(),
         y2: z.number(),
-        kind: z.enum(["wall", "door", "secretDoor", "window"]).optional(),
+        kind: z.enum(["wall", "door", "secretDoor", "limited"]).optional().describe("limited = blocks movement, Limited sight/light (see through one, blocked by two). Not Foundry's distance-based Window wall; make that with create_embedded."),
       }),
     )
     .min(1),
 };
-export async function runAddWalls(
-  transport: RelayTransport,
-  args: { sceneId: string; walls: Array<{ x1: number; y1: number; x2: number; y2: number; kind?: "wall" | "door" | "secretDoor" | "window" }> },
-  opts: PipelineOptions = {},
-): Promise<ToolOutcome> {
-  const g = await loadGrid(transport, args.sceneId, opts);
-  if ("outcome" in g) return g.outcome;
-  const data = args.walls.map((w) => buildWallFromGrid(w, g.grid.size, g.grid.origin));
-  return createEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "Wall", data }, opts);
+export type AddWallsArgs = z.infer<z.ZodObject<typeof AddWallsShape>>;
+export async function runAddWalls(transport: RelayTransport, args: AddWallsArgs, opts: PipelineOptions = {}): Promise<ToolOutcome> {
+  const gridResult = await loadGrid(transport, args.sceneId, opts);
+  if (isOutcome(gridResult)) return gridResult;
+  const data = args.walls.map((wall) => buildWallFromGrid(wall, gridResult.size, gridResult.origin));
+  return withSteps(
+    gridResult.steps,
+    await createEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "Wall", data }, opts),
+  );
 }
 
 export const AddLightsShape = {
@@ -225,16 +241,16 @@ export const AddLightsShape = {
     )
     .min(1),
 };
-export async function runAddLights(
-  transport: RelayTransport,
-  args: { sceneId: string; lights: Array<{ col: number; row: number; bright?: number; dim?: number; color?: string }> },
-  opts: PipelineOptions = {},
-): Promise<ToolOutcome> {
-  const g = await loadGrid(transport, args.sceneId, opts);
-  if ("outcome" in g) return g.outcome;
-  const data = args.lights.map((l) => {
-    const { x, y } = gridToPixels(l.col, l.row, g.grid.size, g.grid.origin);
-    return buildLight({ x, y, bright: l.bright, dim: l.dim, color: l.color });
+export type AddLightsArgs = z.infer<z.ZodObject<typeof AddLightsShape>>;
+export async function runAddLights(transport: RelayTransport, args: AddLightsArgs, opts: PipelineOptions = {}): Promise<ToolOutcome> {
+  const gridResult = await loadGrid(transport, args.sceneId, opts);
+  if (isOutcome(gridResult)) return gridResult;
+  const data = args.lights.map((light) => {
+    const { x, y } = gridToPixels(light.col, light.row, gridResult.size, gridResult.origin);
+    return buildLight({ x, y, bright: light.bright, dim: light.dim, color: light.color });
   });
-  return createEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "AmbientLight", data }, opts);
+  return withSteps(
+    gridResult.steps,
+    await createEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "AmbientLight", data }, opts),
+  );
 }

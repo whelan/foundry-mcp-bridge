@@ -16,6 +16,7 @@ import {
   type CompendiumDocument,
   type ChatLog,
   type ChatLogWindow,
+  type SceneState,
   chatLogWindow,
   checkEnvelopeGuards,
   ok,
@@ -25,7 +26,7 @@ import {
 // Re-exported for existing importers of this module; the shape now lives in
 // packages/shared so foundry-module, mcp-server, and standalone consumers
 // (e.g. statblock-sync) all reference the same definition.
-export type { CompendiumEntry };
+export type { CompendiumEntry, SceneState };
 
 export type DocData = Record<string, unknown>;
 
@@ -219,8 +220,6 @@ export interface ActivateSceneResult {
   /** False on dry-run (the scene was resolved but not switched). */
   done: boolean;
 }
-/** Compact scene snapshot returned by getSceneState (see {@link buildSceneState}). */
-export type SceneState = Record<string, unknown>;
 export interface ToggleConditionParams {
   sceneId: string;
   tokenId: string;

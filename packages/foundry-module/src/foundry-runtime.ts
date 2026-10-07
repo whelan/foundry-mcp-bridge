@@ -261,7 +261,19 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
       const g = globalThis as any;
       const scene = id ? requireDoc("Scene", id) : g.canvas?.scene ?? g.game.scenes?.viewed;
       if (!scene) throw new CommandExecutionError("NOT_FOUND", "No scene to describe: pass an id or view a scene");
-      return buildSceneState({ ...scene.toObject(), active: Boolean(scene.active) });
+      // Resolve what the stored source cannot say: Foundry's own origin of grid square (0,0)
+      // (padding rounding and shifts included) and each token's conditions, which live on its
+      // resolved actor (shared for linked tokens, a synthetic actor for unlinked ones).
+      const dims = scene.dimensions ?? {};
+      const conditions: Record<string, string[]> = {};
+      for (const token of scene.tokens ?? []) {
+        conditions[token.id] = [...(token.actor?.statuses ?? [])].map(String);
+      }
+      return buildSceneState(scene.toObject(), {
+        active: Boolean(scene.active),
+        origin: { x: Number(dims.sceneX ?? 0), y: Number(dims.sceneY ?? 0) },
+        conditions,
+      });
     },
 
     async toggleCondition(params, opts): Promise<ToggleConditionResult> {

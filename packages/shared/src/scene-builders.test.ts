@@ -114,11 +114,33 @@ describe("buildNote", () => {
 
 describe("grid helpers", () => {
   it("converts squares to pixels and back, honouring the origin", async () => {
-    const { gridToPixels, pixelsToGrid, sceneOrigin } = await import("./scene-builders.js");
-    const origin = sceneOrigin({ width: 2000, height: 1000, padding: 0.25, grid: { size: 100 } });
-    expect(origin).toEqual({ x: 500, y: 300 });
+    const { gridToPixels, pixelsToGrid } = await import("./scene-builders.js");
+    const origin = { x: 500, y: 300 };
     const p = gridToPixels(3, 2, 100, origin);
     expect(p).toEqual({ x: 800, y: 500 });
     expect(pixelsToGrid(p.x + 40, p.y + 99, 100, origin)).toEqual({ col: 3, row: 2 });
+  });
+
+  it("builds wall, door, secretDoor and limited walls with named constants", async () => {
+    const { buildWallFromGrid } = await import("./scene-builders.js");
+    const seg = { x1: 0, y1: 0, x2: 1, y2: 0 };
+    expect(buildWallFromGrid(seg, 100)).toMatchObject({ c: [0, 0, 100, 0], door: 0, move: 20, sight: 20, light: 20 });
+    expect(buildWallFromGrid({ ...seg, kind: "door" }, 100)).toMatchObject({ door: 1, sight: 20 });
+    expect(buildWallFromGrid({ ...seg, kind: "secretDoor" }, 100)).toMatchObject({ door: 2 });
+    expect(buildWallFromGrid({ ...seg, kind: "limited" }, 100)).toMatchObject({ door: 0, move: 20, sight: 10, light: 10 });
+  });
+
+  it("normalises V13 and V14 scene backgrounds in the scene state", async () => {
+    const { buildSceneState } = await import("./scene-builders.js");
+    const facts = { active: false, origin: { x: 0, y: 0 }, conditions: {} };
+    const base = { _id: "s", name: "S", width: 1, height: 1, grid: { type: 1, size: 100 } };
+    expect(buildSceneState({ ...base, background: { src: "a.webp" } }, facts)).toMatchObject({ background: "a.webp", levels: [] });
+    expect(buildSceneState(base, facts)).toMatchObject({ background: null, levels: [] });
+    const v14 = buildSceneState(
+      { ...base, levels: [{ _id: "l1", name: "Cellar", background: { src: "c.webp" } }, { _id: "l2", background: {} }] },
+      facts,
+    );
+    expect(v14.background).toBeNull();
+    expect(v14.levels).toEqual([{ _id: "l1", name: "Cellar", background: "c.webp" }, { _id: "l2", background: null }]);
   });
 });

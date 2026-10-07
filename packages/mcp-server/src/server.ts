@@ -376,7 +376,7 @@ export function buildServer(
   );
   register(
     "add_walls",
-    "Add walls, doors, secret doors or windows to a scene from grid CORNER coordinates (0,0 = top-left corner of the map). Square/gridless scenes only.",
+    "Add walls, doors, secret doors or limited (see-through-once) walls to a scene from grid CORNER coordinates (0,0 = top-left corner of the map). Square/gridless scenes only.",
     AddWallsShape,
     runAddWalls,
   );
