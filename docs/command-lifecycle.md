@@ -88,6 +88,7 @@ on mismatch). Categories differ in which steps apply and why:
 | upload_asset | dry-run, write | terminal: FilePicker upload, no read-back. |
 | show_image | dry-run, write | terminal side effect: image popout shared to the players (falls back to `Journal.show` on the page `uuid`); nothing to read back. |
 | run_macro | dry-run, write | terminal side effect: runs an existing **script** macro in the GM's browser (`args` becomes its `scope`) and returns its JSON-safe return value. Arbitrary code, so it refuses with `UNSUPPORTED` until a GM switches on the world setting "Allow the bridge to run macros" (off by default, not settable through the bridge). Dry-run resolves the macro and the setting without running it. Nothing is read back or rolled back. |
+| list_changes / undo_change | read / inverse pipeline | server-side change log (`change-log.ts`). With `PipelineOptions.changes` set, `send()` snapshots update/delete targets (an extra `find` before the real write) and records each successful non-dry-run write with its **inverse command**; `undo_change` runs that inverse through the matching `*Reliable` pipeline (and logs it). Deletes therefore gain a pre-read **when the log is on**. Not logged: quests, uploads, macros. |
 | activate_scene / toggle_condition | dry-run, write | terminal side effects: `switch_scene` (activate or GM-only view) and `toggle_condition` (Foundry `toggleStatusEffect`; dry-run rejects unknown condition ids and tokens without an actor). The module reports the resulting state, which is the confirmation. |
 | get_scene_state / list_scenes | read | read-only compact scene snapshot (`buildSceneState` in `shared`). |
 | place_token / move_tokens / add_walls / add_lights | (scene read), then embedded create/update | composite grid-square tools in `mcp-server/src/scene-tools.ts`: read the scene grid once (`getSceneState`), convert squares → pixels with `gridToPixels`/`sceneOrigin`, then run the ordinary embedded pipelines. Square/gridless scenes only (hex → `UNSUPPORTED`). |
@@ -122,6 +123,7 @@ Stable, machine-readable codes (`shared/protocol.ts`), surfaced via
 - `CONFLICT` — concurrent-modification style failure.
 - `TIMEOUT` — transport timed out (`TimeoutError` → this code).
 - `READBACK_MISMATCH` — write succeeded but verification failed; rolled back.
+- `FORBIDDEN` — the GM's per-category bridge permission (Module Settings) does not allow this write; enforced in the executor (`checkPermission` in `shared/permissions.ts`), dry-runs included.
 - `UNSUPPORTED` — type/op the runtime can't service (e.g. FQL module disabled).
 - `INTERNAL` — anything else.
 

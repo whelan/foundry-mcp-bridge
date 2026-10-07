@@ -10,7 +10,8 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { homedir, platform } from "node:os";
+import { join, resolve } from "node:path";
 import { z } from "zod";
 
 export interface ServerConfig {
@@ -28,6 +29,14 @@ export interface ServerConfig {
   forgeApiKey?: string;
   /** Optional: override the Forge API base URL (default https://forge-vtt.com/api). */
   forgeApiBaseUrl?: string;
+  /** JSONL file of the change log; null when CHANGE_LOG=0 turns the log (and undo) off. */
+  changeLogFile: string | null;
+}
+
+/** Per-user state directory: ~/Library/Application Support on macOS, XDG state elsewhere. */
+export function defaultStateDir(env: NodeJS.ProcessEnv = process.env): string {
+  if (platform() === "darwin") return join(homedir(), "Library", "Application Support", "foundry-mcp-bridge");
+  return join(env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "foundry-mcp-bridge");
 }
 
 const ConfigSchema = z.object({
@@ -44,6 +53,11 @@ const ConfigSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === undefined || (v !== "0" && v !== "false")),
+  changeLog: z
+    .string()
+    .optional()
+    .transform((v) => v === undefined || (v !== "0" && v !== "false")),
+  changeLogDir: z.string().min(1).optional(),
 });
 
 type RawConfig = Record<string, string | undefined>;
@@ -101,6 +115,8 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
       devConfig.requestTimeoutMs?.toString(),
     ),
     trace: pick(env.RELAY_TRACE, dotEnv.RELAY_TRACE, devConfig.trace?.toString()),
+    changeLog: pick(env.CHANGE_LOG, dotEnv.CHANGE_LOG, devConfig.changeLog?.toString()),
+    changeLogDir: pick(env.CHANGE_LOG_DIR, dotEnv.CHANGE_LOG_DIR, devConfig.changeLogDir),
   };
 
   const parsed = ConfigSchema.safeParse(raw);
@@ -112,7 +128,8 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
       `Invalid MCP server configuration. Fix these (via .env or environment):\n${issues}`,
     );
   }
-  return parsed.data;
+  const { changeLog, changeLogDir, ...rest } = parsed.data;
+  return { ...rest, changeLogFile: changeLog ? join(changeLogDir ?? defaultStateDir(env), "changes.jsonl") : null };
 }
 
 interface DevConfig {
@@ -123,6 +140,8 @@ interface DevConfig {
   forgeApiBaseUrl?: string;
   requestTimeoutMs?: number;
   trace?: boolean;
+  changeLog?: boolean;
+  changeLogDir?: string;
 }
 
 function readDevConfig(path: string): DevConfig {

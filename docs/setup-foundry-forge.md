@@ -193,6 +193,9 @@ wrong URL/token, or the world tab is closed).
 | `relayToken` | `RELAY_TOKEN` | optional* | — | Shared secret. When set, the module must present it (`?token=…`) and every command carries it; mismatches are rejected (`AUTH`). *Use one for anything beyond localhost. |
 | `requestTimeoutMs` | `RELAY_TIMEOUT_MS` | optional | `10000` | Per-command transport timeout (ms). A slow/unreachable module yields a `TIMEOUT` error. |
 
+| `changeLog` | `CHANGE_LOG` | optional | on | `0`/`false` turns the change log (and `list_changes` / `undo_change`) off. |
+| `changeLogDir` | `CHANGE_LOG_DIR` | optional | macOS `~/Library/Application Support/foundry-mcp-bridge`, else `$XDG_STATE_HOME` or `~/.local/state/foundry-mcp-bridge` | Directory of `changes.jsonl`, the append-only change log. |
+
 In development only, the same keys may come from `dev.config.json` (`relayUrl`,
 `relayToken`, `requestTimeoutMs`); see
 [`dev.config.example.json`](../dev.config.example.json). Environment values win.
@@ -203,6 +206,8 @@ In development only, the same keys may come from `dev.config.json` (`relayUrl`,
 | --- | --- | --- |
 | **Relay URL** | `relayUrl` | Must equal the server's `relayUrl`. The module connects out to it on world `ready`. |
 | **Relay token** | `relayToken` | Must equal the server's `relayToken`. Empty only for a trusted `ws://localhost` relay. |
+
+| **Bridge permission: actors / scenes / journals / tables / items / macros / playlists / folders** | `permission.<category>` | What the AI may do to that category: *Read only*, *Create and edit, never delete* (**default**), or *Full*. Enforced in the module on every command, dry-runs included; refused writes return `FORBIDDEN`. Read per command, so a change applies at once. The bridge cannot change it. Scene tools (`switch_scene`, `toggle_condition`) count as scene edits; quests as journals. **Deleting is off out of the box** — pick *Full* for a category when you want the AI to delete (and for `undo_change` to undo a create there). |
 
 The module **only** connects when the current user is a **GM**; non-GM clients
 never open the relay.

@@ -437,6 +437,7 @@ export const ErrorCode = z.enum([
   "TIMEOUT",
   "READBACK_MISMATCH",
   "UNSUPPORTED",
+  "FORBIDDEN",
   "INTERNAL",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

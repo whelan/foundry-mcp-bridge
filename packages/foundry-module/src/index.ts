@@ -10,6 +10,7 @@ import { RelayClient } from "./relay-client.js";
 import {
   MODULE_ID,
   createFoundryRuntimeApi,
+  readPermissionLevel,
   readSettings,
   registerSettings,
 } from "./foundry-runtime.js";
@@ -44,7 +45,7 @@ Hooks.once("ready", () => {
   client = new RelayClient({
     url: settings.url,
     api: createFoundryRuntimeApi(),
-    context: { isGM: true, expectedToken: settings.token },
+    context: { isGM: true, expectedToken: settings.token, permissionLevel: readPermissionLevel },
     createSocket: (url) => new WebSocket(withToken(url, settings.token)),
     log: (level, message) => console[level === "error" ? "error" : "log"](`[${MODULE_ID}] ${message}`),
   });

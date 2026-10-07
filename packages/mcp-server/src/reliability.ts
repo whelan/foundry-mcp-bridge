@@ -22,12 +22,15 @@ import {
   isSubset,
 } from "@foundry-mcp-bridge/shared";
 import { TimeoutError, type RelayTransport } from "./relay-transport.js";
+import type { ChangeContext } from "./change-log.js";
 
 export interface PipelineOptions {
   token?: string;
   timeoutMs?: number;
   /** Optional trace sink; when set, every wire command + result is logged. */
   log?: (line: string) => void;
+  /** When set, real document writes are recorded in the change log (and can be undone). */
+  changes?: ChangeContext;
 }
 
 export type ToolOutcome =
@@ -44,6 +47,14 @@ function makeEnvelope(command: Command, dryRun: boolean, token?: string): Comman
   };
 }
 
+async function captureBefore(transport: RelayTransport, command: Command, opts: PipelineOptions): Promise<unknown> {
+  const read = async (find: Command): Promise<unknown> => {
+    const res = await send(transport, find, false, { ...opts, changes: undefined });
+    return res.ok ? res.data : undefined;
+  };
+  return opts.changes!.log.capture(command, read);
+}
+
 async function send(
   transport: RelayTransport,
   command: Command,
@@ -56,8 +67,11 @@ async function send(
     ? `${command.action}${dryRun ? " (dry-run)" : ""} #${envelope.id.slice(0, 8)}`
     : "";
   opts.log?.(`  → ${tag} ${commandSummary(command)}`);
+  // Snapshot what a real write is about to change, so the change log can store its inverse.
+  const before = !dryRun && opts.changes ? await captureBefore(transport, command, opts) : undefined;
   try {
     const res = await transport.request(envelope, { timeoutMs: opts.timeoutMs });
+    if (res.ok && !dryRun) opts.changes?.log.record(opts.changes, command, before, res.data);
     opts.log?.(
       res.ok ? `  ← ${tag} ok` : `  ← ${tag} ERROR ${res.error.code}: ${res.error.message}`,
     );

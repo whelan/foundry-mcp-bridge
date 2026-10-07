@@ -17,8 +17,11 @@ import {
   type ChatLog,
   type ChatLogWindow,
   type SceneState,
+  type PermissionCategory,
+  type PermissionLevel,
   chatLogWindow,
   checkEnvelopeGuards,
+  checkPermission,
   ok,
   err,
 } from "@foundry-mcp-bridge/shared";
@@ -238,6 +241,8 @@ export interface ExecutorContext {
   isGM: boolean;
   /** Configured auth token; when set, envelopes must match it. */
   expectedToken?: string;
+  /** The GM's per-category bridge permission; absent means unrestricted (tests, tools). */
+  permissionLevel?: (category: PermissionCategory) => PermissionLevel;
 }
 
 /** Error a {@link FoundryDocumentApi} throws to surface a structured failure. */
@@ -259,6 +264,9 @@ export async function executeCommand(
 ): Promise<CommandResult> {
   const guardError = checkEnvelopeGuards(envelope, ctx);
   if (guardError) return { id: envelope.id, ok: false, error: guardError };
+  // Dry-runs are refused too: a forbidden write must not look like it would work.
+  const denied = ctx.permissionLevel ? checkPermission(envelope.command, ctx.permissionLevel) : null;
+  if (denied) return { id: envelope.id, ok: false, error: denied };
 
   const opts: ExecuteOptions = { dryRun: envelope.dryRun };
   try {

@@ -6,7 +6,7 @@
  * protocol logic is tested against the mock. Kept thin and obvious on purpose.
  */
 
-import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, buildChatLog, buildSceneState, type DocumentType, type CompendiumDocument, type ChatLog, type ChatLogWindow } from "@foundry-mcp-bridge/shared";
+import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, buildChatLog, buildSceneState, PERMISSION_CATEGORIES, DEFAULT_PERMISSION_LEVEL, type PermissionCategory, type PermissionLevel, type DocumentType, type CompendiumDocument, type ChatLog, type ChatLogWindow } from "@foundry-mcp-bridge/shared";
 import type {
   DocData,
   ExecuteOptions,
@@ -74,6 +74,36 @@ export function registerSettings(): void {
     type: Boolean,
     default: false,
   });
+  registerPermissionSettings();
+}
+
+const LEVEL_LABELS: Record<PermissionLevel, string> = {
+  "read-only": "Read only (no changes)",
+  "no-delete": "Create and edit, never delete",
+  full: "Full (including delete)",
+};
+
+/** Settings key for a category's bridge permission. */
+const permissionKey = (category: PermissionCategory) => `permission.${category}`;
+
+function registerPermissionSettings(): void {
+  for (const category of PERMISSION_CATEGORIES) {
+    game.settings.register(MODULE_ID, permissionKey(category), {
+      name: `Bridge permission: ${category}`,
+      hint: `What a connected AI client may do to ${category}. Deleting is off unless you choose Full. The bridge cannot change this setting.`,
+      scope: "world",
+      config: true,
+      type: String,
+      choices: LEVEL_LABELS,
+      default: DEFAULT_PERMISSION_LEVEL,
+    });
+  }
+}
+
+/** The GM's current permission for a category (read per command, so changes apply at once). */
+export function readPermissionLevel(category: PermissionCategory): PermissionLevel {
+  const value = String(game.settings.get(MODULE_ID, permissionKey(category)));
+  return value in LEVEL_LABELS ? (value as PermissionLevel) : DEFAULT_PERMISSION_LEVEL;
 }
 
 /** Reads relay settings; throws loudly if the required URL is missing. */
