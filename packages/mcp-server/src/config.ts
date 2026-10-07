@@ -31,6 +31,8 @@ export interface ServerConfig {
   forgeApiBaseUrl?: string;
   /** JSONL file of the change log; null when CHANGE_LOG=0 turns the log (and undo) off. */
   changeLogFile: string | null;
+  /** Codex image generation (the generate_image tool). */
+  imageGen: { codexBin: string; outputDir: string; model?: string; timeoutMs: number };
 }
 
 /** Per-user state directory: ~/Library/Application Support on macOS, XDG state elsewhere. */
@@ -58,6 +60,10 @@ const ConfigSchema = z.object({
     .optional()
     .transform((v) => v === undefined || (v !== "0" && v !== "false")),
   changeLogDir: z.string().min(1).optional(),
+  codexBin: z.string().min(1).default("codex"),
+  imageOutputDir: z.string().min(1).optional(),
+  imageCodexModel: z.string().min(1).optional(),
+  imageTimeoutMs: z.coerce.number().int().positive().default(300_000),
 });
 
 type RawConfig = Record<string, string | undefined>;
@@ -117,6 +123,10 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
     trace: pick(env.RELAY_TRACE, dotEnv.RELAY_TRACE, devConfig.trace?.toString()),
     changeLog: pick(env.CHANGE_LOG, dotEnv.CHANGE_LOG, devConfig.changeLog?.toString()),
     changeLogDir: pick(env.CHANGE_LOG_DIR, dotEnv.CHANGE_LOG_DIR, devConfig.changeLogDir),
+    codexBin: pick(env.CODEX_BIN, dotEnv.CODEX_BIN, devConfig.codexBin),
+    imageOutputDir: pick(env.IMAGE_GEN_OUTPUT_DIR, dotEnv.IMAGE_GEN_OUTPUT_DIR, devConfig.imageOutputDir),
+    imageCodexModel: pick(env.IMAGE_GEN_CODEX_MODEL, dotEnv.IMAGE_GEN_CODEX_MODEL, devConfig.imageCodexModel),
+    imageTimeoutMs: pick(env.IMAGE_GEN_TIMEOUT_MS, dotEnv.IMAGE_GEN_TIMEOUT_MS, devConfig.imageTimeoutMs?.toString()),
   };
 
   const parsed = ConfigSchema.safeParse(raw);
@@ -128,8 +138,17 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
       `Invalid MCP server configuration. Fix these (via .env or environment):\n${issues}`,
     );
   }
-  const { changeLog, changeLogDir, ...rest } = parsed.data;
-  return { ...rest, changeLogFile: changeLog ? join(changeLogDir ?? defaultStateDir(env), "changes.jsonl") : null };
+  const { changeLog, changeLogDir, codexBin, imageOutputDir, imageCodexModel, imageTimeoutMs, ...rest } = parsed.data;
+  return {
+    ...rest,
+    changeLogFile: changeLog ? join(changeLogDir ?? defaultStateDir(env), "changes.jsonl") : null,
+    imageGen: {
+      codexBin,
+      outputDir: imageOutputDir ?? join(defaultStateDir(env), "generated-images"),
+      model: imageCodexModel,
+      timeoutMs: imageTimeoutMs,
+    },
+  };
 }
 
 interface DevConfig {
@@ -142,6 +161,10 @@ interface DevConfig {
   trace?: boolean;
   changeLog?: boolean;
   changeLogDir?: string;
+  codexBin?: string;
+  imageOutputDir?: string;
+  imageCodexModel?: string;
+  imageTimeoutMs?: number;
 }
 
 function readDevConfig(path: string): DevConfig {

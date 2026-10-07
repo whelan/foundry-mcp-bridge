@@ -60,6 +60,8 @@ export const EMBEDDED_FIELDS: Record<string, string> = {
   MeasuredTemplate: "templates",
   Tile: "tiles",
   Region: "regions",
+  // v14 Scene levels (each carries its own background).
+  Level: "levels",
   // v10+ JournalEntry content lives in embedded JournalEntryPage documents.
   JournalEntryPage: "pages",
 };

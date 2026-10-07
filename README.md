@@ -31,6 +31,15 @@ See the design docs:
 `toggle_condition`, `add_walls`, `add_lights` — all addressed in grid squares (square/gridless scenes).
 Arbitrary canvas objects (tiles, drawings, notes, regions) go through `create_embedded` with pixel coordinates.
 
+## Image generation (Codex)
+
+`generate_image` makes art with the OpenAI Codex CLI and puts it into Foundry: `kind` picks the style and size
+(portrait, token, battlemap, handout, item) and `apply` sets it as an actor portrait/token, item image, scene
+background (V13 and V14 levels), a new scene sized to the image, or a hidden journal page. Generation takes a minute or
+more, so it runs as a job: `generate_image` waits `waitSeconds`, otherwise returns a `jobId` for `check_image_job`
+(or `cancel_image_job`). On macOS: `npm i -g @openai/codex`, `codex login`, and set `CODEX_BIN=/opt/homebrew/bin/codex`.
+The writes it makes are verified, logged and undoable like any other tool's.
+
 ## Safety: permissions, change log, undo
 
 - **Permissions** (Module Settings, GM only): per category (actors, scenes, journals, tables, items, macros,
