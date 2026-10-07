@@ -18,6 +18,9 @@ import {
   COLLECTIONS,
   EMBEDDED_FIELDS,
   checkEnvelopeGuards,
+  checkPermission,
+  type PermissionCategory,
+  type PermissionLevel,
   embeddedField,
   randomID,
   ok,
@@ -191,6 +194,8 @@ export interface MockFoundryOptions {
   worldInfo?: Partial<WorldInfo>;
   /** The GM's "Allow the bridge to run macros" setting (off by default, as in the module). */
   allowMacros?: boolean;
+  /** Per-category bridge permission, as the GM sets in Module Settings (default: full). */
+  permissions?: Partial<Record<PermissionCategory, PermissionLevel>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +228,8 @@ export class MockFoundry {
   allowMacros: boolean;
   /** Macros the bridge ran: what was run and the scope it was given, in order. */
   readonly macroRuns: Array<{ id: string; name: string; scope: Json }> = [];
+  /** The GM's per-category bridge permissions; flip them in a test. */
+  readonly permissions: Partial<Record<PermissionCategory, PermissionLevel>>;
   /** Scene the table sees (activateScene "activate") and the one the GM views. */
   activeSceneId: string | null = null;
   viewedSceneId: string | null = null;
@@ -234,11 +241,12 @@ export class MockFoundry {
   constructor(options: MockFoundryOptions = {}) {
     this.isGM = options.isGM ?? true;
     this.allowMacros = options.allowMacros ?? false;
+    this.permissions = { ...options.permissions };
     this.token = options.token;
     this.worldInfo = {
       foundryVersion: "13.0.0",
       system: { id: "dnd5e", version: "3.0.0" },
-      world: { id: "test-world", title: "Test World" },
+      world: { id: "test-world", title: "Test World", key: "mock-world-key" },
       folders: [],
       forge: { active: false, userId: null },
       ...options.worldInfo,
@@ -341,6 +349,8 @@ export class MockFoundry {
       expectedToken: this.token,
     });
     if (guardError) return { id: envelope.id, ok: false, error: guardError };
+    const denied = checkPermission(envelope.command, (c) => this.permissions[c] ?? "full");
+    if (denied) return { id: envelope.id, ok: false, error: denied };
 
     try {
       return this.dispatch(envelope.id, envelope.command, envelope.dryRun);

@@ -31,6 +31,15 @@ See the design docs:
 `toggle_condition`, `add_walls`, `add_lights` — all addressed in grid squares (square/gridless scenes).
 Arbitrary canvas objects (tiles, drawings, notes, regions) go through `create_embedded` with pixel coordinates.
 
+## Safety: permissions, change log, undo
+
+- **Permissions** (Module Settings, GM only): per category (actors, scenes, journals, tables, items, macros,
+  playlists, folders) choose *Read only*, *Create and edit, never delete* (default) or *Full*. Refused writes
+  return `FORBIDDEN`. **Deleting is off until you enable *Full* for that category.**
+- **Change log**: every document write made through the bridge is logged with the command that reverses it.
+  `list_changes` browses it, `undo_change` reverses one change or a whole tool call (`requestId`).
+  Quests, uploads and macro runs are not logged. Set `CHANGE_LOG=0` to turn it off.
+
 ## Develop
 
 ```bash

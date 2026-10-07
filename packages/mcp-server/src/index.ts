@@ -9,6 +9,7 @@ import { loadConfig } from "./config.js";
 import { RelayServer } from "./relay-server.js";
 import { buildServer } from "./server.js";
 import { ForgeRestClient } from "./forge-rest.js";
+import { ChangeLog } from "./change-log.js";
 
 export { loadConfig } from "./config.js";
 export * from "./relay-transport.js";
@@ -17,6 +18,9 @@ export * from "./reliability.js";
 export * from "./tools.js";
 export * from "./forge-rest.js";
 export * from "./forge-tools.js";
+export * from "./change-log.js";
+export * from "./change-tools.js";
+export * from "./scene-tools.js";
 export { buildServer } from "./server.js";
 
 async function start(): Promise<void> {
@@ -54,6 +58,7 @@ async function start(): Promise<void> {
       log: trace,
     },
     forge,
+    config.changeLogFile ? new ChangeLog(config.changeLogFile) : null,
   );
   if (config.trace) {
     console.error(

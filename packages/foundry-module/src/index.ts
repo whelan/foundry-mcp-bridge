@@ -10,6 +10,8 @@ import { RelayClient } from "./relay-client.js";
 import {
   MODULE_ID,
   createFoundryRuntimeApi,
+  ensureWorldKey,
+  readPermissionLevel,
   readSettings,
   registerSettings,
 } from "./foundry-runtime.js";
@@ -41,10 +43,12 @@ Hooks.once("ready", () => {
     return;
   }
 
+  void ensureWorldKey().catch((e) => console.warn(`[${MODULE_ID}] could not store the world key: ${(e as Error).message}`));
+
   client = new RelayClient({
     url: settings.url,
     api: createFoundryRuntimeApi(),
-    context: { isGM: true, expectedToken: settings.token },
+    context: { isGM: true, expectedToken: settings.token, permissionLevel: readPermissionLevel },
     createSocket: (url) => new WebSocket(withToken(url, settings.token)),
     log: (level, message) => console[level === "error" ? "error" : "log"](`[${MODULE_ID}] ${message}`),
   });

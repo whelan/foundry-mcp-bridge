@@ -75,9 +75,92 @@ export function getByPath(obj: unknown, path: string): unknown {
   }, obj);
 }
 
-/** Apply a Foundry update diff (dot-notation aware) to a clone of `doc`. */
+/** Foundry's deletion marker: `{"-=key": null}` (or `"a.b.-=key": null`) removes `key` on update. */
+const REMOVAL = "-=";
+
+/** Merge an expanded update into `base`, honouring `-=key: null` deletions at any depth. */
+function mergeUpdate(base: Json, patch: Json): Json {
+  const out: Json = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (key.startsWith(REMOVAL) && value === null) {
+      delete out[key.slice(REMOVAL.length)];
+    } else if (isPlainObject(value) && isPlainObject(out[key])) {
+      out[key] = mergeUpdate(out[key] as Json, value);
+    } else if (isPlainObject(value)) {
+      out[key] = mergeUpdate({}, value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/** Apply a Foundry update diff (dot-notation and `-=` deletions aware) to a clone of `doc`. */
 export function applyUpdate(doc: Json, diff: Json): Json {
-  return deepMerge(structuredClone(doc), expandObject(diff));
+  return mergeUpdate(structuredClone(doc), expandObject(diff));
+}
+
+/**
+ * Split an update diff into what it sets and the dot-paths it deletes (`-=key: null`), so
+ * read-back can assert presence of the former and *absence* of the latter.
+ */
+export function splitRemovals(diff: Json): { set: Json; removed: string[] } {
+  const removed: string[] = [];
+  const walk = (node: Json, prefix: string[]): Json => {
+    const out: Json = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (key.startsWith(REMOVAL) && value === null) {
+        removed.push([...prefix, key.slice(REMOVAL.length)].join("."));
+      } else if (isPlainObject(value)) {
+        const child = walk(value, [...prefix, key]);
+        if (Object.keys(child).length > 0 || Object.keys(value).length === 0) out[key] = child;
+      } else {
+        out[key] = value;
+      }
+    }
+    return out;
+  };
+  return { set: walk(expandObject(diff), []), removed };
+}
+
+/** True when `path` does not exist in `doc` (an explicit `null` still exists). */
+export function isAbsent(doc: unknown, path: string): boolean {
+  return getByPath(doc, path) === undefined;
+}
+
+/** Every leaf dot-path of an expanded object; arrays, primitives and empty objects are leaves. */
+function leafPaths(node: Json, prefix: string[] = []): string[][] {
+  return Object.entries(node).flatMap(([key, value]) =>
+    isPlainObject(value) && Object.keys(value).length > 0 ? leafPaths(value, [...prefix, key]) : [[...prefix, key]],
+  );
+}
+
+/**
+ * The update that reverses `diff` on a document that looked like `before`. Unlike restoring
+ * `before[key] ?? null`, it tells "was absent" from "was null": values that existed are put
+ * back, and fields the diff added are deleted with `-=` (at the shallowest ancestor that did
+ * not exist, so no empty containers are left behind). Deletions in `diff` are restored too.
+ */
+export function buildInverseUpdate(before: Json, diff: Json): Json {
+  const { set, removed } = splitRemovals(diff);
+  const paths = [...leafPaths(set), ...removed.map((p) => p.split("."))];
+  const inverse: Json = {};
+  for (const parts of paths) {
+    const previous = getByPath(before, parts.join("."));
+    if (previous !== undefined) {
+      inverse[parts.join(".")] = previous;
+      continue;
+    }
+    // Absent before: delete at the first missing segment.
+    let cursor: unknown = before;
+    let i = 0;
+    for (; i < parts.length; i++) {
+      if (!isPlainObject(cursor) || cursor[parts[i]!] === undefined) break;
+      cursor = (cursor as Json)[parts[i]!];
+    }
+    if (i < parts.length) inverse[[...parts.slice(0, i), `${REMOVAL}${parts[i]}`].join(".")] = null;
+  }
+  return inverse;
 }
 
 /**

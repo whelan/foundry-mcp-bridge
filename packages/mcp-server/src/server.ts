@@ -82,6 +82,16 @@ import {
   type ForgeClientRef,
 } from "./forge-tools.js";
 
+import { randomUUID } from "node:crypto";
+import type { ChangeLog } from "./change-log.js";
+import { ListChangesShape, UndoChangeShape, runListChanges, runUndoChange } from "./change-tools.js";
+
+/** Surface problems collected during the call (e.g. a change that could not be logged). */
+function withWarnings(out: ToolOutcome, callOpts: PipelineOptions): ToolOutcome {
+  const warnings = [...(out.warnings ?? []), ...(callOpts.changes?.warnings ?? [])];
+  return warnings.length ? { ...out, warnings } : out;
+}
+
 function toCallResult(outcome: ToolOutcome) {
   // Compact (no pretty-print): the result is consumed by an LLM, so indentation
   // whitespace is pure token cost with no benefit.
@@ -95,9 +105,15 @@ export function buildServer(
   transport: RelayTransport,
   opts: PipelineOptions = {},
   forge: ForgeClientRef = null,
+  changeLog: ChangeLog | null = null,
 ): McpServer {
   const server = new McpServer({ name: "foundry-mcp-bridge", version: "0.1.0" });
   const log = opts.log;
+
+  // One request id per tool call, shared by every pipeline a composite tool runs, so a whole
+  // call can be undone at once.
+  const withChanges = (tool: string): PipelineOptions =>
+    changeLog ? { ...opts, changes: { log: changeLog, requestId: randomUUID(), tool, warnings: [] } } : opts;
 
   // Register a tool and wrap its handler with a trace of entry + outcome+steps.
   // Generic over the input shape so a mismatched shape/handler pairing fails tsc.
@@ -114,7 +130,8 @@ export function buildServer(
     // `run` is tied to S, so a mismatched shape/handler pairing fails tsc here.
     const handler = async (args: z.infer<z.ZodObject<S>>) => {
       log?.(`▶ ${name}`);
-      const out = await run(transport, args, opts);
+      const callOpts = withChanges(name);
+      const out = withWarnings(await run(transport, args, callOpts), callOpts);
       log?.(
         out.ok
           ? `◀ ${name} ok [${out.steps.join(" > ")}]`
@@ -145,7 +162,8 @@ export function buildServer(
   ): void {
     const handler = async (args: z.infer<z.ZodObject<S>>) => {
       log?.(`▶ ${name}`);
-      const out = await run(forge, args, opts);
+      const callOpts = withChanges(name);
+      const out = withWarnings(await run(forge, args, callOpts), callOpts);
       log?.(
         out.ok
           ? `◀ ${name} ok [${out.steps.join(" > ")}]`
@@ -385,6 +403,19 @@ export function buildServer(
     "Add ambient lights at grid positions (fractions allowed; col 3.5,row 2.5 = centre of a square) with bright/dim radii in the scene's distance units and an optional hex colour. Square/gridless scenes only.",
     AddLightsShape,
     runAddLights,
+  );
+
+  register(
+    "list_changes",
+    "List the document changes this bridge made (newest first): id, time, tool, requestId, summary and whether it can still be undone. Filter by tool or requestId. Only writes made through the bridge are logged; quests, asset uploads and macro runs are not.",
+    ListChangesShape,
+    (transport, args, callOpts) => runListChanges(changeLog, transport, args, callOpts),
+  );
+  register(
+    "undo_change",
+    "Reverse a logged change by id, or every change of one tool call by requestId (newest first, stopping at the first failure). Creates are deleted, updates restored to their previous values, deletes re-created with the same id (embedded children get new ids). Runs through the normal reliability pipeline and is itself logged. Subject to the GM's bridge permissions: undoing a create needs delete permission.",
+    UndoChangeShape,
+    (transport, args, callOpts) => runUndoChange(changeLog, transport, args, callOpts),
   );
 
   return server;
