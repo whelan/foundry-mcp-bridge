@@ -335,6 +335,24 @@ export const ShowImageCommand = z.object({
 });
 export type ShowImageCommand = z.infer<typeof ShowImageCommand>;
 
+/**
+ * Run an existing script macro in the GM's browser. This is arbitrary code, so it is
+ * OFF until a GM switches the world setting "Allow the bridge to run macros" on in the
+ * module's settings; the bridge cannot change that setting. A side effect, not a
+ * document write: nothing to read back. Dry-run resolves the macro and the setting
+ * without running it. `args` becomes the macro's `scope` object.
+ */
+export const RunMacroCommand = z.object({
+  action: z.literal("runMacro"),
+  /** Macro id. Pass exactly one of `id` or `name`. */
+  id: z.string().min(1).optional(),
+  /** Exact macro name; it must be unique in the world. */
+  name: z.string().min(1).optional(),
+  /** Passed to the macro as its `scope` (e.g. `{ mode: "test" }`). */
+  args: z.record(z.unknown()).optional(),
+});
+export type RunMacroCommand = z.infer<typeof RunMacroCommand>;
+
 export const Command = z.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -357,6 +375,7 @@ export const Command = z.discriminatedUnion("action", [
   GetCompendiumDocumentCommand,
   GetChatLogCommand,
   ShowImageCommand,
+  RunMacroCommand,
 ]);
 export type Command = z.infer<typeof Command>;
 

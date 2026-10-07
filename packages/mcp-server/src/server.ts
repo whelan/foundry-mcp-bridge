@@ -19,6 +19,7 @@ import {
   GetWorldInfoShape,
   GetChatLogShape,
   ShowImageShape,
+  RunMacroShape,
   ShowImageFileShape,
   UploadAssetShape,
   BrowseAssetsShape,
@@ -42,6 +43,7 @@ import {
   runGetWorldInfo,
   runGetChatLog,
   runShowImage,
+  runRunMacro,
   runShowImageFile,
   runUploadAsset,
   runBrowseAssets,
@@ -182,6 +184,12 @@ export function buildServer(
     "Query and read Foundry documents. Pass id for a single document, or query for shallow field matching. Pass fields (e.g. [\"_id\",\"_stats.modifiedTime\"]) to project each result to just those dot-paths — strongly recommended for bulk reads to avoid returning whole documents. Returns document(s) for inspection.",
     FindDocumentsShape,
     runFindDocuments,
+  );
+  register(
+    "run_macro",
+    "Run an existing SCRIPT macro in the GM's browser (by id or exact name) and return its return value. This is code execution, so the GM must first switch on the world setting \"Allow the bridge to run macros\" in the module's settings (off by default; this tool cannot change it) — otherwise it returns UNSUPPORTED. Pass `args` to give the macro a `scope` object (e.g. {mode: \"test\"}) so it can skip dialogs. Dry-run only checks the macro exists and the setting is on. Anything the macro does is its own doing: it is not read back or rolled back.",
+    RunMacroShape,
+    runRunMacro,
   );
   register(
     "get_world_info",

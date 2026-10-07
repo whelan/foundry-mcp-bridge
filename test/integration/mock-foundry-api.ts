@@ -20,6 +20,8 @@ import {
   type BatchUploadAssetsParams,
   type ShowImageParams,
   type ShowImageResult,
+  type RunMacroParams,
+  type RunMacroResult,
   type DocData,
   type ExecuteOptions,
   type FindSelector,
@@ -162,6 +164,9 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
     },
     async showImage(params: ShowImageParams, opts) {
       return (await run({ action: "showImage", ...params }, opts)) as ShowImageResult;
+    },
+    async runMacro(params: RunMacroParams, opts) {
+      return (await run({ action: "runMacro", ...params }, opts)) as RunMacroResult;
     },
     async getCompendiumDocument(uuid) {
       return (await run(

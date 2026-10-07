@@ -51,6 +51,9 @@ function stubApi(): FoundryDocumentApi {
     async showImage(params, opts) {
       return { src: params.src, shown: !opts.dryRun };
     },
+    async runMacro(params, opts) {
+      return { macroId: params.id ?? "m1", name: params.name ?? "Macro", ran: !opts.dryRun };
+    },
     async getChatLog() {
       return { interval: { start: null, end: null }, matched: 0, truncated: false, messages: [] };
     },
