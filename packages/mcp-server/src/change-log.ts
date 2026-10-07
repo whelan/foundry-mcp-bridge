@@ -12,43 +12,46 @@
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { type Command, type Json, embeddedField, getByPath } from "@foundry-mcp-bridge/shared";
+import { z } from "zod";
+import { Command, type Json, buildInverseUpdate, embeddedField } from "@foundry-mcp-bridge/shared";
 
 /** Reads a document through the transport and returns its data, or undefined on any failure. */
 export type ReadFn = (command: Command) => Promise<unknown>;
 
 export interface ChangeContext {
   log: ChangeLog;
+  /** Problems that must reach the caller without failing a write that already went through. */
+  warnings: string[];
   /** One id per MCP tool call; composite tools share it, so a whole request can be undone. */
   requestId: string;
   tool: string;
 }
 
-export interface ChangeEntry {
-  id: string;
-  ts: string;
-  requestId: string;
-  tool: string;
-  summary: string;
+/** The stored contract; log lines are validated against it when loaded. */
+const ChangeEntrySchema = z.object({
+  id: z.string().min(1),
+  ts: z.string(),
+  requestId: z.string(),
+  tool: z.string(),
+  summary: z.string(),
+  /** `<world id>:<module-generated key>` of the world the change was made in; absent on old entries. */
+  worldKey: z.string().min(1).optional(),
   /** The command that reverses this change, or null when no snapshot was available. */
-  undo: Command | null;
-  undone?: { ts: string; by: string };
-}
+  undo: Command.nullable(),
+  undone: z.object({ ts: z.string(), by: z.string() }).optional(),
+});
+export type ChangeEntry = z.infer<typeof ChangeEntrySchema>;
+
+const EntryRow = ChangeEntrySchema.extend({ kind: z.literal("entry") });
+const UndoneRow = z.object({ kind: z.literal("undone"), id: z.string().min(1), ts: z.string(), by: z.string() });
 
 const asObj = (v: unknown): Json | undefined => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : undefined);
 const asList = (v: unknown): Json[] => (Array.isArray(v) ? v.filter((x): x is Json => !!asObj(x)) : []);
 
-/** Previous values for the keys a diff touched (dot-notation aware). */
-function restoreDiff(before: Json, diff: Json): Json {
-  const restore: Json = {};
-  for (const key of Object.keys(diff)) {
-    if (key !== "_id") restore[key] = getByPath(before, key) ?? null;
-  }
-  return restore;
-}
-
 export class ChangeLog {
   private readonly entries: ChangeEntry[] = [];
+  /** True when the file's last line lacks a newline (a torn write): the next append must start a new line. */
+  private needsNewline = false;
 
   /** @param file JSONL path; omit for an in-memory log (tests). */
   constructor(private readonly file?: string) {
@@ -56,29 +59,36 @@ export class ChangeLog {
   }
 
   private load(file: string): void {
+    const text = readFileSync(file, "utf8");
+    this.needsNewline = text.length > 0 && !text.endsWith("\n");
     const byId = new Map<string, ChangeEntry>();
-    for (const line of readFileSync(file, "utf8").split("\n")) {
+    for (const line of text.split("\n")) {
       if (!line.trim()) continue;
+      let row: unknown;
       try {
-        const row = JSON.parse(line) as { kind: string } & Record<string, any>;
-        if (row.kind === "entry") {
-          const { kind: _kind, ...entry } = row;
-          byId.set(entry.id, entry as ChangeEntry);
-          this.entries.push(entry as ChangeEntry);
-        } else if (row.kind === "undone") {
-          const target = byId.get(row.id);
-          if (target) target.undone = { ts: row.ts, by: row.by };
-        }
+        row = JSON.parse(line);
       } catch {
-        // A torn last line must not take the whole log down.
+        continue; // a torn line is skipped; every complete record around it is kept
       }
+      const entry = EntryRow.safeParse(row);
+      if (entry.success) {
+        const { kind: _kind, ...rest } = entry.data;
+        byId.set(rest.id, rest);
+        this.entries.push(rest);
+        continue;
+      }
+      const undone = UndoneRow.safeParse(row);
+      const target = undone.success ? byId.get(undone.data.id) : undefined;
+      if (undone.success && target) target.undone = { ts: undone.data.ts, by: undone.data.by };
     }
   }
 
   private append(row: Record<string, unknown>): void {
     if (!this.file) return;
     mkdirSync(dirname(this.file), { recursive: true });
-    appendFileSync(this.file, `${JSON.stringify(row)}\n`);
+    // Never glue a record onto an unterminated line: that would corrupt both on the next load.
+    appendFileSync(this.file, `${this.needsNewline ? "\n" : ""}${JSON.stringify(row)}\n`);
+    this.needsNewline = false;
   }
 
   /** Snapshot what a write is about to change (only updates and deletes have something to save). */
@@ -100,7 +110,7 @@ export class ChangeLog {
   }
 
   /** Record a successful write with its inverse. Returns the entry, or null for unlogged commands. */
-  record(ctx: ChangeContext, command: Command, before: unknown, result: unknown): ChangeEntry | null {
+  record(ctx: ChangeContext, command: Command, before: unknown, result: unknown, worldKey?: string): ChangeEntry | null {
     const built = this.inverse(command, before, result);
     if (!built) return null;
     const entry: ChangeEntry = {
@@ -109,8 +119,10 @@ export class ChangeLog {
       requestId: ctx.requestId,
       tool: ctx.tool,
       summary: built.summary,
+      ...(worldKey ? { worldKey } : {}),
       undo: built.undo,
     };
+    // In memory first: if the file write fails, the change stays undoable until the server restarts.
     this.entries.push(entry);
     this.append({ kind: "entry", ...entry });
     return entry;
@@ -142,7 +154,7 @@ export class ChangeLog {
         const prev = asObj(before);
         return {
           summary: `update ${command.documentType} ${command.id}`,
-          undo: prev ? { action: "update", documentType: command.documentType, id: command.id, data: restoreDiff(prev, command.data) } : null,
+          undo: prev ? { action: "update", documentType: command.documentType, id: command.id, data: buildInverseUpdate(prev, command.data) } : null,
         };
       }
       case "delete": {
@@ -157,7 +169,7 @@ export class ChangeLog {
         const prev = asList(before);
         const data = command.data.flatMap((diff) => {
           const old = prev.find((e) => e._id === diff._id);
-          return old ? [{ _id: String(diff._id), ...restoreDiff(old, diff) }] : [];
+          return old ? [{ ...buildInverseUpdate(old, diff), _id: String(diff._id) }] : [];
         });
         return {
           summary: `updateEmbedded ${command.parentType}/${command.embeddedName} on ${command.parentId} (${command.data.length})`,

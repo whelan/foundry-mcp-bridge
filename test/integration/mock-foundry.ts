@@ -246,7 +246,7 @@ export class MockFoundry {
     this.worldInfo = {
       foundryVersion: "13.0.0",
       system: { id: "dnd5e", version: "3.0.0" },
-      world: { id: "test-world", title: "Test World" },
+      world: { id: "test-world", title: "Test World", key: "mock-world-key" },
       folders: [],
       forge: { active: false, userId: null },
       ...options.worldInfo,

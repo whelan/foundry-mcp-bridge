@@ -74,7 +74,25 @@ export function registerSettings(): void {
     type: Boolean,
     default: false,
   });
+  game.settings.register(MODULE_ID, "worldKey", {
+    name: "World key",
+    hint: "Generated once per world. Lets the bridge's change log tell worlds apart; do not edit.",
+    scope: "world",
+    config: false,
+    type: String,
+    default: "",
+  });
   registerPermissionSettings();
+}
+
+/**
+ * Give this world a stable random key on first run. The change log stores it with every change
+ * and refuses to undo in a world with a different key, because document ids repeat in copied
+ * worlds. (A world folder copied together with its settings keeps its key.)
+ */
+export async function ensureWorldKey(): Promise<void> {
+  if (String(game.settings.get(MODULE_ID, "worldKey") ?? "")) return;
+  await game.settings.set(MODULE_ID, "worldKey", crypto.randomUUID());
 }
 
 const LEVEL_LABELS: Record<PermissionLevel, string> = {
@@ -334,6 +352,7 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         world: {
           id: String((game.world as any)?.id ?? ""),
           title: String((game.world as any)?.title ?? ""),
+          key: String(game.settings.get(MODULE_ID, "worldKey") ?? "") || undefined,
         },
         folders: folders.map((f) => ({
           _id: String(f.id),

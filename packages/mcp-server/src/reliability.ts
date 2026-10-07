@@ -18,8 +18,11 @@ import {
   EMBEDDED_FIELDS,
   embeddedField,
   err,
+  buildInverseUpdate,
   expandObject,
+  isAbsent,
   isSubset,
+  splitRemovals,
 } from "@foundry-mcp-bridge/shared";
 import { TimeoutError, type RelayTransport } from "./relay-transport.js";
 import type { ChangeContext } from "./change-log.js";
@@ -33,9 +36,13 @@ export interface PipelineOptions {
   changes?: ChangeContext;
 }
 
+/**
+ * `warnings` carry what a caller must know even though the call went through, e.g. a change
+ * that was applied but could not be written to the change log (so a retry would duplicate it).
+ */
 export type ToolOutcome =
-  | { ok: true; data: unknown; steps: string[] }
-  | { ok: false; error: CommandError; steps: string[] };
+  | { ok: true; data: unknown; steps: string[]; warnings?: string[] }
+  | { ok: false; error: CommandError; steps: string[]; warnings?: string[] };
 
 function makeEnvelope(command: Command, dryRun: boolean, token?: string): CommandEnvelope {
   return {
@@ -55,6 +62,39 @@ async function captureBefore(transport: RelayTransport, command: Command, opts: 
   return opts.changes!.log.capture(command, read);
 }
 
+/**
+ * Identity of the connected Foundry world: its id plus the key the module generated for it, or
+ * undefined when the module is too old to report one (such changes are logged but never undoable).
+ */
+export async function resolveWorldKey(transport: RelayTransport, opts: PipelineOptions): Promise<string | undefined> {
+  const res = await send(transport, { action: "getWorldInfo" }, false, { ...opts, changes: undefined });
+  if (!res.ok) return undefined;
+  const world = (res.data as { world?: { id?: string; key?: string } }).world;
+  return world?.id && world.key ? `${world.id}:${world.key}` : undefined;
+}
+
+/**
+ * Log a write that already succeeded. A logging problem must never turn that success into a
+ * failure (a retry would duplicate the change), so it becomes a warning on the final outcome.
+ */
+async function recordChange(
+  transport: RelayTransport,
+  command: Command,
+  before: unknown,
+  result: unknown,
+  opts: PipelineOptions,
+): Promise<void> {
+  const changes = opts.changes!;
+  try {
+    changes.log.record(changes, command, before, result, await resolveWorldKey(transport, opts));
+  } catch (e) {
+    changes.warnings.push(
+      `The change was applied but could not be written to the change log (${(e as Error).message}); ` +
+        "undo_change may not be able to reverse it, and repeating the call would apply it again.",
+    );
+  }
+}
+
 async function send(
   transport: RelayTransport,
   command: Command,
@@ -68,10 +108,17 @@ async function send(
     : "";
   opts.log?.(`  → ${tag} ${commandSummary(command)}`);
   // Snapshot what a real write is about to change, so the change log can store its inverse.
-  const before = !dryRun && opts.changes ? await captureBefore(transport, command, opts) : undefined;
+  let before: unknown;
+  if (!dryRun && opts.changes) {
+    try {
+      before = await captureBefore(transport, command, opts);
+    } catch (e) {
+      opts.changes.warnings.push(`Could not snapshot the target for the change log (${(e as Error).message}); this change will not be undoable.`);
+    }
+  }
   try {
     const res = await transport.request(envelope, { timeoutMs: opts.timeoutMs });
-    if (res.ok && !dryRun) opts.changes?.log.record(opts.changes, command, before, res.data);
+    if (res.ok && !dryRun && opts.changes) await recordChange(transport, command, before, res.data, opts);
     opts.log?.(
       res.ok ? `  ← ${tag} ok` : `  ← ${tag} ERROR ${res.error.code}: ${res.error.message}`,
     );
@@ -274,10 +321,30 @@ interface Mutation {
   expected: Json | ((written: unknown) => Json);
   /** Known target id (updates); creates derive it from the write result. */
   knownId?: string;
+  /** Dot-paths the read-back must find absent (fields the write deleted with `-=`). */
+  absent?: string[];
   /** Rollback command run when read-back fails. */
   rollback: (id: string) => Command;
   /** Message for the READBACK_MISMATCH error. */
   mismatchMessage: string;
+}
+
+/**
+ * Run a rollback and report honestly whether it worked. A rollback is an ordinary write, so the
+ * GM's permissions apply to it: under the default "no delete" level the cleanup of a failed
+ * create is refused, and the change then stays in Foundry.
+ */
+async function runRollback(
+  transport: RelayTransport,
+  command: Command,
+  opts: PipelineOptions,
+  steps: string[],
+): Promise<CommandError | null> {
+  steps.push("rollback");
+  const res = await send(transport, command, false, opts);
+  if (res.ok) return null;
+  steps.push("rollback-failed");
+  return res.error;
 }
 
 async function runMutation(
@@ -302,13 +369,25 @@ async function runMutation(
     false,
     opts,
   );
-  if (!readBack.ok || !isSubset(readBack.data, expected)) {
-    steps.push("rollback");
-    await send(transport, m.rollback(id), false, opts);
+  const verified =
+    readBack.ok && isSubset(readBack.data, expected) && (m.absent ?? []).every((path) => isAbsent(readBack.data, path));
+  if (!verified) {
+    const rollbackError = await runRollback(transport, m.rollback(id), opts, steps);
+    const actual = readBack.ok ? readBack.data : null;
+    if (rollbackError) {
+      return fail(steps, {
+        code: "READBACK_MISMATCH",
+        message:
+          `The write was applied but read-back verification failed, and the rollback was refused ` +
+          `(${rollbackError.code}: ${rollbackError.message}). The change is still in Foundry on ` +
+          `${m.documentType} ${id}; revert it manually.`,
+        details: { id, expected, actual, rollbackError, remaining: { documentType: m.documentType, id } },
+      });
+    }
     return fail(steps, {
       code: "READBACK_MISMATCH",
       message: m.mismatchMessage,
-      details: { id, expected, actual: readBack.ok ? readBack.data : null },
+      details: { id, expected, actual },
     });
   }
 
@@ -385,7 +464,7 @@ export async function updateDocumentReliable(
   );
   if (!before.ok) return fail(steps, before.error);
   const snapshot = before.data as Json;
-  const expected = expandObject(input.data);
+  const { set: expected, removed } = splitRemovals(input.data);
 
   return runMutation(
     transport,
@@ -393,27 +472,19 @@ export async function updateDocumentReliable(
       documentType: input.documentType,
       mutate: { action: "update", documentType: input.documentType, id: input.id, data: input.data },
       expected,
+      absent: removed,
       knownId: input.id,
       rollback: (id) => ({
         action: "update",
         documentType: input.documentType,
         id,
-        data: buildRestoreDiff(snapshot, expected),
+        data: buildInverseUpdate(snapshot, input.data),
       }),
       mismatchMessage: "updated document did not match the requested data; restored previous values",
     },
     opts,
     steps,
   );
-}
-
-/** Previous values for the top-level keys touched by `diff`, for rollback. */
-function buildRestoreDiff(snapshot: Json, diff: Json): Json {
-  const restore: Json = {};
-  for (const key of Object.keys(diff)) {
-    restore[key] = snapshot[key] ?? null;
-  }
-  return restore;
 }
 
 export interface DeleteDocumentInput {
@@ -521,16 +592,16 @@ async function runEmbeddedMutation(
   }
 
   const rollback = args.deriveRollback(written);
-  if (rollback) {
-    steps.push("rollback");
-    await send(transport, rollback, false, opts);
-  }
+  const rollbackError = rollback ? await runRollback(transport, rollback, opts, steps) : null;
   return fail(steps, {
     code: "READBACK_MISMATCH",
-    message: rollback
-      ? `embedded documents ${args.noun} but read-back verification failed; rolled back`
-      : `embedded documents ${args.noun} but read-back verification failed and nothing to restore; check manually`,
-    details: { parentId: args.parentId, [args.noun]: written },
+    message: !rollback
+      ? `embedded documents ${args.noun} but read-back verification failed and nothing to restore; check manually`
+      : rollbackError
+        ? `embedded documents ${args.noun} but read-back verification failed, and the rollback was refused ` +
+          `(${rollbackError.code}: ${rollbackError.message}); they are still in Foundry on ${args.parentType} ${args.parentId}; revert manually`
+        : `embedded documents ${args.noun} but read-back verification failed; rolled back`,
+    details: { parentId: args.parentId, [args.noun]: written, ...(rollbackError ? { rollbackError } : {}) },
   });
 }
 
@@ -645,24 +716,28 @@ export async function updateEmbeddedReliable(
         const byId = new Map(entries.map((e) => [idOf(e), e] as const));
         return input.data.every((d) => {
           const actual = byId.get(d._id);
-          return actual != null && isSubset(actual, expandObject(d));
+          const { set, removed } = splitRemovals(d);
+          return actual != null && isSubset(actual, set) && removed.every((path) => isAbsent(actual, path));
         });
       },
       // Restore the pre-update versions of the touched docs. (`?? []` only
       // satisfies the type: an unmapped type returns true from verify and never
       // reaches rollback, so embeddedEntries is non-null here in practice.)
       deriveRollback: () => {
-        const prior = (embeddedEntries(snapshot, input.embeddedName) ?? []).filter((e) => {
+        const restores = (embeddedEntries(snapshot, input.embeddedName) ?? []).flatMap((e) => {
           const id = idOf(e);
-          return id != null && updatedIds.has(id);
+          const diff = input.data.find((d) => d._id === id);
+          if (id == null || !updatedIds.has(id) || !diff) return [];
+          const inverse = buildInverseUpdate(e, diff);
+          return Object.keys(inverse).length ? [{ ...inverse, _id: id }] : [];
         }) as Array<Json & { _id: string }>;
-        return prior.length
+        return restores.length
           ? {
               action: "updateEmbedded",
               parentType: input.parentType,
               parentId: input.parentId,
               embeddedName: input.embeddedName,
-              data: prior,
+              data: restores,
             }
           : null;
       },

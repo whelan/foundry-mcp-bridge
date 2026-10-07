@@ -86,6 +86,12 @@ import { randomUUID } from "node:crypto";
 import type { ChangeLog } from "./change-log.js";
 import { ListChangesShape, UndoChangeShape, runListChanges, runUndoChange } from "./change-tools.js";
 
+/** Surface problems collected during the call (e.g. a change that could not be logged). */
+function withWarnings(out: ToolOutcome, callOpts: PipelineOptions): ToolOutcome {
+  const warnings = [...(out.warnings ?? []), ...(callOpts.changes?.warnings ?? [])];
+  return warnings.length ? { ...out, warnings } : out;
+}
+
 function toCallResult(outcome: ToolOutcome) {
   // Compact (no pretty-print): the result is consumed by an LLM, so indentation
   // whitespace is pure token cost with no benefit.
@@ -107,7 +113,7 @@ export function buildServer(
   // One request id per tool call, shared by every pipeline a composite tool runs, so a whole
   // call can be undone at once.
   const withChanges = (tool: string): PipelineOptions =>
-    changeLog ? { ...opts, changes: { log: changeLog, requestId: randomUUID(), tool } } : opts;
+    changeLog ? { ...opts, changes: { log: changeLog, requestId: randomUUID(), tool, warnings: [] } } : opts;
 
   // Register a tool and wrap its handler with a trace of entry + outcome+steps.
   // Generic over the input shape so a mismatched shape/handler pairing fails tsc.
@@ -124,7 +130,8 @@ export function buildServer(
     // `run` is tied to S, so a mismatched shape/handler pairing fails tsc here.
     const handler = async (args: z.infer<z.ZodObject<S>>) => {
       log?.(`▶ ${name}`);
-      const out = await run(transport, args, withChanges(name));
+      const callOpts = withChanges(name);
+      const out = withWarnings(await run(transport, args, callOpts), callOpts);
       log?.(
         out.ok
           ? `◀ ${name} ok [${out.steps.join(" > ")}]`
@@ -155,7 +162,8 @@ export function buildServer(
   ): void {
     const handler = async (args: z.infer<z.ZodObject<S>>) => {
       log?.(`▶ ${name}`);
-      const out = await run(forge, args, withChanges(name));
+      const callOpts = withChanges(name);
+      const out = withWarnings(await run(forge, args, callOpts), callOpts);
       log?.(
         out.ok
           ? `◀ ${name} ok [${out.steps.join(" > ")}]`
@@ -401,7 +409,7 @@ export function buildServer(
     "list_changes",
     "List the document changes this bridge made (newest first): id, time, tool, requestId, summary and whether it can still be undone. Filter by tool or requestId. Only writes made through the bridge are logged; quests, asset uploads and macro runs are not.",
     ListChangesShape,
-    (_transport, args) => runListChanges(changeLog, args),
+    (transport, args, callOpts) => runListChanges(changeLog, transport, args, callOpts),
   );
   register(
     "undo_change",

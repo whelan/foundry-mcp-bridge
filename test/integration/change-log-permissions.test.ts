@@ -24,7 +24,7 @@ function setup(options: MockFoundryOptions = {}, file?: string) {
   const log = new ChangeLog(file);
   let n = 0;
   /** Options for one simulated tool call; pass the same `request` to group calls. */
-  const call = (tool: string, request = `req${++n}`): PipelineOptions => ({ changes: { log, requestId: request, tool } });
+  const call = (tool: string, request = `req${++n}`): PipelineOptions => ({ changes: { log, requestId: request, tool, warnings: [] } });
   return { mock, transport, log, call };
 }
 
@@ -83,7 +83,7 @@ describe("change log and undo", () => {
     await runUpdateDocument(transport, { documentType: "Actor", id: "a1", data: { name: "Bobby", "system.hp": 3 } }, call("update_document"));
     expect(mock.store.get("!actors!a1")).toMatchObject({ name: "Bobby", system: { hp: 3 } });
 
-    const listed = await runListChanges(log, {});
+    const listed = await runListChanges(log, transport, {});
     expect(listed.ok && (listed.data as any[])[0]).toMatchObject({ tool: "update_document", summary: "update Actor a1", undoable: true });
     const id = (listed.ok && (listed.data as any[])[0].id) as string;
 
@@ -92,7 +92,7 @@ describe("change log and undo", () => {
     expect(mock.store.get("!actors!a1")).toMatchObject({ name: "Bob", system: { hp: 10 } });
     // already undone: refused, and hidden from the default listing
     expect(code(await runUndoChange(log, transport, { id }, call("undo_change")))).toBe("VALIDATION");
-    const after = await runListChanges(log, { tool: "update_document" });
+    const after = await runListChanges(log, transport, { tool: "update_document" });
     expect(after.ok && after.data).toEqual([]);
   });
 
@@ -180,7 +180,7 @@ describe("change log and undo", () => {
 
   it("reports UNSUPPORTED when the log is switched off", async () => {
     const { transport } = setup();
-    expect(code(await runListChanges(null, {}))).toBe("UNSUPPORTED");
+    expect(code(await runListChanges(null, transport, {}))).toBe("UNSUPPORTED");
     expect(code(await runUndoChange(null, transport, { id: "x" }))).toBe("UNSUPPORTED");
   });
 });

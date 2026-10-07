@@ -10,6 +10,7 @@ import { RelayClient } from "./relay-client.js";
 import {
   MODULE_ID,
   createFoundryRuntimeApi,
+  ensureWorldKey,
   readPermissionLevel,
   readSettings,
   registerSettings,
@@ -41,6 +42,8 @@ Hooks.once("ready", () => {
     ui.notifications?.warn((e as Error).message);
     return;
   }
+
+  void ensureWorldKey().catch((e) => console.warn(`[${MODULE_ID}] could not store the world key: ${(e as Error).message}`));
 
   client = new RelayClient({
     url: settings.url,

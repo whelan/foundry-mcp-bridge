@@ -79,3 +79,32 @@ describe("applyUpdate", () => {
     expect(({} as Record<string, unknown>).bad).toBeUndefined();
   });
 });
+
+describe("update removals and inverse updates", () => {
+  it("applyUpdate honours -= deletions at any depth", async () => {
+    const { applyUpdate } = await import("./objects.js");
+    expect(applyUpdate({ a: 1, b: { c: 2, d: 3 } }, { "-=a": null, "b.-=c": null })).toEqual({ b: { d: 3 } });
+    expect(applyUpdate({ b: { c: 2 } }, { b: { "-=c": null, e: 1 } })).toEqual({ b: { e: 1 } });
+  });
+
+  it("splitRemovals separates sets from deletions", async () => {
+    const { splitRemovals } = await import("./objects.js");
+    expect(splitRemovals({ "a.b": 1, "x.-=y": null, "-=z": null })).toEqual({ set: { a: { b: 1 } }, removed: ["x.y", "z"] });
+  });
+
+  it("buildInverseUpdate restores present values (null included) and deletes absent ones", async () => {
+    const { buildInverseUpdate, applyUpdate } = await import("./objects.js");
+    const before = { name: "Bob", flags: { n: null, keep: 1 }, tags: ["a"] };
+    const diff = { name: "Bobby", "flags.n": 5, "flags.new": 1, "extra.deep.field": 2, tags: ["b"] };
+    const inverse = buildInverseUpdate(before, diff);
+    expect(inverse).toEqual({ name: "Bob", "flags.n": null, "flags.-=new": null, "-=extra": null, tags: ["a"] });
+    expect(applyUpdate(applyUpdate(before, diff), inverse)).toEqual(before);
+  });
+
+  it("buildInverseUpdate restores fields the diff deleted", async () => {
+    const { buildInverseUpdate, applyUpdate } = await import("./objects.js");
+    const before = { a: 1, b: { c: 2 } };
+    const diff = { "-=a": null, "b.-=c": null };
+    expect(applyUpdate(applyUpdate(before, diff), buildInverseUpdate(before, diff))).toEqual(before);
+  });
+});
