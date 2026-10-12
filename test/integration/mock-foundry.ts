@@ -491,6 +491,10 @@ export class MockFoundry {
     // a fresh id is minted (so tests can't rely on ids the live system wouldn't keep).
     const _id = keepId && typeof data._id === "string" && data._id ? data._id : randomID();
     const doc: Json = { ...data, _id };
+    // Mirror Foundry: _stats is stamped by the server at creation, whatever the payload carried
+    // (a re-created document from a snapshot gets new createdTime/modifiedTime).
+    const now = Date.now();
+    doc._stats = { ...(isPlainObject(data._stats) ? data._stats : {}), createdTime: now, modifiedTime: now };
     // Real Foundry auto-assigns an _id to every embedded document when the
     // parent is created, including ones passed inline in the creation payload
     // (e.g. Actor.create({ items: [...] })) — items without one would be
