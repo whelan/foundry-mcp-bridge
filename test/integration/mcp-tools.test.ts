@@ -240,18 +240,15 @@ describe("update_document pipeline", () => {
 });
 
 describe("find_documents projection", () => {
-  const seedActor = (mock: MockFoundry, id: string, name: string) =>
-    seed(mock, {
-      action: "create",
-      documentType: "Actor",
-      keepId: true,
-      data: {
-        _id: id,
-        name,
-        system: { attributes: { hp: { value: 42, max: 50 } } },
-        _stats: { modifiedTime: 1234 },
-      },
+  // Written to the store directly: the mock stamps _stats on create, like Foundry.
+  const seedActor = async (mock: MockFoundry, id: string, name: string) => {
+    mock.store.set(`!actors!${id}`, {
+      _id: id,
+      name,
+      system: { attributes: { hp: { value: 42, max: 50 } } },
+      _stats: { modifiedTime: 1234 },
     });
+  };
 
   it("projects a single document to only the requested dot-paths", async () => {
     const { mock, transport } = setup();

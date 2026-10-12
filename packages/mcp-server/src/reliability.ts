@@ -411,7 +411,10 @@ export async function createDocumentReliable(
   // Unlike duplicate/import, a document created from nothing has no
   // name/type for nameOrTypeFallback to degrade to, so an empty data/
   // verifyData must be rejected outright (see validationFailure/isEmptyDiff).
-  const expected = input.verifyData ?? input.data;
+  // Foundry stamps _stats itself on create, so a snapshot's old timestamps (undo of a delete)
+  // can never read back; verify everything else.
+  const { _stats: _ignored, ...verifiable } = input.data as Record<string, Json>;
+  const expected = input.verifyData ?? (verifiable as Json);
   if (isEmptyDiff(expected)) {
     return validationFailure("create data has no fields to verify on read-back");
   }

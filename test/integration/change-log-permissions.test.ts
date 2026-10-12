@@ -104,7 +104,7 @@ describe("change log and undo", () => {
     await runUndoChange(log, transport, { id: log.list({ tool: "create_document" })[0]!.id }, call("undo_change"));
     expect(mock.store.has(`!actors!${actorId}`)).toBe(false);
 
-    mock.store.set("!actors!a9", { _id: "a9", name: "Lich", system: { cr: 21 } });
+    mock.store.set("!actors!a9", { _id: "a9", name: "Lich", system: { cr: 21 }, _stats: { createdTime: 1, modifiedTime: 2 } });
     await runDeleteDocument(transport, { documentType: "Actor", id: "a9" }, call("delete_document"));
     expect(mock.store.has("!actors!a9")).toBe(false);
     const out = await runUndoChange(log, transport, { id: log.list({ tool: "delete_document" })[0]!.id }, call("undo_change"));
