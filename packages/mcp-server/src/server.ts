@@ -413,13 +413,13 @@ export function buildServer(
   );
   register(
     "add_walls",
-    "Add walls, doors, secret doors or limited (see-through-once) walls to a scene from grid CORNER coordinates (0,0 = top-left corner of the map). Square/gridless scenes only.",
+    "Add walls, doors, secret doors, windows (block movement, not sight or light) or limited (see-through-once) walls to a scene from grid CORNER coordinates (0,0 = top-left corner of the map). Doors take a Foundry 14 `animation` (swing, slide, swivel, ascend, descend), `double`, `flip`, `locked`, `open`. Square/gridless scenes only.",
     AddWallsShape,
     runAddWalls,
   );
   register(
     "add_lights",
-    "Add ambient lights at grid positions (fractions allowed; col 3.5,row 2.5 = centre of a square) with bright/dim radii in the scene's distance units and an optional hex colour. Square/gridless scenes only.",
+    "Add ambient lights at grid positions (fractions allowed; col 3.5,row 2.5 = centre of a square) with bright/dim radii in the scene's distance units an optional hex colour, a `source` preset (torch, fireplace, candle, lantern, daylight: radii, colour and flicker) and an `animation` key (torch, flame, pulse...). Square/gridless scenes only.",
     AddLightsShape,
     runAddLights,
   );

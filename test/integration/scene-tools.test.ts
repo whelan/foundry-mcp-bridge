@@ -206,3 +206,37 @@ describe("scene tools", () => {
     expect((mock.store.get("!scenes!s1") as any).tokens).toHaveLength(0);
   });
 });
+
+describe("add_walls and add_lights: windows, door animation, light animation", () => {
+  it("add_walls writes a window, an animated door and a locked door", async () => {
+    const { mock, transport } = setup();
+    const out = await runAddWalls(transport, {
+      sceneId: "s1",
+      walls: [
+        { x1: 0, y1: 0, x2: 2, y2: 0, kind: "window" },
+        { x1: 2, y1: 0, x2: 3, y2: 0, kind: "door", animation: "slide", double: false },
+        { x1: 3, y1: 0, x2: 4, y2: 0, kind: "door", locked: true },
+      ],
+    });
+    expect(out.ok).toBe(true);
+    const walls = (mock.store.get("!scenes!s1") as any).walls;
+    expect(walls[0]).toMatchObject({ sight: 0, light: 0, move: 20 });
+    expect(walls[1].animation).toMatchObject({ type: "slide" });
+    expect(walls[2]).toMatchObject({ ds: 2 });
+  });
+
+  it("add_lights takes a source preset and an animation override", async () => {
+    const { mock, transport } = setup();
+    const out = await runAddLights(transport, {
+      sceneId: "s1",
+      lights: [
+        { col: 1.5, row: 1.5, source: "fireplace" },
+        { col: 3.5, row: 1.5, bright: 10, animation: "pulse" },
+      ],
+    });
+    expect(out.ok).toBe(true);
+    const lights = (mock.store.get("!scenes!s1") as any).lights;
+    expect(lights[0].config).toMatchObject({ bright: 15, dim: 30, color: "#ff7a2e", animation: { type: "flame" } });
+    expect(lights[1].config.animation.type).toBe("pulse");
+  });
+});

@@ -3,6 +3,9 @@ import {
   buildScene,
   buildSceneVerify,
   buildLight,
+  buildWallFromGrid,
+  resolveLightInput,
+  LIGHT_PRESETS,
   buildToken,
   buildNote,
   randomID,
@@ -142,5 +145,53 @@ describe("grid helpers", () => {
     );
     expect(v14.background).toBeNull();
     expect(v14.levels).toEqual([{ _id: "l1", name: "Cellar", background: "c.webp" }, { _id: "l2", background: null }]);
+  });
+});
+
+describe("buildWallFromGrid: windows and doors", () => {
+  it("makes a window that blocks movement but not sight or light", () => {
+    const w = buildWallFromGrid({ x1: 0, y1: 0, x2: 2, y2: 0, kind: "window" }, 100, {});
+    expect(w).toMatchObject({ door: 0, move: 20, sight: 0, light: 0, sound: 20, c: [0, 0, 200, 0] });
+  });
+
+  it("leaves a plain door without an animation block", () => {
+    const d = buildWallFromGrid({ x1: 0, y1: 0, x2: 1, y2: 0, kind: "door" }, 100, {});
+    expect(d.animation).toBeUndefined();
+    expect(d.ds).toBe(0);
+  });
+
+  it("writes the v14 animation block when door options are given", () => {
+    const d = buildWallFromGrid(
+      { x1: 0, y1: 0, x2: 2, y2: 0, kind: "door", doorOptions: { animation: "slide", double: true } },
+      100,
+      {},
+    );
+    expect(d.animation).toEqual({ type: "slide", direction: 1, double: true, flip: false, duration: 750, strength: 1 });
+  });
+
+  it("locks and opens doors through ds", () => {
+    const locked = buildWallFromGrid({ x1: 0, y1: 0, x2: 1, y2: 0, kind: "door", doorOptions: { locked: true } }, 100, {});
+    const open = buildWallFromGrid({ x1: 0, y1: 0, x2: 1, y2: 0, kind: "door", doorOptions: { open: true } }, 100, {});
+    expect([locked.ds, open.ds]).toEqual([2, 1]);
+  });
+});
+
+describe("light presets", () => {
+  it("a fireplace flickers with the flame animation", () => {
+    const l = resolveLightInput({ source: "fireplace" });
+    expect(l).toMatchObject({ bright: 15, dim: 30, color: "#ff7a2e", animation: { type: "flame" } });
+  });
+
+  it("explicit values override the preset", () => {
+    const l = resolveLightInput({ source: "torch", bright: 30, color: "#ffffff", animation: "pulse" });
+    expect(l).toMatchObject({ bright: 30, dim: 40, color: "#ffffff", animation: { type: "pulse" } });
+  });
+
+  it("no source and no values means no light radius and no animation", () => {
+    expect(resolveLightInput({})).toEqual({ bright: 0, dim: 0, color: null, animation: { type: null, speed: 5, intensity: 5 } });
+  });
+
+  it("has a preset for every documented source", () => {
+    expect(Object.keys(LIGHT_PRESETS).sort()).toEqual(["candle", "daylight", "fireplace", "lantern", "torch"]);
   });
 });
