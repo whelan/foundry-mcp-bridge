@@ -28,6 +28,8 @@ import {
   showImageFilename,
 } from "./tools.js";
 import type { PipelineOptions, ToolOutcome } from "./reliability.js";
+import { ensureSceneBackground } from "./scene-background.js";
+import { finishFloorplan, type FloorplanApply, type FloorplanDeps } from "./floorplan-finish.js";
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const IMAGE_KINDS = ["portrait", "token", "battlemap", "handout", "item"] as const satisfies readonly ImageKind[];
@@ -56,7 +58,8 @@ const ApplySchema = z.discriminatedUnion("to", [
     journal: id.default("Generated Art"),
   }),
 ]);
-export type ImageApply = z.infer<typeof ApplySchema>;
+export type ImageApply = z.infer<typeof ApplySchema> | FloorplanApply;
+type PublicApply = z.infer<typeof ApplySchema>;
 
 export const GenerateImageShape = {
   prompt: z.string().min(3).describe("What to draw (the kind adds the style: portrait, token, battlemap, handout or item)"),
@@ -107,10 +110,14 @@ async function followUp(
   job: ImageJob<ImageJobMeta>,
   transport: RelayTransport,
   opts: PipelineOptions,
+  deps?: FloorplanDeps,
 ): Promise<ToolOutcome> {
   const { apply, kind, subject, source, target } = job.meta;
   const steps = ["generate"];
   const file = job.request.outPath;
+  if (apply?.to === "floorplanScene") {
+    return finishFloorplan({ apply, source, target, deps }, transport, opts);
+  }
   const result = (src: string, applied?: unknown): ToolOutcome => ({
     ok: true,
     data: { jobId: job.id, status: "done", file, src, ...(applied ? { applied } : {}) },
@@ -168,14 +175,16 @@ async function followUp(
     case "newScene": {
       const size = pngSize(bytes);
       if (!size) return failWith("VALIDATION", "A new scene needs the image size and only PNG sizes can be read", steps);
-      return done(
-        await runCreateScene(
-          transport,
-          { name: apply.name, width: size.width, height: size.height, gridSize: apply.gridSize ?? 100, gridDistance: apply.gridDistance, gridUnits: apply.gridUnits, background: src },
-          opts,
-        ),
-        { width: size.width, height: size.height },
+      const created = await runCreateScene(
+        transport,
+        { name: apply.name, width: size.width, height: size.height, gridSize: apply.gridSize ?? 100, gridDistance: apply.gridDistance, gridUnits: apply.gridUnits, background: src },
+        opts,
       );
+      if (created.ok) {
+        const bg = await ensureSceneBackground(transport, idOf(created.data)!, src, opts);
+        if (bg && !bg.ok) return { ...bg, steps: [...steps, ...bg.steps] };
+      }
+      return done(created, { width: size.width, height: size.height });
     }
   }
 }
@@ -183,7 +192,7 @@ async function followUp(
 /** V13 keeps the background on the scene; V14 keeps it on its level(s). */
 async function applySceneBackground(
   transport: RelayTransport,
-  apply: Extract<ImageApply, { to: "sceneBackground" }>,
+  apply: Extract<PublicApply, { to: "sceneBackground" }>,
   src: string,
   opts: PipelineOptions,
 ): Promise<ToolOutcome> {
@@ -206,7 +215,12 @@ async function applySceneBackground(
 }
 
 /** Report where a job is; upload/apply the image the first time we see it finished. */
-async function settle(job: ImageJob<ImageJobMeta>, transport: RelayTransport, opts: PipelineOptions): Promise<ToolOutcome> {
+export async function settleJob(
+  job: ImageJob<ImageJobMeta>,
+  transport: RelayTransport,
+  opts: PipelineOptions,
+  deps?: FloorplanDeps,
+): Promise<ToolOutcome> {
   switch (job.status) {
     case "running":
       return {
@@ -225,7 +239,7 @@ async function settle(job: ImageJob<ImageJobMeta>, transport: RelayTransport, op
       return failWith(job.error?.code ?? "INTERNAL", job.error?.message ?? "Image generation failed", ["generate"]);
     case "done": {
       if (job.followUp) return job.followUp as ToolOutcome;
-      job.pending ??= followUp(job, transport, opts).finally(() => {
+      job.pending ??= followUp(job, transport, opts, deps).finally(() => {
         job.pending = undefined;
       });
       const out = (await job.pending) as ToolOutcome;
@@ -254,7 +268,7 @@ export async function runGenerateImage(
   const job = jobs.start(request, { kind: parsed.kind, subject: parsed.prompt, apply: parsed.apply, source: parsed.source, target: parsed.target });
   if (!job) return failWith("CONFLICT", "Two images are already being generated; wait for one to finish or cancel it (cancel_image_job).");
   const current = (await jobs.wait(job.id, parsed.waitSeconds * 1000)) ?? job;
-  return settle(current, transport, opts);
+  return settleJob(current, transport, opts);
 }
 
 export async function runCheckImageJob(
@@ -266,7 +280,7 @@ export async function runCheckImageJob(
   const parsed = z.object(CheckImageJobShape).parse(args);
   const job = await jobs.wait(parsed.jobId, parsed.waitSeconds * 1000);
   if (!job) return failWith("NOT_FOUND", `No image job ${parsed.jobId} (jobs are forgotten when the MCP server restarts)`);
-  return settle(job, transport, opts);
+  return settleJob(job, transport, opts);
 }
 
 export function runCancelImageJob(jobs: ImageJobRegistry, args: { jobId: string }): ToolOutcome {

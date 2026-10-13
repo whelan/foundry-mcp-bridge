@@ -92,6 +92,7 @@ function withWarnings(out: ToolOutcome, callOpts: PipelineOptions): ToolOutcome 
   return warnings.length ? { ...out, warnings } : out;
 }
 
+import { FloorplanSceneShape, runBuildFloorplanScene } from "./floorplan-tools.js";
 import {
   CancelImageJobShape,
   CheckImageJobShape,
@@ -413,13 +414,13 @@ export function buildServer(
   );
   register(
     "add_walls",
-    "Add walls, doors, secret doors or limited (see-through-once) walls to a scene from grid CORNER coordinates (0,0 = top-left corner of the map). Square/gridless scenes only.",
+    "Add walls, doors, secret doors, windows (block movement, not sight or light) or limited (see-through-once) walls to a scene from grid CORNER coordinates (0,0 = top-left corner of the map). Doors take a Foundry 14 `animation` (swing, slide, swivel, ascend, descend), `double`, `flip`, `locked`, `open`. Square/gridless scenes only.",
     AddWallsShape,
     runAddWalls,
   );
   register(
     "add_lights",
-    "Add ambient lights at grid positions (fractions allowed; col 3.5,row 2.5 = centre of a square) with bright/dim radii in the scene's distance units and an optional hex colour. Square/gridless scenes only.",
+    "Add ambient lights at grid positions (fractions allowed; col 3.5,row 2.5 = centre of a square) with bright/dim radii in the scene's distance units an optional hex colour, a `source` preset (torch, fireplace, candle, lantern, daylight: radii, colour and flicker) and an `animation` key (torch, flame, pulse...). Square/gridless scenes only.",
     AddLightsShape,
     runAddLights,
   );
@@ -454,6 +455,13 @@ export function buildServer(
     "Cancel a running image generation (stops the Codex process).",
     CancelImageJobShape,
     (_transport, args) => Promise.resolve(images ? runCancelImageJob(images.jobs, args) : NO_IMAGES),
+  );
+
+  register(
+    "build_floorplan_scene",
+    "Build a complete building scene from a small floorplan spec in one call: one floor (rooms) or several (floors, each with rooms, openings and lights) joined by stairs, with a roof; rooms (grid cells, furnishings), openings (doors with Foundry 14 animation, windows, secret doors, locked doors) and lights (torch, fireplace, candle, lantern, daylight, with flicker animation). The tool draws a blueprint, has Codex paint the floorplan over it as a webp, creates a square-grid scene exactly cols x rows cells, and derives every wall, door, window and light from the spec so they line up with the picture. Each floor is a Foundry 14 Level with its own picture, walls and lights; a stair is a region with the change-level prompt; the roof (default on, roof:false to skip) is a tile that is solid from outside, shows only what a token sees through windows and doors, and fades when a token walks under it. Several floors and a roof are one image job with one Codex run per floor plus one for the roof. Returns { sceneId, levels, stairs, roof, previews, overlays, walls, lights, warnings }; look at the previews (walls red, doors green, windows cyan, lights yellow, stairs magenta over each floor's picture) before play. codex:false keeps the plain blueprint as the map. Slow Codex runs return { jobId, status: \"running\" }: poll with check_image_job. Undo with undo_change by requestId (scene, levels, walls, lights, stairs and roof together). Needs Foundry 14.",
+    FloorplanSceneShape,
+    (transport, args, callOpts) => (images ? runBuildFloorplanScene(images.jobs, images.outputDir, transport, args, callOpts) : Promise.resolve(NO_IMAGES)),
   );
 
   return server;

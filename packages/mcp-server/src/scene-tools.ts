@@ -13,8 +13,10 @@ import {
   buildLight,
   buildToken,
   buildWallFromGrid,
+  resolveLightInput,
   gridToPixels,
   type SceneState,
+  DOOR_STYLES,
 } from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
 import {
@@ -38,7 +40,7 @@ const fail = (code: "VALIDATION" | "UNSUPPORTED" | "NOT_FOUND", message: string)
 /** Prefix the preparatory read steps onto a write outcome so traces keep the whole path. */
 const withSteps = (before: string[], out: ToolOutcome): ToolOutcome => ({ ...out, steps: [...before, ...out.steps] });
 
-interface GridResult {
+export interface GridResult {
   size: number;
   /** Foundry's own pixel origin of grid square (0,0), straight from the module. */
   origin: { x: number; y: number };
@@ -46,7 +48,7 @@ interface GridResult {
 }
 
 /** Grid size + origin of a scene, or a structured failure (hex grids are not mapped to squares). */
-async function loadGrid(
+export async function loadGrid(
   transport: RelayTransport,
   sceneId: string,
   opts: PipelineOptions,
@@ -70,7 +72,7 @@ async function loadGrid(
   return { size: state.grid.size, origin: state.origin, steps: read.steps };
 }
 
-const isOutcome = (r: GridResult | ToolOutcome): r is ToolOutcome => "ok" in r;
+export const isOutcome = (r: GridResult | ToolOutcome): r is ToolOutcome => "ok" in r;
 
 const sceneId = z.string().min(1).describe("Scene id");
 const square = z.number().int().describe("Grid column/row, 0 = top-left square of the map (not the padding)");
@@ -204,6 +206,7 @@ export function runToggleCondition(transport: RelayTransport, args: ToggleCondit
 
 export const AddWallsShape = {
   sceneId,
+  levels: z.array(z.string().min(1)).optional().describe("Foundry 14: the level ids these walls belong to; omit for every level"),
   walls: z
     .array(
       z.object({
@@ -211,7 +214,15 @@ export const AddWallsShape = {
         y1: z.number(),
         x2: z.number(),
         y2: z.number(),
-        kind: z.enum(["wall", "door", "secretDoor", "limited"]).optional().describe("limited = blocks movement, Limited sight/light (see through one, blocked by two). Not Foundry's distance-based Window wall; make that with create_embedded."),
+        kind: z.enum(["wall", "door", "secretDoor", "limited", "window"]).optional().describe("limited = blocks movement, Limited sight/light (see through one, blocked by two). window = blocks movement only, sight and light pass (glass). Not Foundry's distance-based Proximity wall; make that with create_embedded."),
+        animation: z.enum(["swing", "slide", "swivel", "ascend", "descend"]).optional().describe("Foundry 14 door animation (doors only). Default follows the style: swing, slide for stone, ascend for a portcullis"),
+        style: z.enum(DOOR_STYLES).optional().describe("Door look from Foundry's core door images in canvas/doors: wood (default), stone, metal, portcullis. Every door gets one, Foundry only animates a door that has a texture"),
+        tone: z.string().optional().describe("Narrow the style to a colour: wood dark/walnut/light/red/ashen, stone volcanic/earthy/redrock, metal rusty/gray"),
+        texture: z.string().optional().describe("Your own door image path; wins over style"),
+        double: z.boolean().optional().describe("Double door (doors only)"),
+        flip: z.boolean().optional(),
+        locked: z.boolean().optional().describe("Door starts locked"),
+        open: z.boolean().optional().describe("Door starts open"),
       }),
     )
     .min(1),
@@ -220,7 +231,11 @@ export type AddWallsArgs = z.infer<z.ZodObject<typeof AddWallsShape>>;
 export async function runAddWalls(transport: RelayTransport, args: AddWallsArgs, opts: PipelineOptions = {}): Promise<ToolOutcome> {
   const gridResult = await loadGrid(transport, args.sceneId, opts);
   if (isOutcome(gridResult)) return gridResult;
-  const data = args.walls.map((wall) => buildWallFromGrid(wall, gridResult.size, gridResult.origin));
+  const { levels } = args;
+  const built = args.walls.map(({ animation, style, tone, texture, double, flip, locked, open, ...seg }) =>
+    buildWallFromGrid({ ...seg, doorOptions: { animation, style, tone, texture, double, flip, locked, open } }, gridResult.size, gridResult.origin),
+  );
+  const data = levels?.length ? built.map((d) => ({ ...d, levels })) : built;
   return withSteps(
     gridResult.steps,
     await createEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "Wall", data }, opts),
@@ -229,6 +244,7 @@ export async function runAddWalls(transport: RelayTransport, args: AddWallsArgs,
 
 export const AddLightsShape = {
   sceneId,
+  levels: z.array(z.string().min(1)).optional().describe("Foundry 14: the level ids these lights belong to; omit for every level"),
   lights: z
     .array(
       z.object({
@@ -237,6 +253,8 @@ export const AddLightsShape = {
         bright: z.number().min(0).optional().describe("Bright radius in the scene's distance units (e.g. feet)"),
         dim: z.number().min(0).optional().describe("Dim radius in the scene's distance units"),
         color: z.string().optional().describe('Hex colour such as "#ffaa55"'),
+        source: z.enum(["torch", "fireplace", "candle", "lantern", "daylight"]).optional().describe("Preset: radii, colour and animation; explicit fields override it"),
+        animation: z.string().optional().describe("Foundry light animation key, e.g. torch, flame, pulse"),
       }),
     )
     .min(1),
@@ -245,10 +263,13 @@ export type AddLightsArgs = z.infer<z.ZodObject<typeof AddLightsShape>>;
 export async function runAddLights(transport: RelayTransport, args: AddLightsArgs, opts: PipelineOptions = {}): Promise<ToolOutcome> {
   const gridResult = await loadGrid(transport, args.sceneId, opts);
   if (isOutcome(gridResult)) return gridResult;
-  const data = args.lights.map((light) => {
+  const { levels } = args;
+  const built = args.lights.map((light) => {
     const { x, y } = gridToPixels(light.col, light.row, gridResult.size, gridResult.origin);
-    return buildLight({ x, y, bright: light.bright, dim: light.dim, color: light.color });
+    const r = resolveLightInput(light);
+    return buildLight({ x, y, bright: r.bright, dim: r.dim, color: r.color, animation: r.animation });
   });
+  const data = levels?.length ? built.map((d) => ({ ...d, levels })) : built;
   return withSteps(
     gridResult.steps,
     await createEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "AmbientLight", data }, opts),

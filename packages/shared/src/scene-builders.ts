@@ -9,7 +9,7 @@
 
 import { z } from "zod";
 import { type Json, deepMerge } from "./objects.js";
-
+import { type DoorStyle, defaultDoorAnimation, pickDoorTexture } from "./door-textures.js";
 const ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 /** Foundry-style 16-char document id. */
@@ -90,6 +90,36 @@ export function buildLight(input: BuildLightInput, override?: Json): Json {
     },
   };
   return deepMerge(light, override);
+}
+
+export type LightSource = "torch" | "fireplace" | "candle" | "lantern" | "daylight";
+
+export const LIGHT_PRESETS: Record<LightSource, { bright: number; dim: number; color: string; animation: { type: string | null; speed: number; intensity: number } }> = {
+  torch: { bright: 20, dim: 40, color: "#ff9d4a", animation: { type: "torch", speed: 5, intensity: 5 } },
+  fireplace: { bright: 15, dim: 30, color: "#ff7a2e", animation: { type: "flame", speed: 4, intensity: 5 } },
+  candle: { bright: 5, dim: 15, color: "#ffc36b", animation: { type: "torch", speed: 3, intensity: 2 } },
+  lantern: { bright: 15, dim: 30, color: "#ffd9a0", animation: { type: null, speed: 5, intensity: 5 } },
+  daylight: { bright: 0, dim: 10, color: "#cfe0ff", animation: { type: null, speed: 5, intensity: 5 } },
+};
+
+export interface LightInputLike {
+  source?: LightSource;
+  bright?: number;
+  dim?: number;
+  color?: string;
+  /** A CONFIG.Canvas.lightAnimations key such as torch, flame, pulse. */
+  animation?: string;
+}
+
+/** Preset first, explicit values on top. */
+export function resolveLightInput(l: LightInputLike): { bright: number; dim: number; color: string | null; animation: { type: string | null; speed: number; intensity: number } } {
+  const preset = l.source ? LIGHT_PRESETS[l.source] : undefined;
+  return {
+    bright: l.bright ?? preset?.bright ?? 0,
+    dim: l.dim ?? preset?.dim ?? 0,
+    color: l.color ?? preset?.color ?? null,
+    animation: { ...(preset?.animation ?? { type: null, speed: 5, intensity: 5 }), ...(l.animation ? { type: l.animation } : {}) },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -267,18 +297,39 @@ export function pixelsToGrid(
 export const WALL_MOVEMENT_TYPES = { NONE: 0, NORMAL: 20 } as const;
 export const WALL_SENSE_TYPES = { NONE: 0, LIMITED: 10, NORMAL: 20 } as const;
 export const WALL_DOOR_TYPES = { NONE: 0, DOOR: 1, SECRET: 2 } as const;
+/** CONST.WALL_DOOR_STATES (Foundry 14). */
+export const WALL_DOOR_STATES = { CLOSED: 0, OPEN: 1, LOCKED: 2 } as const;
 
-export type WallKind = "wall" | "door" | "secretDoor" | "limited";
+export type WallKind = "wall" | "door" | "secretDoor" | "limited" | "window";
+export type DoorAnimationType = "swing" | "slide" | "swivel" | "ascend" | "descend";
+
+/** Foundry 14 door options. Every visible door gets an animation block: Foundry only animates a door that has a texture. */
+export interface DoorOptions {
+  animation?: DoorAnimationType;
+  /** Look of the door (picks the core texture and, unless `animation` is given, the animation). Default wood. */
+  style?: DoorStyle;
+  /** Narrow the style to one colour, e.g. "dark" or "walnut" for wood. */
+  tone?: string;
+  /** A file path of your own; wins over `style`. Without a texture Foundry does not animate the door. */
+  texture?: string;
+  double?: boolean;
+  flip?: boolean;
+  direction?: 1 | -1;
+  duration?: number;
+  strength?: number;
+  locked?: boolean;
+  open?: boolean;
+}
 
 /**
  * Foundry wall document from a grid-coordinate segment (corners, not squares).
  * `limited` blocks movement but is a Limited sight/light wall: perception passes
- * through one such wall and is stopped by a second. It is NOT Foundry's distance-based
- * "Window" (Proximity) wall, which needs threshold configuration — create that one with
- * create_embedded if you need it.
+ * through one such wall and is stopped by a second. `window` blocks movement only:
+ * sight and light pass freely (daylight through glass). It is not Foundry's distance-based
+ * "Proximity" wall; make that one with create_embedded if you need it.
  */
 export function buildWallFromGrid(
-  seg: { x1: number; y1: number; x2: number; y2: number; kind?: WallKind },
+  seg: { x1: number; y1: number; x2: number; y2: number; kind?: WallKind; doorOptions?: DoorOptions },
   gridSize: number,
   origin: { x?: number; y?: number } = {},
 ): Json {
@@ -286,18 +337,37 @@ export function buildWallFromGrid(
   const b = gridToPixels(seg.x2, seg.y2, gridSize, origin);
   const kind = seg.kind ?? "wall";
   const door = kind === "door" ? WALL_DOOR_TYPES.DOOR : kind === "secretDoor" ? WALL_DOOR_TYPES.SECRET : WALL_DOOR_TYPES.NONE;
-  const senses = kind === "limited" ? WALL_SENSE_TYPES.LIMITED : WALL_SENSE_TYPES.NORMAL;
-  return {
+  const senses = kind === "limited" ? WALL_SENSE_TYPES.LIMITED : kind === "window" ? WALL_SENSE_TYPES.NONE : WALL_SENSE_TYPES.NORMAL;
+  const opts = seg.doorOptions;
+  const wall: Json = {
     _id: randomID(),
     c: [a.x, a.y, b.x, b.y],
     door,
-    ds: 0,
+    ds: opts?.locked ? WALL_DOOR_STATES.LOCKED : opts?.open ? WALL_DOOR_STATES.OPEN : WALL_DOOR_STATES.CLOSED,
     move: WALL_MOVEMENT_TYPES.NORMAL,
     sight: senses,
     light: senses,
     sound: WALL_SENSE_TYPES.NORMAL,
     dir: 0,
   };
+  if (kind === "door") {
+    const style = opts?.style ?? "wood";
+    const cells = Math.hypot(b.x - a.x, b.y - a.y) / gridSize;
+    const double = opts?.double ?? cells >= 2;
+    const texture =
+      opts?.texture ??
+      pickDoorTexture(style, { wide: double, tone: opts?.tone, seed: Math.round((seg.x1 + seg.y1 * 7) * 2) }).path;
+    wall.animation = {
+      type: opts?.animation ?? defaultDoorAnimation(style),
+      direction: opts?.direction ?? 1,
+      double,
+      flip: opts?.flip ?? false,
+      duration: opts?.duration ?? 750,
+      strength: opts?.strength ?? 1,
+      texture,
+    };
+  }
+  return wall;
 }
 
 // ---------------------------------------------------------------------------

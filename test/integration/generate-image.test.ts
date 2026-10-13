@@ -225,6 +225,11 @@ describe("prompt and size helpers", () => {
     expect(args).toEqual(["/s/gen-image.mjs", "--backend", "codex", "--prompt", "p", "--out", "/o/x.png", "--width", "10", "--height", "20", "--no-sidecar", "--codex-model", "gpt-x"]);
   });
 
+  it("passes the guide image to gen-image", () => {
+    const args = buildGenImageArgs({ prompt: "p", width: 10, height: 20, outPath: "/o/x.webp", guidePath: "/g/guide.png" }, "/s/gen-image.mjs");
+    expect(args).toEqual(["/s/gen-image.mjs", "--backend", "codex", "--prompt", "p", "--out", "/o/x.webp", "--width", "10", "--height", "20", "--no-sidecar", "--image", "/g/guide.png"]);
+  });
+
   it("explains failures", () => {
     expect(explainGenImageFailure("Error: not logged in, please login", "codex").message).toContain("codex login");
     expect(explainGenImageFailure("codex timed out after 300000ms", "codex").code).toBe("TIMEOUT");
@@ -268,5 +273,37 @@ describe("the Codex runner process", () => {
     setTimeout(() => controller.abort(), 100);
     await expect(run).rejects.toThrow("cancelled");
     expect(Date.now() - started).toBeLessThan(5000);
+  });
+});
+
+describe("ImageJobs with parts", () => {
+  const mk = (n: string): ImageRequest => ({ prompt: n, width: 10, height: 10, outPath: `/x/${n}.webp` });
+
+  it("runs the parts of one request in order as one job and fails the job when a part fails", async () => {
+    const seen: string[] = [];
+    const runner: ImageRunner = async (req) => {
+      seen.push(req.outPath);
+      if (req.outPath.endsWith("b.webp")) throw new ImageRunError("INTERNAL", "boom");
+      return { path: req.outPath };
+    };
+    const jobs = new ImageJobs(runner);
+    const ok = jobs.start({ ...mk("a"), parts: [mk("a"), mk("c")] }, {});
+    await jobs.wait(ok!.id, 1000);
+    expect(ok!.status).toBe("done");
+    expect(seen).toEqual(["/x/a.webp", "/x/c.webp"]);
+    seen.length = 0;
+    const bad = jobs.start({ ...mk("a"), parts: [mk("a"), mk("b"), mk("c")] }, {});
+    await jobs.wait(bad!.id, 1000);
+    expect(bad!.status).toBe("failed");
+    expect(bad!.error?.message).toBe("boom");
+    expect(seen).toEqual(["/x/a.webp", "/x/b.webp"]);
+  });
+
+  it("a request without parts still runs once", async () => {
+    const seen: string[] = [];
+    const jobs = new ImageJobs(async (req) => (seen.push(req.outPath), { path: req.outPath }));
+    const j = jobs.start(mk("solo"), {});
+    await jobs.wait(j!.id, 1000);
+    expect(seen).toEqual(["/x/solo.webp"]);
   });
 });

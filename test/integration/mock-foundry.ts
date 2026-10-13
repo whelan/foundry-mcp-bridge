@@ -491,6 +491,10 @@ export class MockFoundry {
     // a fresh id is minted (so tests can't rely on ids the live system wouldn't keep).
     const _id = keepId && typeof data._id === "string" && data._id ? data._id : randomID();
     const doc: Json = { ...data, _id };
+    // Foundry 14 gives every new Scene one level, `defaultLevel0000`, whatever the payload carried.
+    if (type === "Scene" && Number.parseInt(this.worldInfo.foundryVersion, 10) >= 14 && !Array.isArray(doc.levels)) {
+      doc.levels = [{ _id: "defaultLevel0000", name: "Level", elevation: { bottom: 0, top: 20 }, background: { src: null }, sort: 0 }];
+    }
     // Mirror Foundry: _stats is stamped by the server at creation, whatever the payload carried
     // (a re-created document from a snapshot gets new createdTime/modifiedTime).
     const now = Date.now();

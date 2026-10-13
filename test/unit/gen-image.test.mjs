@@ -3,6 +3,7 @@
 // mirroring how foundry-runtime.ts is kept out of CI.
 import { describe, expect, test } from "vitest";
 import {
+  buildCodexArgv,
   buildCodexPrompt,
   parseCodexSessionId,
   pickGeneratedImage,
@@ -130,5 +131,21 @@ describe("buildCodexPrompt", () => {
   test("adds a size hint when width and height are given", () => {
     const p = buildCodexPrompt({ prompt: "a map", width: "768", height: "512" });
     expect(p).toContain("Target size: 768x512.");
+  });
+});
+
+describe("buildCodexArgv", () => {
+  test("attaches the guide before the prompt", () => {
+    const argv = buildCodexArgv({ prompt: "paint it", image: "/g/guide.png" }, undefined);
+    const i = argv.indexOf("-i");
+    expect(argv.slice(i, i + 3)).toEqual(["-i", "/g/guide.png", "--"]);
+    expect(argv.at(-1)).toContain("paint it");
+  });
+
+  test("without a guide is unchanged", () => {
+    const argv = buildCodexArgv({ prompt: "paint it" }, "m1");
+    expect(argv).not.toContain("-i");
+    expect(argv.slice(0, 5)).toEqual(["exec", "--json", "-s", "read-only", "--skip-git-repo-check"]);
+    expect(argv).toContain("m1");
   });
 });

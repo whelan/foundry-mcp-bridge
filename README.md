@@ -29,6 +29,11 @@ See the design docs:
 
 `list_scenes`, `get_scene_state`, `switch_scene`, `place_token`, `move_tokens`, `remove_tokens`,
 `toggle_condition`, `add_walls`, `add_lights` — all addressed in grid squares (square/gridless scenes).
+`add_walls` also makes windows (movement blocked, sight and light pass) and Foundry 14 animated doors (`animation`:
+swing, slide, swivel, ascend, descend; `double`, `flip`, `locked`, `open`). Every door gets one of Foundry's core
+`canvas/doors` images, because Foundry only animates a door that has a texture: pick the look with `style` (wood, stone,
+metal, portcullis) and `tone`, or give your own `texture` path; `add_lights` takes a `source` preset
+(torch, fireplace, candle, lantern, daylight) and an `animation` such as `flame` or `pulse`.
 Arbitrary canvas objects (tiles, drawings, notes, regions) go through `create_embedded` with pixel coordinates.
 
 ## Image generation (Codex)
@@ -39,6 +44,23 @@ background (V13 and V14 levels), a new scene sized to the image, or a hidden jou
 more, so it runs as a job: `generate_image` waits `waitSeconds`, otherwise returns a `jobId` for `check_image_job`
 (or `cancel_image_job`). On macOS: `npm i -g @openai/codex`, `codex login`, and set `CODEX_BIN=/opt/homebrew/bin/codex`.
 The writes it makes are verified, logged and undoable like any other tool's.
+
+`build_floorplan_scene` builds a whole building in one call from a small spec (rooms in grid cells with furnishings,
+doors, windows, lights). It draws a blueprint, has Codex paint over it as a webp (`codex:false` keeps the blueprint),
+creates a scene of exactly cols x rows cells, and derives every wall, door, window and light from the spec so they match
+the picture. The result carries a preview per floor with the walls and lights drawn over the picture. Needs Foundry 14 and,
+for the size check, the roof and the preview, ImageMagick (`magick`). Undo it with `undo_change`.
+
+For several floors give `floors: [{name, rooms, openings, lights}]` (ground floor first, up to 4) and
+`stairs: [{at: [col, row], dir, length, width, from}]`. Each floor becomes a Foundry 14 **Level** with its own painting,
+walls and lights; a stair is one region over both levels with Foundry's own "change level" prompt, so a token that steps
+on it can go up or down. An upper room must sit inside the floor below, a stair must lie inside one room on both floors
+and every upper floor needs a stair. `roof` (default on) adds one roof tile painted from a footprint guide and masked
+to the outline of the house with ImageMagick; it has `FADE` and `VISION` occlusion, so from outside it is solid and shows
+only what a token sees through a window or door, and it fades when a token walks under it. `roofStyle` is a hint for the
+painter ("thatched roof", "slate roof"). A two-floor house with a roof is three Codex runs, run one after another in a
+single image job (one `jobId`); `roof:false` drops the third. The single-floor `rooms`/`openings`/`lights` input still works
+and is the same as one floor. `add_walls` and `add_lights` also take `levels` (level ids) to put their documents on one level.
 
 ## Safety: permissions, change log, undo
 
