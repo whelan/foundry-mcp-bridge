@@ -116,7 +116,7 @@ async function followUp(
   const steps = ["generate"];
   const file = job.request.outPath;
   if (apply?.to === "floorplanScene") {
-    return finishFloorplan({ file, apply, source, target, deps }, transport, opts);
+    return finishFloorplan({ apply, source, target, deps }, transport, opts);
   }
   const result = (src: string, applied?: unknown): ToolOutcome => ({
     ok: true,

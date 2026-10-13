@@ -18,9 +18,10 @@ const parse = (over?: Partial<FloorplanInput>) => FloorplanSchema.parse(base(ove
 describe("FloorplanSchema", () => {
   it("fills defaults", () => {
     const p = parse();
-    expect(p).toMatchObject({ feetPerCell: 5, pxPerCell: 100, codex: true, style: "fantasy house", lights: [] });
-    expect(p.rooms[0]!.furnishings).toEqual([]);
-    expect(p.openings[0]).toMatchObject({ width: 1, kind: "door" });
+    expect(p).toMatchObject({ feetPerCell: 5, pxPerCell: 100, codex: true, style: "fantasy house", stairs: [], roof: true });
+    expect(p.floors[0]!.lights).toEqual([]);
+    expect(p.floors[0]!.rooms[0]!.furnishings).toEqual([]);
+    expect(p.floors[0]!.openings[0]).toMatchObject({ width: 1, kind: "door" });
   });
   it("rejects a house with no rooms", () => {
     expect(() => FloorplanSchema.parse(base({ rooms: [] }))).toThrow();
@@ -162,5 +163,123 @@ describe("buildGeometry", () => {
     expect(a.walls).toEqual(b.walls);
     const keys = a.walls.map((w) => [w.y1, w.x1]);
     expect(keys).toEqual([...keys].sort((p, q) => p[0]! - q[0]! || p[1]! - q[1]!));
+  });
+});
+
+const ground = {
+  name: "Ground",
+  rooms: [
+    { id: "hall", x: 0, y: 0, w: 8, h: 6 },
+    { id: "kitchen", x: 8, y: 0, w: 6, h: 6 },
+  ],
+  openings: [{ room: "hall", side: "s", at: 2, kind: "door" }],
+  lights: [{ at: [1, 1], source: "fireplace" }],
+};
+const upper = {
+  name: "Upstairs",
+  rooms: [{ id: "bed", x: 0, y: 0, w: 8, h: 6 }],
+  openings: [{ room: "bed", side: "n", at: 2, width: 2, kind: "window" }],
+  lights: [{ at: [6, 4], source: "candle" }],
+};
+const two = (over: Record<string, unknown> = {}) =>
+  FloorplanSchema.parse({ name: "T", cols: 16, rows: 8, floors: [ground, upper], stairs: [{ at: [5, 1], dir: "e" }], ...over });
+
+describe("floors", () => {
+  it("normalises the single-floor input into one floor", () => {
+    const p = FloorplanSchema.parse({ name: "S", cols: 8, rows: 6, rooms: ground.rooms.slice(0, 1), openings: ground.openings });
+    expect(p.floors).toHaveLength(1);
+    expect(p.floors[0]!.rooms[0]!.id).toBe("hall");
+    expect(p.roof).toBe(true);
+    expect(p.roofStyle).toBe("thatched roof");
+  });
+
+  it("rejects both floors and top-level rooms, and neither", () => {
+    expect(() => FloorplanSchema.parse({ name: "x", cols: 8, rows: 6, rooms: ground.rooms, floors: [ground] })).toThrow(/floors/i);
+    expect(() => FloorplanSchema.parse({ name: "x", cols: 8, rows: 6 })).toThrow();
+  });
+
+  it("builds walls and lights per floor and keeps floor 0 on walls/lights", () => {
+    const g = buildGeometry(two());
+    expect(g.ok).toBe(true);
+    if (!g.ok) return;
+    expect(g.floors.map((f) => f.name)).toEqual(["Ground", "Upstairs"]);
+    expect(g.walls).toEqual(g.floors[0]!.walls);
+    expect(g.lights).toEqual(g.floors[0]!.lights);
+    expect(g.floors[0]!.lights[0]).toMatchObject({ col: 1.5, row: 1.5, source: "fireplace" });
+    expect(g.floors[1]!.lights[0]).toMatchObject({ col: 6.5, row: 4.5, source: "candle" });
+    expect(g.floors[1]!.walls.some((w) => w.kind === "window")).toBe(true);
+  });
+
+  it("an upper floor needs no exterior door but the ground floor does", () => {
+    expect(buildGeometry(two()).ok).toBe(true);
+    const out = buildGeometry(two({ floors: [{ ...ground, openings: [] }, upper] }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.errors.join(" ")).toContain("no exterior door");
+  });
+
+  it("rejects an upper room that overhangs the floor below", () => {
+    const out = buildGeometry(two({ floors: [ground, { ...upper, rooms: [{ id: "bed", x: 10, y: 0, w: 8, h: 6 }] }] }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.errors.join(" ")).toMatch(/outside the floor below/);
+  });
+
+  it("prefixes errors with the floor name only when there are several floors", () => {
+    const single = FloorplanSchema.parse({ name: "S", cols: 4, rows: 4, rooms: [{ id: "a", x: 0, y: 0, w: 9, h: 2 }] });
+    expect(validateFloorplan(single)[0]).toMatch(/^room "a" leaves/);
+    const multi = two({ floors: [ground, { ...upper, rooms: [{ id: "bed", x: 0, y: 0, w: 99, h: 6 }] }] });
+    expect(validateFloorplan(multi).some((e) => e.startsWith('floor "Upstairs": '))).toBe(true);
+  });
+});
+
+describe("stairs", () => {
+  it("places a stair footprint (dir e: length runs along x) joining floor 0 and 1", () => {
+    const g = buildGeometry(two());
+    expect(g.ok && g.stairs).toEqual([{ from: 0, to: 1, x: 5, y: 1, w: 3, h: 1, dir: "e" }]);
+  });
+
+  it("dir n/s runs along y", () => {
+    const g = buildGeometry(two({ stairs: [{ at: [2, 1], dir: "n", length: 4, width: 2 }] }));
+    expect(g.ok && g.stairs[0]).toMatchObject({ x: 2, y: 1, w: 2, h: 4, dir: "n" });
+  });
+
+  it("rejects a stair that leaves its room", () => {
+    const out = buildGeometry(two({ stairs: [{ at: [6, 1], dir: "e" }] }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.errors.join(" ")).toMatch(/stair 0.*single room/);
+  });
+
+  it("rejects a stair that does not exist inside a room on the upper floor", () => {
+    const out = buildGeometry(two({ floors: [ground, { ...upper, rooms: [{ id: "bed", x: 0, y: 0, w: 4, h: 6 }] }] }));
+    expect(out.ok).toBe(false);
+  });
+
+  it("rejects a stair next to a door or window edge", () => {
+    const out = buildGeometry(two({ stairs: [{ at: [2, 5], dir: "e", length: 3 }] }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.errors.join(" ")).toMatch(/stair 0.*(door|window)/);
+  });
+
+  it("rejects a stair next to a door declared from the neighbouring room", () => {
+    // kitchen (8..14) west wall is hall's east wall at x=8; the door is declared on the kitchen's side
+    const g2 = { ...ground, openings: [...ground.openings, { room: "kitchen", side: "w", at: 1, kind: "door" }] };
+    const out = buildGeometry(two({ floors: [g2, upper], stairs: [{ at: [7, 0], dir: "s", length: 3 }] }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.errors.join(" ")).toMatch(/stair 0.*(door|window)/);
+  });
+
+  it("rejects overlapping stairs and a floor nobody can reach", () => {
+    expect(buildGeometry(two({ stairs: [{ at: [1, 1], dir: "e" }, { at: [2, 1], dir: "e" }] })).ok).toBe(false);
+    const unreachable = buildGeometry(two({ stairs: [] }));
+    expect(unreachable.ok).toBe(false);
+    if (!unreachable.ok) expect(unreachable.errors.join(" ")).toContain("unreachable");
+  });
+
+  it("rejects a stair whose upper floor does not exist", () => {
+    expect(buildGeometry(two({ stairs: [{ at: [1, 1], dir: "e", from: 1 }] })).ok).toBe(false);
+  });
+
+  it("exposes the footprint of every room of every floor", () => {
+    const g = buildGeometry(two());
+    expect(g.ok && g.footprint).toHaveLength(3);
   });
 });

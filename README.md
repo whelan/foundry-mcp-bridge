@@ -48,8 +48,19 @@ The writes it makes are verified, logged and undoable like any other tool's.
 `build_floorplan_scene` builds a whole building in one call from a small spec (rooms in grid cells with furnishings,
 doors, windows, lights). It draws a blueprint, has Codex paint over it as a webp (`codex:false` keeps the blueprint),
 creates a scene of exactly cols x rows cells, and derives every wall, door, window and light from the spec so they match
-the picture. The result carries a preview with the walls and lights drawn over the picture. Needs Foundry 14 and,
-for the size check and preview, ImageMagick (`magick`). Undo it with `undo_change`.
+the picture. The result carries a preview per floor with the walls and lights drawn over the picture. Needs Foundry 14 and,
+for the size check, the roof and the preview, ImageMagick (`magick`). Undo it with `undo_change`.
+
+For several floors give `floors: [{name, rooms, openings, lights}]` (ground floor first, up to 4) and
+`stairs: [{at: [col, row], dir, length, width, from}]`. Each floor becomes a Foundry 14 **Level** with its own painting,
+walls and lights; a stair is one region over both levels with Foundry's own "change level" prompt, so a token that steps
+on it can go up or down. An upper room must sit inside the floor below, a stair must lie inside one room on both floors
+and every upper floor needs a stair. `roof` (default on) adds one roof tile painted from a footprint guide and masked
+to the outline of the house with ImageMagick; it has `FADE` and `VISION` occlusion, so from outside it is solid and shows
+only what a token sees through a window or door, and it fades when a token walks under it. `roofStyle` is a hint for the
+painter ("thatched roof", "slate roof"). A two-floor house with a roof is three Codex runs, run one after another in a
+single image job (one `jobId`); `roof:false` drops the third. The single-floor `rooms`/`openings`/`lights` input still works
+and is the same as one floor. `add_walls` and `add_lights` also take `levels` (level ids) to put their documents on one level.
 
 ## Safety: permissions, change log, undo
 

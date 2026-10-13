@@ -6,7 +6,7 @@
 import { deflateSync } from "node:zlib";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { Floorplan, PlacedLight, WallSegment } from "@foundry-mcp-bridge/shared";
+import type { Floorplan, PlacedLight, PlacedStair, WallSegment } from "@foundry-mcp-bridge/shared";
 
 const run = promisify(execFile);
 
@@ -90,12 +90,39 @@ const SECRET: Rgba = [43, 33, 24, 255];
 const WINDOW: Rgba = [150, 200, 230, 255];
 const FLOORS: Rgba[] = [[217, 201, 168, 255], [201, 190, 170, 255], [208, 186, 160, 255], [196, 200, 176, 255]];
 
-/** Blueprint: exact room rectangles, walls, doors and windows at pxPerCell. Codex paints over it. */
-export function renderGuide(plan: Floorplan, walls: WallSegment[]): Buffer {
+const STAIR: Rgba = [230, 190, 60, 255];
+const STAIR_TREAD: Rgba = [120, 90, 30, 255];
+const OV_STAIR: Rgba = [230, 60, 230, 255];
+
+/** A stair as a yellow block with treads, or (for the overlay) just its outline. */
+function drawStairs(r: Raster, stairs: PlacedStair[], px: number, outline: boolean): void {
+  for (const s of stairs) {
+    if (outline) {
+      const t = 4;
+      r.fillRect(s.x * px, s.y * px, s.w * px, t, OV_STAIR);
+      r.fillRect(s.x * px, (s.y + s.h) * px - t, s.w * px, t, OV_STAIR);
+      r.fillRect(s.x * px, s.y * px, t, s.h * px, OV_STAIR);
+      r.fillRect((s.x + s.w) * px - t, s.y * px, t, s.h * px, OV_STAIR);
+      continue;
+    }
+    r.fillRect(s.x * px, s.y * px, s.w * px, s.h * px, STAIR);
+    const horizontal = s.dir === "e" || s.dir === "w";
+    const steps = horizontal ? s.w : s.h;
+    for (let i = 1; i < steps; i++) {
+      if (horizontal) r.fillRect((s.x + i) * px - 1, s.y * px, 3, s.h * px, STAIR_TREAD);
+      else r.fillRect(s.x * px, (s.y + i) * px - 1, s.w * px, 3, STAIR_TREAD);
+    }
+  }
+}
+
+/** Blueprint of one floor: exact room rectangles, walls, doors, windows and the stairs that touch it. Codex paints over it. */
+export function renderGuide(plan: Floorplan, walls: WallSegment[], opts: { floor?: number; stairs?: PlacedStair[] } = {}): Buffer {
   const px = plan.pxPerCell;
+  const floor = opts.floor ?? 0;
   const r = new Raster(plan.cols * px, plan.rows * px);
   r.fillRect(0, 0, r.width, r.height, OUTSIDE);
-  plan.rooms.forEach((room, i) => r.fillRect(room.x * px, room.y * px, room.w * px, room.h * px, FLOORS[i % FLOORS.length]!));
+  plan.floors[floor]!.rooms.forEach((room, i) => r.fillRect(room.x * px, room.y * px, room.w * px, room.h * px, FLOORS[i % FLOORS.length]!));
+  drawStairs(r, (opts.stairs ?? []).filter((s) => s.from === floor || s.to === floor), px, false);
   const t = Math.max(4, Math.round(px * 0.12));
   for (const w of walls) {
     const colour = w.kind === "door" ? DOOR : w.kind === "secretDoor" ? SECRET : w.kind === "window" ? WINDOW : WALL;
@@ -104,19 +131,30 @@ export function renderGuide(plan: Floorplan, walls: WallSegment[]): Buffer {
   return r.toPng();
 }
 
+/** White = under the roof (every room of every floor plus an eave), black = open sky. Also the roof's transparency mask. */
+export function renderRoofGuide(plan: Floorplan, footprint: Array<{ x: number; y: number; w: number; h: number }>, eaveCells = 0.4): Buffer {
+  const px = plan.pxPerCell;
+  const r = new Raster(plan.cols * px, plan.rows * px);
+  r.fillRect(0, 0, r.width, r.height, [0, 0, 0, 255]);
+  const eave = eaveCells * px;
+  for (const f of footprint) r.fillRect(f.x * px - eave, f.y * px - eave, f.w * px + 2 * eave, f.h * px + 2 * eave, [255, 255, 255, 255]);
+  return r.toPng();
+}
+
 const OV_WALL: Rgba = [255, 40, 40, 255];
 const OV_DOOR: Rgba = [40, 220, 80, 255];
 const OV_WINDOW: Rgba = [40, 200, 255, 255];
 const OV_LIGHT: Rgba = [255, 230, 40, 255];
 
-/** Transparent overlay: red walls, green doors, cyan windows, yellow lights. */
-export function renderOverlay(plan: Floorplan, walls: WallSegment[], lights: PlacedLight[]): Buffer {
+/** Transparent overlay: red walls, green doors, cyan windows, yellow lights, magenta stairs. */
+export function renderOverlay(plan: Floorplan, walls: WallSegment[], lights: PlacedLight[], stairs: PlacedStair[] = []): Buffer {
   const px = plan.pxPerCell;
   const r = new Raster(plan.cols * px, plan.rows * px);
   for (const w of walls) {
     const colour = w.kind === "door" || w.kind === "secretDoor" ? OV_DOOR : w.kind === "window" ? OV_WINDOW : OV_WALL;
     drawSegment(r, w, px, 6, colour);
   }
+  drawStairs(r, stairs, px, true);
   for (const l of lights) r.fillCircle(l.col * px, l.row * px, Math.max(6, px * 0.12), OV_LIGHT);
   return r.toPng();
 }
@@ -150,4 +188,9 @@ export async function imageSize(file: string): Promise<{ width: number; height: 
   } catch {
     return null;
   }
+}
+
+/** Make everything outside the footprint transparent: the guide's white is opaque, its black is clear. */
+export async function maskToFootprint(picture: string, maskPng: string, out: string): Promise<void> {
+  await run("magick", [picture, "(", maskPng, "-alpha", "off", "-colorspace", "Gray", ")", "-compose", "CopyOpacity", "-composite", out]);
 }

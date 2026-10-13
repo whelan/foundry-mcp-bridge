@@ -4,7 +4,9 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FloorplanSchema, buildGeometry } from "../../packages/shared/src/index.js";
-import { Raster, renderGuide, renderOverlay, fitImage, hasMagick, imageSize } from "../../packages/mcp-server/src/floorplan-render.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { Raster, renderGuide, renderOverlay, renderRoofGuide, maskToFootprint, fitImage, hasMagick, imageSize } from "../../packages/mcp-server/src/floorplan-render.js";
 import { pngSize } from "../../packages/mcp-server/src/image-gen.js";
 
 const plan = FloorplanSchema.parse({
@@ -88,5 +90,71 @@ describe("fitImage", async () => {
     const file = join(dir, "a.png");
     writeFileSync(file, renderGuide(plan, geometry.walls));
     expect(await imageSize(file)).toEqual({ width: 400, height: 300 });
+  });
+});
+
+const STAIR_COLOUR = [230, 190, 60, 255];
+const stairPlan = (floors: number) =>
+  FloorplanSchema.parse({
+    name: "S", cols: 8, rows: 6, pxPerCell: 50,
+    floors: [
+      { name: "G", rooms: [{ id: "a", x: 0, y: 0, w: 8, h: 6 }], openings: [{ room: "a", side: "s", at: 1, kind: "door" }] },
+      ...Array.from({ length: floors - 1 }, (_, i) => ({ name: `U${i}`, rooms: [{ id: `b${i}`, x: 0, y: 0, w: 8, h: 6 }] })),
+    ],
+    stairs: [{ at: [2, 2], dir: "e" }, ...(floors > 2 ? [{ at: [2, 2], dir: "e", from: 1 }] : [])],
+  });
+const geometryOf = (p: ReturnType<typeof stairPlan>) => { const g = buildGeometry(p); if (!g.ok) throw new Error(g.errors.join()); return g; };
+
+describe("stairs and roof drawing", () => {
+  it("draws a stair in the guide on both floors it joins, in its own colour", () => {
+    const p = stairPlan(2);
+    const g = geometryOf(p);
+    for (const floor of [0, 1]) {
+      const img = decode(renderGuide(p, g.floors[floor]!.walls, { floor, stairs: g.stairs }));
+      expect(img.px(2 * 50 + 25, 2 * 50 + 25)).toEqual(STAIR_COLOUR);
+    }
+  });
+
+  it("does not draw a stair on a floor it does not touch", () => {
+    const p = stairPlan(3);
+    const g = geometryOf(p);
+    const onlyFirst = g.stairs.filter((s) => s.from === 0);
+    const top = decode(renderGuide(p, g.floors[2]!.walls, { floor: 2, stairs: onlyFirst }));
+    expect(top.px(125, 125)).not.toEqual(STAIR_COLOUR);
+  });
+
+  it("the roof guide is white over every room plus the eave, black elsewhere", () => {
+    const p = FloorplanSchema.parse({ name: "S", cols: 10, rows: 8, pxPerCell: 50, rooms: [{ id: "a", x: 2, y: 2, w: 4, h: 3 }] });
+    const img = decode(renderRoofGuide(p, [{ x: 2, y: 2, w: 4, h: 3 }], 0.4));
+    expect(img.px(3 * 50, 3 * 50)).toEqual([255, 255, 255, 255]);
+    expect(img.px(2 * 50 - 10, 3 * 50)).toEqual([255, 255, 255, 255]);
+    expect(img.px(2 * 50 - 30, 3 * 50)).toEqual([0, 0, 0, 255]);
+    expect(img.px(0, 0)).toEqual([0, 0, 0, 255]);
+  });
+
+  it("renderOverlay outlines stairs", () => {
+    const p = stairPlan(2);
+    const img = decode(renderOverlay(p, [], [], [{ from: 0, to: 1, x: 2, y: 2, w: 3, h: 1, dir: "e" }]));
+    expect(img.px(2 * 50 + 2, 2 * 50 + 25)![3]).toBeGreaterThan(0);
+    expect(img.px(2 * 50 + 25, 2 * 50 + 25)![3]).toBe(0);
+  });
+});
+
+describe("maskToFootprint", async () => {
+  const magick = await hasMagick();
+  it.skipIf(!magick)("clears the outside and keeps the inside", async () => {
+    const run = promisify(execFile);
+    const dir = mkdtempSync(join(tmpdir(), "mask-"));
+    const p = FloorplanSchema.parse({ name: "S", cols: 8, rows: 6, pxPerCell: 50, rooms: [{ id: "a", x: 2, y: 2, w: 3, h: 2 }] });
+    const mask = join(dir, "mask.png");
+    writeFileSync(mask, renderRoofGuide(p, [{ x: 2, y: 2, w: 3, h: 2 }], 0));
+    const pic = join(dir, "pic.png");
+    await run("magick", ["-size", "400x300", "xc:red", pic]);
+    const out = join(dir, "out.webp");
+    await maskToFootprint(pic, mask, out);
+    const { stdout } = await run("magick", [out, "-format", "%[fx:p{125,125}.a] %[fx:p{10,10}.a]", "info:"]);
+    const [inside, outside] = stdout.trim().split(" ").map(Number);
+    expect(inside).toBeGreaterThan(0.9);
+    expect(outside).toBeLessThan(0.1);
   });
 });
