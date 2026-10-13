@@ -57,16 +57,20 @@ export async function runBuildFloorplanScene(
   const overlayPath = join(outputDir, `overlay-${stamp}.png`);
   await writeFile(guidePath, renderGuide(plan, geo.walls));
   await writeFile(overlayPath, renderOverlay(plan, geo.walls, geo.lights));
-  const apply: FloorplanApply = { to: "floorplanScene", plan, walls: geo.walls, lights: geo.lights, overlayPath };
+  const picture = join(outputDir, `floorplan-${stamp}.webp`);
+  const apply: FloorplanApply = {
+    to: "floorplanScene", plan, floors: geo.floors, stairs: geo.stairs, footprint: geo.footprint,
+    overlayPaths: [overlayPath], pictures: { floors: [plan.codex ? picture : guidePath] },
+  };
 
-  if (!plan.codex) return finishFloorplan({ file: guidePath, apply, source, target, deps }, transport, opts);
+  if (!plan.codex) return finishFloorplan({ apply, source, target, deps }, transport, opts);
 
   const px = plan.pxPerCell;
   const request = {
     prompt: buildFloorplanPrompt(plan) + (plan.seed ? `\n\nVariation seed: ${plan.seed}` : ""),
     width: plan.cols * px,
     height: plan.rows * px,
-    outPath: join(outputDir, `floorplan-${stamp}.webp`),
+    outPath: picture,
     guidePath,
   };
   const job = jobs.start(request, { kind: "battlemap", subject: plan.name, apply, source, target });
