@@ -27,8 +27,7 @@ automatic furniture collision, reading walls back from a picture.
 - `animation` fields: `type, direction, double, flip, duration, strength, texture`.
   Types: `swing, slide, swivel, ascend, descend`.
 - Sense types: `NONE 0, LIMITED 10, NORMAL 20, PROXIMITY 30, DISTANCE 40`.
-  A window is `sight` and `light` set to `DISTANCE` plus a `threshold`
-  (`light, sight, sound, attenuation`).
+  A window is modelled as `move` NORMAL with `sight` and `light` NONE (no threshold).
 - Door states: `CLOSED 0, OPEN 1, LOCKED 2`.
 - Light animations include `torch` and `flame`.
 - `codex exec -i <file>` attaches an image to the prompt; `gen-image.mjs` already converts to
@@ -45,8 +44,9 @@ floorplan {
   cols, rows, feetPerCell = 5,
   rooms:    [{ id, x, y, w, h, name, floor, furnishings: [string] }],
   openings: [{ room, side: n|e|s|w, at, width = 1, kind: door|window|secretDoor,
-               animation?, state?, locked?, exterior? }],
-  lights:   [{ at: [col, row], source: torch|fireplace|candle|lantern|daylight,
+               animation?, double?, flip?, locked?, open? }]  // exteriority is derived from the rooms,
+  lights:   [{ at: [col, row],  // a cell; the light sits at its centre
+               source: torch|fireplace|candle|lantern|daylight,
                bright?, dim?, color?, animation? }],
   codex: boolean = true, seed?
 }
@@ -88,8 +88,8 @@ All of this runs as one MCP call that returns a `jobId` when Codex is slow (exis
   flip: false, duration: 800, strength: 1 }`. `animation` per opening overrides `type`,
   `double`, `flip`. `slide` and `swivel` are valid for sheds and gates.
 - Locked: `ds: LOCKED`. Secret door: `door: SECRET`.
-- Window: `sight` and `light` = `DISTANCE`, `move` = `NORMAL`, `threshold` light and sight a few
-  feet, `attenuation: true`. The painter is told to draw glass in those spots.
+- Window: a see-through wall: `move` = `NORMAL`, `sight` and `light` = `NONE`, no threshold. The
+  painter is told to draw glass in those spots.
 
 ## Light presets
 
