@@ -9,6 +9,7 @@ import { ChangeLog } from "../../packages/mcp-server/src/change-log.js";
 import { runUndoChange } from "../../packages/mcp-server/src/change-tools.js";
 import { ImageJobs, type ImageRequest, type ImageRunner } from "../../packages/mcp-server/src/image-gen.js";
 import { runBuildFloorplanScene } from "../../packages/mcp-server/src/floorplan-tools.js";
+import { ensureSceneBackground } from "../../packages/mcp-server/src/scene-background.js";
 import { runCheckImageJob, type ImageJobMeta } from "../../packages/mcp-server/src/image-tools.js";
 import type { FloorplanDeps } from "../../packages/mcp-server/src/floorplan-finish.js";
 
@@ -147,5 +148,18 @@ describe("build_floorplan_scene", () => {
     const undone = await runUndoChange(t.log, t.transport, { requestId: "req-build_floorplan_scene" }, t.callOpts("undo_change"));
     expect(undone.ok).toBe(true);
     expect([...t.mock.store.keys()].some((k) => k.startsWith("!scenes!"))).toBe(false);
+  });
+});
+
+describe("ensureSceneBackground (Foundry 14 keeps the picture on the level)", () => {
+  it("sets the level background, and leaves a scene without levels alone", async () => {
+    const mock = new MockFoundry();
+    const transport = new MockTransport(mock);
+    mock.store.set("!scenes!v14", { _id: "v14", name: "A", levels: [{ _id: "l1", name: "Ground", background: {} }] });
+    mock.store.set("!scenes!v13", { _id: "v13", name: "B", background: { src: "x.webp" } });
+    expect((await ensureSceneBackground(transport, "v14", "pic.webp", {}))?.ok).toBe(true);
+    expect((mock.store.get("!scenes!v14") as any).levels[0].background.src).toBe("pic.webp");
+    expect(await ensureSceneBackground(transport, "v13", "pic.webp", {})).toBeNull();
+    expect(await ensureSceneBackground(transport, "v14", "pic.webp", {})).toBeNull();
   });
 });

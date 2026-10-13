@@ -28,6 +28,7 @@ import {
   showImageFilename,
 } from "./tools.js";
 import type { PipelineOptions, ToolOutcome } from "./reliability.js";
+import { ensureSceneBackground } from "./scene-background.js";
 import { finishFloorplan, type FloorplanApply, type FloorplanDeps } from "./floorplan-finish.js";
 
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
@@ -174,14 +175,16 @@ async function followUp(
     case "newScene": {
       const size = pngSize(bytes);
       if (!size) return failWith("VALIDATION", "A new scene needs the image size and only PNG sizes can be read", steps);
-      return done(
-        await runCreateScene(
-          transport,
-          { name: apply.name, width: size.width, height: size.height, gridSize: apply.gridSize ?? 100, gridDistance: apply.gridDistance, gridUnits: apply.gridUnits, background: src },
-          opts,
-        ),
-        { width: size.width, height: size.height },
+      const created = await runCreateScene(
+        transport,
+        { name: apply.name, width: size.width, height: size.height, gridSize: apply.gridSize ?? 100, gridDistance: apply.gridDistance, gridUnits: apply.gridUnits, background: src },
+        opts,
       );
+      if (created.ok) {
+        const bg = await ensureSceneBackground(transport, idOf(created.data)!, src, opts);
+        if (bg && !bg.ok) return { ...bg, steps: [...steps, ...bg.steps] };
+      }
+      return done(created, { width: size.width, height: size.height });
     }
   }
 }

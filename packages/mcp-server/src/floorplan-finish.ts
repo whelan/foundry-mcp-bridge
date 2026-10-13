@@ -11,6 +11,7 @@ import type { PipelineOptions, ToolOutcome } from "./reliability.js";
 import type { RelayTransport } from "./relay-transport.js";
 import { runCreateScene, runUploadAsset, showImageFilename } from "./tools.js";
 import { runAddLights, runAddWalls } from "./scene-tools.js";
+import { ensureSceneBackground } from "./scene-background.js";
 import { compositePreview, fitImage, hasMagick, imageSize } from "./floorplan-render.js";
 
 export interface FloorplanDeps {
@@ -77,6 +78,8 @@ export async function finishFloorplan(
   const scene = await runCreateScene(transport, { name: plan.name, width, height, gridSize: plan.pxPerCell, gridDistance: plan.feetPerCell, background: src } as never, opts);
   if (!scene.ok) return { ...scene, steps: [...steps, ...scene.steps] };
   const sceneId = (scene.data as { _id: string })._id;
+  const background = await ensureSceneBackground(transport, sceneId, src, opts);
+  if (background && !background.ok) return { ...background, steps: [...steps, ...background.steps] };
 
   steps.push("walls");
   const walls = await runAddWalls(
