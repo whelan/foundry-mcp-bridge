@@ -69,7 +69,7 @@ describe("buildGeometry", () => {
   it("one room: four merged walls plus the door", () => {
     const g = geo({ rooms: [{ id: "a", x: 1, y: 1, w: 4, h: 3 }], openings: [{ room: "a", side: "w", at: 1, kind: "door" }] });
     expect(g.walls.filter((w) => w.kind === "door")).toEqual([
-      { x1: 1, y1: 2, x2: 1, y2: 3, kind: "door", doorOptions: { animation: "swing", double: false, flip: undefined, locked: undefined, open: undefined } },
+      { x1: 1, y1: 2, x2: 1, y2: 3, kind: "door", doorOptions: { double: false } },
     ]);
     // west wall is split around the door: 1 cell above, 1 cell below; the other three sides are whole.
     expect(plain(g)).toHaveLength(5);
@@ -101,6 +101,20 @@ describe("buildGeometry", () => {
     });
     const door = g.walls.find((w) => w.kind === "door" && w.x1 === 4)!;
     expect(door).toMatchObject({ x1: 4, y1: 2, x2: 4, y2: 3, doorOptions: { animation: "slide" } });
+  });
+
+  it("passes style, tone and texture through to the door, and leaves the animation to the style", () => {
+    const g = geo({
+      rooms: [{ id: "a", x: 0, y: 0, w: 4, h: 4 }],
+      openings: [
+        { room: "a", side: "w", at: 0, kind: "door", style: "stone", tone: "volcanic" },
+        { room: "a", side: "s", at: 1, kind: "door", texture: "worlds/w/d.webp" },
+      ],
+    });
+    const doors = g.walls.filter((w) => w.kind === "door");
+    expect(doors[0]!.doorOptions).toMatchObject({ style: "stone", tone: "volcanic" });
+    expect(doors[0]!.doorOptions!.animation).toBeUndefined();
+    expect(doors[1]!.doorOptions).toMatchObject({ texture: "worlds/w/d.webp" });
   });
 
   it("a width-2 opening is one segment; a width-2 door defaults to a double door", () => {

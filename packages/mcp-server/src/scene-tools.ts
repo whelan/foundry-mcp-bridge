@@ -16,6 +16,7 @@ import {
   resolveLightInput,
   gridToPixels,
   type SceneState,
+  DOOR_STYLES,
 } from "@foundry-mcp-bridge/shared";
 import type { RelayTransport } from "./relay-transport.js";
 import {
@@ -213,7 +214,10 @@ export const AddWallsShape = {
         x2: z.number(),
         y2: z.number(),
         kind: z.enum(["wall", "door", "secretDoor", "limited", "window"]).optional().describe("limited = blocks movement, Limited sight/light (see through one, blocked by two). window = blocks movement only, sight and light pass (glass). Not Foundry's distance-based Proximity wall; make that with create_embedded."),
-        animation: z.enum(["swing", "slide", "swivel", "ascend", "descend"]).optional().describe("Foundry 14 door animation (doors only)"),
+        animation: z.enum(["swing", "slide", "swivel", "ascend", "descend"]).optional().describe("Foundry 14 door animation (doors only). Default follows the style: swing, slide for stone, ascend for a portcullis"),
+        style: z.enum(DOOR_STYLES).optional().describe("Door look from Foundry's core door images in canvas/doors: wood (default), stone, metal, portcullis. Every door gets one, Foundry only animates a door that has a texture"),
+        tone: z.string().optional().describe("Narrow the style to a colour: wood dark/walnut/light/red/ashen, stone volcanic/earthy/redrock, metal rusty/gray"),
+        texture: z.string().optional().describe("Your own door image path; wins over style"),
         double: z.boolean().optional().describe("Double door (doors only)"),
         flip: z.boolean().optional(),
         locked: z.boolean().optional().describe("Door starts locked"),
@@ -226,8 +230,8 @@ export type AddWallsArgs = z.infer<z.ZodObject<typeof AddWallsShape>>;
 export async function runAddWalls(transport: RelayTransport, args: AddWallsArgs, opts: PipelineOptions = {}): Promise<ToolOutcome> {
   const gridResult = await loadGrid(transport, args.sceneId, opts);
   if (isOutcome(gridResult)) return gridResult;
-  const data = args.walls.map(({ animation, double, flip, locked, open, ...seg }) =>
-    buildWallFromGrid({ ...seg, doorOptions: { animation, double, flip, locked, open } }, gridResult.size, gridResult.origin),
+  const data = args.walls.map(({ animation, style, tone, texture, double, flip, locked, open, ...seg }) =>
+    buildWallFromGrid({ ...seg, doorOptions: { animation, style, tone, texture, double, flip, locked, open } }, gridResult.size, gridResult.origin),
   );
   return withSteps(
     gridResult.steps,

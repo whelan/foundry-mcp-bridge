@@ -9,7 +9,7 @@
 
 import { z } from "zod";
 import { type Json, deepMerge } from "./objects.js";
-
+import { type DoorStyle, defaultDoorAnimation, pickDoorTexture } from "./door-textures.js";
 const ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 /** Foundry-style 16-char document id. */
@@ -303,9 +303,15 @@ export const WALL_DOOR_STATES = { CLOSED: 0, OPEN: 1, LOCKED: 2 } as const;
 export type WallKind = "wall" | "door" | "secretDoor" | "limited" | "window";
 export type DoorAnimationType = "swing" | "slide" | "swivel" | "ascend" | "descend";
 
-/** Foundry 14 door options. Giving `animation` (or any animation field) writes the animation block. */
+/** Foundry 14 door options. Every visible door gets an animation block: Foundry only animates a door that has a texture. */
 export interface DoorOptions {
   animation?: DoorAnimationType;
+  /** Look of the door (picks the core texture and, unless `animation` is given, the animation). Default wood. */
+  style?: DoorStyle;
+  /** Narrow the style to one colour, e.g. "dark" or "walnut" for wood. */
+  tone?: string;
+  /** A file path of your own; wins over `style`. Without a texture Foundry does not animate the door. */
+  texture?: string;
   double?: boolean;
   flip?: boolean;
   direction?: 1 | -1;
@@ -344,17 +350,21 @@ export function buildWallFromGrid(
     sound: WALL_SENSE_TYPES.NORMAL,
     dir: 0,
   };
-  const animated =
-    opts &&
-    (opts.animation || opts.double !== undefined || opts.flip !== undefined || opts.direction !== undefined || opts.duration !== undefined || opts.strength !== undefined);
-  if (door !== WALL_DOOR_TYPES.NONE && animated) {
+  if (kind === "door") {
+    const style = opts?.style ?? "wood";
+    const cells = Math.hypot(b.x - a.x, b.y - a.y) / gridSize;
+    const double = opts?.double ?? cells >= 2;
+    const texture =
+      opts?.texture ??
+      pickDoorTexture(style, { wide: double, tone: opts?.tone, seed: Math.round((seg.x1 + seg.y1 * 7) * 2) }).path;
     wall.animation = {
-      type: opts.animation ?? "swing",
-      direction: opts.direction ?? 1,
-      double: opts.double ?? false,
-      flip: opts.flip ?? false,
-      duration: opts.duration ?? 750,
-      strength: opts.strength ?? 1,
+      type: opts?.animation ?? defaultDoorAnimation(style),
+      direction: opts?.direction ?? 1,
+      double,
+      flip: opts?.flip ?? false,
+      duration: opts?.duration ?? 750,
+      strength: opts?.strength ?? 1,
+      texture,
     };
   }
   return wall;

@@ -216,6 +216,8 @@ describe("add_walls and add_lights: windows, door animation, light animation", (
         { x1: 0, y1: 0, x2: 2, y2: 0, kind: "window" },
         { x1: 2, y1: 0, x2: 3, y2: 0, kind: "door", animation: "slide", double: false },
         { x1: 3, y1: 0, x2: 4, y2: 0, kind: "door", locked: true },
+        { x1: 4, y1: 0, x2: 6, y2: 0, kind: "door", style: "portcullis" },
+        { x1: 6, y1: 0, x2: 7, y2: 0, kind: "door", style: "stone", tone: "volcanic" },
       ],
     });
     expect(out.ok).toBe(true);
@@ -223,6 +225,12 @@ describe("add_walls and add_lights: windows, door animation, light animation", (
     expect(walls[0]).toMatchObject({ sight: 0, light: 0, move: 20 });
     expect(walls[1].animation).toMatchObject({ type: "slide" });
     expect(walls[2]).toMatchObject({ ds: 2 });
+    // Foundry only animates a door that has a texture: every door carries a core image.
+    expect(walls[1].animation.texture).toMatch(/^canvas\/doors\/small\/Door_Wood_/);
+    expect(walls[2].animation.texture).toMatch(/^canvas\/doors\/small\/Door_Wood_/);
+    expect(walls[3].animation).toMatchObject({ type: "ascend", double: true });
+    expect(walls[3].animation.texture).toMatch(/^canvas\/doors\/large\/Portcullis_/);
+    expect(walls[4].animation.texture).toMatch(/^canvas\/doors\/small\/Door_Stone_Volcanic_/);
   });
 
   it("add_lights takes a source preset and an animation override", async () => {

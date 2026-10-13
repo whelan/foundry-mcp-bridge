@@ -75,6 +75,7 @@ describe("build_floorplan_scene", () => {
     const doors = scene.walls.filter((w: any) => w.door === 1);
     expect(doors).toHaveLength(3);
     expect(doors.map((d: any) => d.animation.type).sort()).toEqual(["slide", "swing", "swing"]);
+    expect(doors.every((d: any) => /^canvas\/doors\/(small|large)\/.+\.webp$/.test(d.animation.texture))).toBe(true);
     expect(doors.some((d: any) => d.ds === 2)).toBe(true);
     expect(scene.walls.filter((w: any) => w.sight === 0 && w.light === 0)).toHaveLength(2);
     expect(scene.lights.map((l: any) => l.config.animation.type).sort()).toEqual(["flame", "torch"]);

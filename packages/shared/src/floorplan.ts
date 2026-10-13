@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 import { resolveLightInput, type DoorOptions, type LightSource, type WallKind } from "./scene-builders.js";
-
+import { DOOR_STYLES } from "./door-textures.js";
 export const LIGHT_SOURCES = ["torch", "fireplace", "candle", "lantern", "daylight"] as const;
 export const DOOR_ANIMATIONS = ["swing", "slide", "swivel", "ascend", "descend"] as const;
 
@@ -26,7 +26,10 @@ export const OpeningSchema = z.object({
   at: z.number().int().min(0).describe("Cells from the left end (n/s walls) or the top end (e/w walls)"),
   width: z.number().int().min(1).default(1),
   kind: z.enum(["door", "window", "secretDoor"]).default("door"),
-  animation: z.enum(DOOR_ANIMATIONS).optional(),
+  animation: z.enum(DOOR_ANIMATIONS).optional().describe("Default follows the style: swing, slide for stone, ascend for a portcullis"),
+  style: z.enum(DOOR_STYLES).optional().describe("Look of the door from Foundry's core door images (default wood)"),
+  tone: z.string().optional().describe("Narrow the style to a colour, e.g. dark, walnut, light, red, ashen (wood); volcanic, earthy, redrock (stone); rusty, gray (metal)"),
+  texture: z.string().optional().describe("Your own door image path; wins over style"),
   double: z.boolean().optional(),
   flip: z.boolean().optional(),
   locked: z.boolean().optional(),
@@ -181,7 +184,16 @@ export function buildGeometry(
         ? { x1: first.x, y1: first.y, x2: last.x + 1, y2: first.y, kind: KIND_OF[o.kind] }
         : { x1: first.x, y1: first.y, x2: first.x, y2: last.y + 1, kind: KIND_OF[o.kind] };
     if (o.kind !== "window") {
-      seg.doorOptions = { animation: o.animation ?? "swing", double: o.double ?? o.width >= 2, flip: o.flip, locked: o.locked, open: o.open };
+      seg.doorOptions = {
+        double: o.double ?? o.width >= 2,
+        ...(o.animation && { animation: o.animation }),
+        ...(o.style && { style: o.style }),
+        ...(o.tone && { tone: o.tone }),
+        ...(o.texture && { texture: o.texture }),
+        ...(o.flip !== undefined && { flip: o.flip }),
+        ...(o.locked !== undefined && { locked: o.locked }),
+        ...(o.open !== undefined && { open: o.open }),
+      };
       if (es.every((e) => roomsPerEdge.get(edgeKey(e)) === 1)) exteriorDoors++;
     }
     walls.push(seg);

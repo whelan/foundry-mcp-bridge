@@ -154,19 +154,47 @@ describe("buildWallFromGrid: windows and doors", () => {
     expect(w).toMatchObject({ door: 0, move: 20, sight: 0, light: 0, sound: 20, c: [0, 0, 200, 0] });
   });
 
-  it("leaves a plain door without an animation block", () => {
+  it("animates a plain door: swing, with a wood texture from core", () => {
     const d = buildWallFromGrid({ x1: 0, y1: 0, x2: 1, y2: 0, kind: "door" }, 100, {});
-    expect(d.animation).toBeUndefined();
+    expect(d.animation).toMatchObject({ type: "swing", double: false, direction: 1, flip: false, duration: 750, strength: 1 });
+    expect((d.animation as { texture: string }).texture).toMatch(/^canvas\/doors\/small\/Door_Wood_/);
     expect(d.ds).toBe(0);
   });
 
-  it("writes the v14 animation block when door options are given", () => {
+  it("gives a secret door no animation, it must look like wall", () => {
+    const d = buildWallFromGrid({ x1: 0, y1: 0, x2: 1, y2: 0, kind: "secretDoor" }, 100, {});
+    expect(d.animation).toBeUndefined();
+  });
+
+  it("writes the v14 animation block, with a 2x1 texture for a double door", () => {
     const d = buildWallFromGrid(
       { x1: 0, y1: 0, x2: 2, y2: 0, kind: "door", doorOptions: { animation: "slide", double: true } },
       100,
       {},
     );
-    expect(d.animation).toEqual({ type: "slide", direction: 1, double: true, flip: false, duration: 750, strength: 1 });
+    expect(d.animation).toMatchObject({ type: "slide", direction: 1, double: true, flip: false, duration: 750, strength: 1 });
+    expect((d.animation as { texture: string }).texture).toMatch(/^canvas\/doors\/large\//);
+  });
+
+  it("a style picks the texture and its fitting animation", () => {
+    const gate = buildWallFromGrid({ x1: 0, y1: 0, x2: 2, y2: 0, kind: "door", doorOptions: { style: "portcullis" } }, 100, {});
+    expect(gate.animation).toMatchObject({ type: "ascend", double: true });
+    expect((gate.animation as { texture: string }).texture).toMatch(/Portcullis_/);
+    const stone = buildWallFromGrid({ x1: 0, y1: 0, x2: 1, y2: 0, kind: "door", doorOptions: { style: "stone" } }, 100, {});
+    expect(stone.animation).toMatchObject({ type: "slide" });
+    expect((stone.animation as { texture: string }).texture).toMatch(/Door_Stone_/);
+  });
+
+  it("an explicit texture path wins over the style", () => {
+    const d = buildWallFromGrid({ x1: 0, y1: 0, x2: 1, y2: 0, kind: "door", doorOptions: { texture: "worlds/w/my-door.webp" } }, 100, {});
+    expect((d.animation as { texture: string }).texture).toBe("worlds/w/my-door.webp");
+  });
+
+  it("different doors in one house get varied textures", () => {
+    const paths = new Set(
+      [0, 1, 2, 3, 4, 5].map((x) => (buildWallFromGrid({ x1: x * 2, y1: 3, x2: x * 2 + 1, y2: 3, kind: "door" }, 100, {}).animation as { texture: string }).texture),
+    );
+    expect(paths.size).toBeGreaterThan(1);
   });
 
   it("locks and opens doors through ds", () => {

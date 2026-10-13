@@ -30,7 +30,9 @@ See the design docs:
 `list_scenes`, `get_scene_state`, `switch_scene`, `place_token`, `move_tokens`, `remove_tokens`,
 `toggle_condition`, `add_walls`, `add_lights` — all addressed in grid squares (square/gridless scenes).
 `add_walls` also makes windows (movement blocked, sight and light pass) and Foundry 14 animated doors (`animation`:
-swing, slide, swivel, ascend, descend; `double`, `flip`, `locked`, `open`); `add_lights` takes a `source` preset
+swing, slide, swivel, ascend, descend; `double`, `flip`, `locked`, `open`). Every door gets one of Foundry's core
+`canvas/doors` images, because Foundry only animates a door that has a texture: pick the look with `style` (wood, stone,
+metal, portcullis) and `tone`, or give your own `texture` path; `add_lights` takes a `source` preset
 (torch, fireplace, candle, lantern, daylight) and an `animation` such as `flame` or `pulse`.
 Arbitrary canvas objects (tiles, drawings, notes, regions) go through `create_embedded` with pixel coordinates.
 
