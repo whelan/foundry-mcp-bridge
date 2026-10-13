@@ -176,16 +176,15 @@ function validateStairs(plan: { floors: Floor[]; stairs: Stair[] }): string[] {
       errors.push(`stair ${i} joins floor ${st.from} to a floor that does not exist`);
       return;
     }
-    const lowerRoom = roomHolding(lower, st);
-    const upperRoom = roomHolding(upper, st);
-    if (!lowerRoom || !upperRoom) {
+    if (!roomHolding(lower, st) || !roomHolding(upper, st)) {
       errors.push(`stair ${i} must lie inside a single room on both floors it joins`);
       return;
     }
-    for (const [floor, room] of [[lower, lowerRoom], [upper, upperRoom]] as const) {
+    // Any opening of the floor counts, whichever room declares it: a door on a shared wall can be written from the neighbour's side.
+    for (const floor of [lower, upper]) {
       for (const o of floor.openings) {
-        if (o.room !== room.id) continue;
-        if (openingEdges(room, o).some((e) => edgeTouches(e, st))) errors.push(`stair ${i} covers or touches a door or window of "${room.id}"`);
+        const owner = floor.rooms.find((r) => r.id === o.room);
+        if (owner && openingEdges(owner, o).some((e) => edgeTouches(e, st))) errors.push(`stair ${i} covers or touches a door or window of "${owner.id}"`);
       }
     }
   });

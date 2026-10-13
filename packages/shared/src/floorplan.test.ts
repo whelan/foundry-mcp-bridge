@@ -259,6 +259,14 @@ describe("stairs", () => {
     if (!out.ok) expect(out.errors.join(" ")).toMatch(/stair 0.*(door|window)/);
   });
 
+  it("rejects a stair next to a door declared from the neighbouring room", () => {
+    // kitchen (8..14) west wall is hall's east wall at x=8; the door is declared on the kitchen's side
+    const g2 = { ...ground, openings: [...ground.openings, { room: "kitchen", side: "w", at: 1, kind: "door" }] };
+    const out = buildGeometry(two({ floors: [g2, upper], stairs: [{ at: [7, 0], dir: "s", length: 3 }] }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.errors.join(" ")).toMatch(/stair 0.*(door|window)/);
+  });
+
   it("rejects overlapping stairs and a floor nobody can reach", () => {
     expect(buildGeometry(two({ stairs: [{ at: [1, 1], dir: "e" }, { at: [2, 1], dir: "e" }] })).ok).toBe(false);
     const unreachable = buildGeometry(two({ stairs: [] }));
