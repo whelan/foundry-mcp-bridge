@@ -92,6 +92,7 @@ function withWarnings(out: ToolOutcome, callOpts: PipelineOptions): ToolOutcome 
   return warnings.length ? { ...out, warnings } : out;
 }
 
+import { FloorplanSceneShape, runBuildFloorplanScene } from "./floorplan-tools.js";
 import {
   CancelImageJobShape,
   CheckImageJobShape,
@@ -454,6 +455,13 @@ export function buildServer(
     "Cancel a running image generation (stops the Codex process).",
     CancelImageJobShape,
     (_transport, args) => Promise.resolve(images ? runCancelImageJob(images.jobs, args) : NO_IMAGES),
+  );
+
+  register(
+    "build_floorplan_scene",
+    "Build a complete building scene from a small floorplan spec in one call: rooms (grid cells, furnishings), openings (doors with Foundry 14 animation, windows, secret doors, locked doors) and lights (torch, fireplace, candle, lantern, daylight, with flicker animation). The tool draws a blueprint, has Codex paint the floorplan over it as a webp, creates a square-grid scene exactly cols x rows cells, and derives every wall, door, window and light from the spec so they line up with the picture. Returns { sceneId, preview, overlay, warnings }; look at the preview (walls red, doors green, windows cyan, lights yellow over the picture) before play. codex:false keeps the plain blueprint as the map. Slow Codex runs return { jobId, status: \"running\" }: poll with check_image_job. Undo with undo_change by requestId (scene, walls and lights together). Needs Foundry 14.",
+    FloorplanSceneShape,
+    (transport, args, callOpts) => (images ? runBuildFloorplanScene(images.jobs, images.outputDir, transport, args, callOpts) : Promise.resolve(NO_IMAGES)),
   );
 
   return server;

@@ -29,6 +29,9 @@ See the design docs:
 
 `list_scenes`, `get_scene_state`, `switch_scene`, `place_token`, `move_tokens`, `remove_tokens`,
 `toggle_condition`, `add_walls`, `add_lights` — all addressed in grid squares (square/gridless scenes).
+`add_walls` also makes windows (movement blocked, sight and light pass) and Foundry 14 animated doors (`animation`:
+swing, slide, swivel, ascend, descend; `double`, `flip`, `locked`, `open`); `add_lights` takes a `source` preset
+(torch, fireplace, candle, lantern, daylight) and an `animation` such as `flame` or `pulse`.
 Arbitrary canvas objects (tiles, drawings, notes, regions) go through `create_embedded` with pixel coordinates.
 
 ## Image generation (Codex)
@@ -39,6 +42,12 @@ background (V13 and V14 levels), a new scene sized to the image, or a hidden jou
 more, so it runs as a job: `generate_image` waits `waitSeconds`, otherwise returns a `jobId` for `check_image_job`
 (or `cancel_image_job`). On macOS: `npm i -g @openai/codex`, `codex login`, and set `CODEX_BIN=/opt/homebrew/bin/codex`.
 The writes it makes are verified, logged and undoable like any other tool's.
+
+`build_floorplan_scene` builds a whole building in one call from a small spec (rooms in grid cells with furnishings,
+doors, windows, lights). It draws a blueprint, has Codex paint over it as a webp (`codex:false` keeps the blueprint),
+creates a scene of exactly cols x rows cells, and derives every wall, door, window and light from the spec so they match
+the picture. The result carries a preview with the walls and lights drawn over the picture. Needs Foundry 14 and,
+for the size check and preview, ImageMagick (`magick`). Undo it with `undo_change`.
 
 ## Safety: permissions, change log, undo
 

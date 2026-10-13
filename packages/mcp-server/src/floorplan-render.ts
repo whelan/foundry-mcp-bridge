@@ -140,3 +140,14 @@ export async function fitImage(file: string, width: number, height: number): Pro
 export async function compositePreview(picture: string, overlayPng: string, out: string): Promise<void> {
   await run("magick", [picture, overlayPng, "-compose", "over", "-composite", out]);
 }
+
+/** Pixel size of any image ImageMagick can read (the picture may be a webp: no PNG header to parse). */
+export async function imageSize(file: string): Promise<{ width: number; height: number } | null> {
+  try {
+    const { stdout } = await run("magick", ["identify", "-format", "%w %h", file]);
+    const [w, h] = stdout.trim().split(" ").map(Number);
+    return w && h ? { width: w, height: h } : null;
+  } catch {
+    return null;
+  }
+}

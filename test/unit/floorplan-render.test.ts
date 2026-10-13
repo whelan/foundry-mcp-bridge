@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FloorplanSchema, buildGeometry } from "../../packages/shared/src/index.js";
-import { Raster, renderGuide, renderOverlay, fitImage, hasMagick } from "../../packages/mcp-server/src/floorplan-render.js";
+import { Raster, renderGuide, renderOverlay, fitImage, hasMagick, imageSize } from "../../packages/mcp-server/src/floorplan-render.js";
 import { pngSize } from "../../packages/mcp-server/src/image-gen.js";
 
 const plan = FloorplanSchema.parse({
@@ -82,5 +82,11 @@ describe("fitImage", async () => {
     writeFileSync(file, renderGuide(plan, geometry.walls));
     await fitImage(file, 160, 120);
     expect(pngSize(readFileSync(file))).toEqual({ width: 160, height: 120 });
+  });
+  it.skipIf(!magick)("reads the size of a file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "size-"));
+    const file = join(dir, "a.png");
+    writeFileSync(file, renderGuide(plan, geometry.walls));
+    expect(await imageSize(file)).toEqual({ width: 400, height: 300 });
   });
 });
