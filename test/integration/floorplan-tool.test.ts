@@ -261,6 +261,8 @@ describe("finishFloorplan: floors, stairs and roof", () => {
     expect(ox + oy).toBeGreaterThan(0);
     expect(scene.regions[0].shapes[0]).toMatchObject({ x: 4 * 50 + ox, y: 3 * 50 + oy });
     expect(scene.tiles[0]).toMatchObject({ x: ox, y: oy });
+    // Foundry 14 tiles are anchored at their centre by default; x/y is the top-left corner only with anchor 0.
+    expect(scene.tiles[0].texture).toMatchObject({ anchorX: 0, anchorY: 0 });
   });
 
   it("masks the roof picture to the footprint before uploading it", async () => {

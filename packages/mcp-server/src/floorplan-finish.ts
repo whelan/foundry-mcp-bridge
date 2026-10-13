@@ -225,7 +225,7 @@ export async function finishFloorplan(
             height,
             elevation: FLOOR_HEIGHT * apply.floors.length,
             levels: levelIds,
-            texture: { src: roofSrc },
+            texture: { src: roofSrc, anchorX: 0, anchorY: 0 },
             occlusion: { modes: [OCCLUSION_FADE, OCCLUSION_VISION], alpha: 0 },
           },
         ],
