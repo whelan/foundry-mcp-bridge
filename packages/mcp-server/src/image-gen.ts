@@ -61,6 +61,8 @@ export interface ImageRequest {
   height: number;
   /** Where the finished file must end up (absolute). */
   outPath: string;
+  /** A local image Codex is shown alongside the prompt (a blueprint to paint over). */
+  guidePath?: string;
 }
 
 export type ImageRunErrorCode = "UNSUPPORTED" | "INTERNAL" | "TIMEOUT";
@@ -100,6 +102,7 @@ export function buildGenImageArgs(request: ImageRequest, script: string, model?:
     "--width", String(request.width),
     "--height", String(request.height),
     "--no-sidecar",
+    ...(request.guidePath ? ["--image", request.guidePath] : []),
     ...(model ? ["--codex-model", model] : []),
   ];
 }

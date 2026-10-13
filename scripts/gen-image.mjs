@@ -354,12 +354,18 @@ function runCodex(argv) {
   });
 }
 
+export function buildCodexArgv(args, model) {
+  const argv = ["exec", "--json", "-s", "read-only", "--skip-git-repo-check"];
+  if (model) argv.push("-m", model);
+  if (args.image) argv.push("-i", args.image, "--");
+  argv.push(buildCodexPrompt(args));
+  return argv;
+}
+
 async function backendCodex(args, config) {
   const model =
     args["codex-model"] ?? config?.codex?.model ?? process.env.IMAGE_GEN_CODEX_MODEL;
-  const argv = ["exec", "--json", "-s", "read-only", "--skip-git-repo-check"];
-  if (model) argv.push("-m", model);
-  argv.push(buildCodexPrompt(args));
+  const argv = buildCodexArgv(args, model);
   console.error("gen-image: running codex exec (this can take a minute)...");
   const lines = await runCodex(argv);
 

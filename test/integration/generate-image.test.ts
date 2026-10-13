@@ -225,6 +225,11 @@ describe("prompt and size helpers", () => {
     expect(args).toEqual(["/s/gen-image.mjs", "--backend", "codex", "--prompt", "p", "--out", "/o/x.png", "--width", "10", "--height", "20", "--no-sidecar", "--codex-model", "gpt-x"]);
   });
 
+  it("passes the guide image to gen-image", () => {
+    const args = buildGenImageArgs({ prompt: "p", width: 10, height: 20, outPath: "/o/x.webp", guidePath: "/g/guide.png" }, "/s/gen-image.mjs");
+    expect(args).toEqual(["/s/gen-image.mjs", "--backend", "codex", "--prompt", "p", "--out", "/o/x.webp", "--width", "10", "--height", "20", "--no-sidecar", "--image", "/g/guide.png"]);
+  });
+
   it("explains failures", () => {
     expect(explainGenImageFailure("Error: not logged in, please login", "codex").message).toContain("codex login");
     expect(explainGenImageFailure("codex timed out after 300000ms", "codex").code).toBe("TIMEOUT");
