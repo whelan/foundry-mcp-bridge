@@ -63,6 +63,8 @@ export interface ImageRequest {
   outPath: string;
   /** A local image Codex is shown alongside the prompt (a blueprint to paint over). */
   guidePath?: string;
+  /** A job with parts runs each in order (one job, one jobId); the fields above describe the first. */
+  parts?: ImageRequest[];
 }
 
 export type ImageRunErrorCode = "UNSUPPORTED" | "INTERNAL" | "TIMEOUT";
@@ -214,7 +216,14 @@ export class ImageJobs<M> {
     if (this.running() >= this.limits.maxRunning) return null;
     const job: ImageJob<M> = { id: randomUUID().slice(0, 8), status: "running", startedAt: Date.now(), request, meta };
     const abort = new AbortController();
-    const settled = this.runner(request, abort.signal).then(
+    const todo = request.parts?.length ? request.parts : [request];
+    const runAll = async (): Promise<void> => {
+      for (const part of todo) {
+        if (abort.signal.aborted) return;
+        await this.runner({ ...part, parts: undefined }, abort.signal);
+      }
+    };
+    const settled = runAll().then(
       () => {
         if (job.status === "running") this.finish(job, "done");
       },

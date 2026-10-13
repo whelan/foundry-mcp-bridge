@@ -207,6 +207,23 @@ describe("scene tools", () => {
   });
 });
 
+describe("add_walls and add_lights: levels", () => {
+  it("write levels when given", async () => {
+    const { mock, transport } = setup();
+    await runAddWalls(transport, { sceneId: "s1", levels: ["L1"], walls: [{ x1: 0, y1: 0, x2: 1, y2: 0 }] });
+    await runAddLights(transport, { sceneId: "s1", levels: ["L1"], lights: [{ col: 1.5, row: 1.5, source: "torch" }] });
+    const scene = mock.store.get("!scenes!s1") as any;
+    expect(scene.walls.at(-1).levels).toEqual(["L1"]);
+    expect(scene.lights.at(-1).levels).toEqual(["L1"]);
+  });
+
+  it("without levels the documents carry no levels field (every level)", async () => {
+    const { mock, transport } = setup();
+    await runAddWalls(transport, { sceneId: "s1", walls: [{ x1: 0, y1: 0, x2: 1, y2: 0 }] });
+    expect((mock.store.get("!scenes!s1") as any).walls.at(-1).levels).toBeUndefined();
+  });
+});
+
 describe("add_walls and add_lights: windows, door animation, light animation", () => {
   it("add_walls writes a window, an animated door and a locked door", async () => {
     const { mock, transport } = setup();

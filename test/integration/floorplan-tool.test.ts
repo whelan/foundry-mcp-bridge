@@ -9,6 +9,7 @@ import { ChangeLog } from "../../packages/mcp-server/src/change-log.js";
 import { runUndoChange } from "../../packages/mcp-server/src/change-tools.js";
 import { ImageJobs, type ImageRequest, type ImageRunner } from "../../packages/mcp-server/src/image-gen.js";
 import { runBuildFloorplanScene } from "../../packages/mcp-server/src/floorplan-tools.js";
+import { runCreateScene } from "../../packages/mcp-server/src/tools.js";
 import { ensureSceneBackground } from "../../packages/mcp-server/src/scene-background.js";
 import { runCheckImageJob, type ImageJobMeta } from "../../packages/mcp-server/src/image-tools.js";
 import type { FloorplanDeps } from "../../packages/mcp-server/src/floorplan-finish.js";
@@ -162,5 +163,22 @@ describe("ensureSceneBackground (Foundry 14 keeps the picture on the level)", ()
     expect((mock.store.get("!scenes!v14") as any).levels[0].background.src).toBe("pic.webp");
     expect(await ensureSceneBackground(transport, "v13", "pic.webp", {})).toBeNull();
     expect(await ensureSceneBackground(transport, "v14", "pic.webp", {})).toBeNull();
+  });
+});
+
+describe("Foundry 14 scene creation", () => {
+  it("a scene is created with the default level", async () => {
+    const mock = new MockFoundry({ worldInfo: { foundryVersion: "14.368" } });
+    const transport = new MockTransport(mock);
+    const out = await runCreateScene(transport, { name: "S", width: 100, height: 100 } as never, {});
+    expect(out.ok).toBe(true);
+    const id = (out as any).data._id;
+    expect((mock.store.get(`!scenes!${id}`) as any).levels[0]._id).toBe("defaultLevel0000");
+  });
+
+  it("a Foundry 13 scene has no levels", async () => {
+    const mock = new MockFoundry({ worldInfo: { foundryVersion: "13.351" } });
+    const out = await runCreateScene(new MockTransport(mock), { name: "S", width: 100, height: 100 } as never, {});
+    expect((mock.store.get(`!scenes!${(out as any).data._id}`) as any).levels).toBeUndefined();
   });
 });
