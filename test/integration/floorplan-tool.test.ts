@@ -7,7 +7,7 @@ import { MockFoundry } from "./mock-foundry.js";
 import { MockTransport } from "./mock-transport.js";
 import { ChangeLog } from "../../packages/mcp-server/src/change-log.js";
 import { runUndoChange } from "../../packages/mcp-server/src/change-tools.js";
-import { ImageJobs, type ImageRequest, type ImageRunner } from "../../packages/mcp-server/src/image-gen.js";
+import { ImageJobs, ImageRunError, type ImageRequest, type ImageRunner } from "../../packages/mcp-server/src/image-gen.js";
 import { FloorplanSchema, buildGeometry } from "../../packages/shared/src/index.js";
 import { finishFloorplan, type FloorplanApply } from "../../packages/mcp-server/src/floorplan-finish.js";
 import { runBuildFloorplanScene } from "../../packages/mcp-server/src/floorplan-tools.js";
@@ -35,12 +35,13 @@ const house = {
 
 const dir = () => mkdtempSync(join(tmpdir(), "floorplan-"));
 
-async function setup(opts: { foundryVersion?: string; pictureSize?: [number, number]; magick?: boolean } = {}) {
+async function setup(opts: { failOn?: number; foundryVersion?: string; pictureSize?: [number, number]; magick?: boolean } = {}) {
   const mock = new MockFoundry({ worldInfo: { foundryVersion: opts.foundryVersion ?? "14.368" } });
   const transport = new MockTransport(mock);
   const requests: ImageRequest[] = [];
   const runner: ImageRunner = async (request) => {
     requests.push(request);
+    if (opts.failOn && requests.length === opts.failOn) throw new ImageRunError("INTERNAL", "boom");
     await mkdir(dirname(request.outPath), { recursive: true });
     await writeFile(request.outPath, Buffer.from("fake picture"));
     return { path: request.outPath };
@@ -138,7 +139,7 @@ describe("build_floorplan_scene", () => {
 
   it("resizes a picture of the wrong size and says so", async () => {
     const t = await setup({ pictureSize: [1536, 1024] });
-    const out = await t.run(house);
+    const out = await t.run({ ...house, roof: false });
     expect(out.ok).toBe(true);
     expect(t.fits).toEqual([[800, 500]]);
     if (out.ok) expect((out.data as any).warnings.join(" ")).toContain("resized");
@@ -303,6 +304,72 @@ describe("finishFloorplan: floors, stairs and roof", () => {
     await t.runFinish(twoFloors);
     const undone = await runUndoChange(t.log, t.transport, { requestId: "req-build_floorplan_scene" }, t.callOpts("undo_change"));
     expect(undone.ok).toBe(true);
+    expect([...t.mock.store.keys()].some((k) => k.startsWith("!scenes!"))).toBe(false);
+  });
+});
+
+describe("build_floorplan_scene: floors, stairs and roof through the tool", () => {
+  it("a two-floor house with a roof is one job with three images: floor, floor, roof", async () => {
+    const t = await setup();
+    const out = await t.run(twoFloors);
+    expect(out.ok).toBe(true);
+    expect(t.requests).toHaveLength(3);
+    expect(t.requests[0]!.prompt).toContain("hall");
+    expect(t.requests[1]!.prompt).toContain("bed");
+    expect(t.requests[2]!.prompt).toMatch(/roof/i);
+    expect(t.requests.every((r) => r.guidePath)).toBe(true);
+    const scene = onlyScene(t.mock);
+    expect(scene.levels).toHaveLength(2);
+    expect(scene.tiles).toHaveLength(1);
+    expect(scene.regions).toHaveLength(1);
+  });
+
+  it("roof:false is two images; a one-floor house without a roof is one image", async () => {
+    const t = await setup();
+    await t.run({ ...twoFloors, roof: false });
+    expect(t.requests).toHaveLength(2);
+    const u = await setup();
+    await u.run({ ...house, roof: false });
+    expect(u.requests).toHaveLength(1);
+  });
+
+  it("a one-floor house gets a roof by default: two images", async () => {
+    const t = await setup();
+    await t.run(house);
+    expect(t.requests).toHaveLength(2);
+    expect(onlyScene(t.mock).tiles).toHaveLength(1);
+  });
+
+  it("codex:false uses the blueprints as pictures: no Codex run, levels still built", async () => {
+    const t = await setup();
+    const out = await t.run({ ...twoFloors, codex: false });
+    expect(out.ok).toBe(true);
+    expect(t.requests).toHaveLength(0);
+    expect(onlyScene(t.mock).levels).toHaveLength(2);
+  });
+
+  it("rejects an invalid stair layout before any Codex run", async () => {
+    const t = await setup();
+    const out = await t.run({ ...twoFloors, stairs: [] });
+    expect(out.ok).toBe(false);
+    if (!out.ok) {
+      expect(out.error.code).toBe("VALIDATION");
+      expect(out.error.message).toContain("unreachable");
+    }
+    expect(t.requests).toHaveLength(0);
+  });
+
+  it("rejects floors together with top-level rooms as a validation error", async () => {
+    const t = await setup();
+    const out = await t.run({ ...twoFloors, rooms: house.rooms });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.error.code).toBe("VALIDATION");
+  });
+
+  it("a failing image fails the whole job and builds no scene", async () => {
+    const t = await setup({ failOn: 2 });
+    const out = await t.run(twoFloors);
+    expect(out.ok).toBe(false);
     expect([...t.mock.store.keys()].some((k) => k.startsWith("!scenes!"))).toBe(false);
   });
 });
