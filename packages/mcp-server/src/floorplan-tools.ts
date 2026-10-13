@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { FloorplanSchema, buildGeometry, type Floorplan } from "@foundry-mcp-bridge/shared";
+import { FloorplanBaseSchema, FloorplanSchema, buildGeometry, type Floorplan } from "@foundry-mcp-bridge/shared";
 import type { PipelineOptions, ToolOutcome } from "./reliability.js";
 import type { RelayTransport } from "./relay-transport.js";
 import { runGetWorldInfo, showImageFilename } from "./tools.js";
@@ -11,7 +11,7 @@ import type { ImageJobRegistry } from "./image-tools.js";
 import { settleJob } from "./image-tools.js";
 
 export const FloorplanSceneShape = {
-  ...FloorplanSchema.shape,
+  ...FloorplanBaseSchema.shape,
   source: z.enum(["data", "forgevtt"]).default("data"),
   target: z.string().min(1).default("generated-images").describe("Foundry directory the picture is uploaded to"),
   waitSeconds: z.number().int().min(0).max(600).default(90).describe("How long to wait for Codex before returning a jobId to poll with check_image_job"),
@@ -21,7 +21,7 @@ export type FloorplanSceneArgs = z.input<z.ZodObject<typeof FloorplanSceneShape>
 const fail = (code: "VALIDATION" | "UNSUPPORTED" | "CONFLICT", message: string): ToolOutcome => ({ ok: false, error: { code, message }, steps: [] });
 
 export function buildFloorplanPrompt(plan: Floorplan): string {
-  const rooms = plan.rooms
+  const rooms = plan.floors[0]!.rooms
     .map((r) => `- ${r.name ?? r.id}: ${r.floor ? `${r.floor} floor, ` : ""}furnished with ${r.furnishings.length ? r.furnishings.join(", ") : "a few plain furnishings"}`)
     .join("\n");
   return (

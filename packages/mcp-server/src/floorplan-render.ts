@@ -95,7 +95,7 @@ export function renderGuide(plan: Floorplan, walls: WallSegment[]): Buffer {
   const px = plan.pxPerCell;
   const r = new Raster(plan.cols * px, plan.rows * px);
   r.fillRect(0, 0, r.width, r.height, OUTSIDE);
-  plan.rooms.forEach((room, i) => r.fillRect(room.x * px, room.y * px, room.w * px, room.h * px, FLOORS[i % FLOORS.length]!));
+  plan.floors[0]!.rooms.forEach((room, i) => r.fillRect(room.x * px, room.y * px, room.w * px, room.h * px, FLOORS[i % FLOORS.length]!));
   const t = Math.max(4, Math.round(px * 0.12));
   for (const w of walls) {
     const colour = w.kind === "door" ? DOOR : w.kind === "secretDoor" ? SECRET : w.kind === "window" ? WINDOW : WALL;
