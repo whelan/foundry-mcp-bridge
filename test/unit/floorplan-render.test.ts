@@ -200,11 +200,30 @@ describe("renderGuide: wall thickness", () => {
     expect(inner).toBeLessThanOrEqual(5);
     expect(inner).toBeGreaterThanOrEqual(3);
   });
-  it("draws a door in an inner wall exactly as thick as that wall, and one in an outer wall as thick as the outer wall", () => {
-    const innerDoor = across(1 * 50 + 2 * 50 + 25, 6 * 50 - 15, 6 * 50 + 15); // door on x=6, row 3 (y 150..200)
-    const outerDoor = across(1 * 50 + 1 * 50 + 25, 1 * 50 - 15, 1 * 50 + 15);   // door on x=1, row 2
-    expect(innerDoor).toBe(4);
-    expect(outerDoor).toBe(12);
+  it("leaves a doorway as an empty gap in the floor colour (Foundry adds the animated door), not a painted door", () => {
+    const floorA = [217, 201, 168, 255];
+    // inner door on x=6 at row 3 and outer door on x=1 at row 2: the wall line is broken, floor colour runs through
+    expect(img.px(6 * 50, 3 * 50 + 25)).toEqual(floorA);
+    expect(img.px(1 * 50, 2 * 50 + 25)).toEqual(floorA);
+    // the wall beside each doorway is still wall, so the gap reads as a break in the line
+    expect(img.px(6 * 50, 1 * 50 + 25)![0]).toBeLessThan(60);
+    expect(img.px(1 * 50, 1 * 50 + 25)![0]).toBeLessThan(60);
+    // and no door-coloured (brown) pixel anywhere on the doorway
+    expect(across(3 * 50 + 25, 6 * 50 - 15, 6 * 50 + 15)).toBe(0);
+    expect(across(2 * 50 + 25, 1 * 50 - 15, 1 * 50 + 15)).toBe(0);
+  });
+  it("draws a secret door as plain wall and still paints windows", () => {
+    const p = FloorplanSchema.parse({
+      name: "S", cols: 8, rows: 6, pxPerCell: 50,
+      rooms: [{ id: "a", x: 1, y: 1, w: 6, h: 4 }],
+      openings: [{ room: "a", side: "s", at: 1, kind: "door" }, { room: "a", side: "n", at: 2, kind: "secretDoor" }, { room: "a", side: "w", at: 1, kind: "window" }],
+    });
+    const g = buildGeometry(p);
+    if (!g.ok) throw new Error(g.errors.join());
+    const im = decode(renderGuide(p, g.floors[0]!.walls, { floor: 0 }));
+    expect(im.px(3 * 50 + 25, 1 * 50)![0]).toBeLessThan(60); // secret door: wall
+    expect(im.px(1 * 50, 2 * 50 + 25)).toEqual([150, 200, 230, 255]); // window
+    expect(im.px(2 * 50 + 25, 5 * 50)).toEqual([217, 201, 168, 255]); // doorway: floor
   });
 });
 

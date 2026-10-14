@@ -196,8 +196,18 @@ export function renderGuide(plan: Floorplan, walls: WallSegment[], opts: { floor
     for (let i = 0; i < room.w; i++) for (const y of [room.y, room.y + room.h]) roomsPerEdge.set(edgeId("h", room.x + i, y), (roomsPerEdge.get(edgeId("h", room.x + i, y)) ?? 0) + 1);
     for (let j = 0; j < room.h; j++) for (const x of [room.x, room.x + room.w]) roomsPerEdge.set(edgeId("v", x, room.y + j), (roomsPerEdge.get(edgeId("v", x, room.y + j)) ?? 0) + 1);
   }
+  const rooms = plan.floors[floor]!.rooms;
+  /** The floor colour of the room beside a doorway: the gap is painted as floor, so the painter leaves it open. */
+  const floorBeside = (cells: Array<[number, number]>): Rgba => {
+    for (const [cx, cy] of cells) {
+      const i = rooms.findIndex((room) => cx >= room.x && cx < room.x + room.w && cy >= room.y && cy < room.y + room.h);
+      if (i >= 0) return FLOORS[i % FLOORS.length]!;
+    }
+    return FLOORS[0]!;
+  };
   for (const w of walls) {
-    const colour = w.kind === "door" ? DOOR : w.kind === "secretDoor" ? SECRET : w.kind === "window" ? WINDOW : WALL;
+    // Doors are added by Foundry (animated), so a doorway is an empty gap in the wall; a secret door looks like plain wall.
+    const colour = w.kind === "window" ? WINDOW : w.kind === "door" ? DOOR : WALL;
     const horizontal = w.y1 === w.y2;
     const from = horizontal ? Math.min(w.x1, w.x2) : Math.min(w.y1, w.y2);
     const to = horizontal ? Math.max(w.x1, w.x2) : Math.max(w.y1, w.y2);
@@ -206,8 +216,12 @@ export function renderGuide(plan: Floorplan, walls: WallSegment[], opts: { floor
       const t = exterior ? tOuter : tInner;
       const piece: WallSegment = horizontal ? { ...w, x1: u, x2: u + 1 } : { ...w, y1: u, y2: u + 1 };
       // Plain walls overshoot by half a thickness so corners close; doors and windows stay inside their gap.
-      if (w.kind === "wall") drawSegment(r, piece, px, t, colour);
-      else if (horizontal) r.fillRect(u * px, w.y1 * px - t / 2, px, t, colour);
+      if (w.kind === "wall" || w.kind === "secretDoor") drawSegment(r, piece, px, t, colour);
+      else if (w.kind === "door") {
+        const gap = floorBeside(horizontal ? [[u, w.y1 - 1], [u, w.y1]] : [[w.x1 - 1, u], [w.x1, u]]);
+        if (horizontal) r.fillRect(u * px, w.y1 * px - t / 2, px, t, gap);
+        else r.fillRect(w.x1 * px - t / 2, u * px, t, px, gap);
+      } else if (horizontal) r.fillRect(u * px, w.y1 * px - t / 2, px, t, colour);
       else r.fillRect(w.x1 * px - t / 2, u * px, t, px, colour);
     }
   }

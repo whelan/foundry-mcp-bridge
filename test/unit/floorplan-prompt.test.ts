@@ -72,18 +72,17 @@ describe("surroundings in the prompt", () => {
 });
 
 describe("construction in the prompt", () => {
-  it("always says the walls between rooms are thinner and that doors and windows are as thick as their wall", () => {
+  it("always says the walls between rooms are thinner and that windows are as thick as their wall", () => {
     const text = buildFloorplanPrompt(plan(), 0, stairsOf(plan()));
     expect(text).toMatch(/outer walls are about 0\.6 ft thick/);
     expect(text).toMatch(/between rooms are about 0\.3 ft thick.*thinner than the outer walls/);
     expect(text).toMatch(/exactly as thick as the wall they sit in/);
   });
   it("carries this house's materials and door and window looks", () => {
-    const p = plan({ construction: { exterior: { thickness: 2, material: "fieldstone" }, interior: { thickness: 0.5, material: "wattle and daub" }, doors: { look: "iron-banded planks" }, windows: { look: "arrow slits" } } });
+    const p = plan({ construction: { exterior: { thickness: 2, material: "fieldstone" }, interior: { thickness: 0.5, material: "wattle and daub" }, doors: { style: "metal" }, windows: { look: "arrow slits" } } });
     const text = buildConstructionText(p);
     expect(text).toContain("about 2 ft thick, fieldstone");
     expect(text).toContain("about 0.5 ft thick, wattle and daub");
-    expect(text).toContain("Doors: iron-banded planks.");
     expect(text).toContain("Windows: arrow slits.");
   });
 });
@@ -122,5 +121,19 @@ describe("roof prompts per wing", () => {
     const base = buildRoofPrompt(plan({ roofStyle: "slate roof" }));
     expect(base).toContain("slate roof");
     expect(base).not.toContain("roof over the");
+  });
+});
+
+describe("doorways in the prompt", () => {
+  it("tells the painter to leave doorways empty because the game adds the doors, and has no brown door bars", () => {
+    const text = buildFloorplanPrompt(plan(), 0, stairsOf(plan()));
+    expect(text).toMatch(/open doorway: leave it completely empty/);
+    expect(text).toMatch(/no door, door leaf, frame, hinges, curtain or threshold/);
+    expect(text).toMatch(/the game adds the doors/);
+    expect(text).not.toMatch(/Brown bars are doors/);
+  });
+  it("does not accept a painter look for doors any more (construction.doors has style and tone only)", () => {
+    const p = plan({ construction: { doors: { style: "metal", tone: "rusty", look: "iron-banded" } } });
+    expect(buildConstructionText(p)).not.toContain("iron-banded");
   });
 });

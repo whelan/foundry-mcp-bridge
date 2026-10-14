@@ -323,8 +323,8 @@ describe("construction", () => {
     expect(c.interior.thickness).toBeLessThan(c.exterior.thickness);
   });
   it("takes thickness, material and looks per house", () => {
-    const c = resolveConstruction(house({ exterior: { thickness: 2, material: "fieldstone" }, interior: { thickness: 0.5 }, doors: { look: "iron-banded" }, windows: { look: "arrow slits" } }));
-    expect(c).toMatchObject({ exterior: { thickness: 2, material: "fieldstone" }, interior: { thickness: 0.5 }, doors: { look: "iron-banded" }, windows: { look: "arrow slits" } });
+    const c = resolveConstruction(house({ exterior: { thickness: 2, material: "fieldstone" }, interior: { thickness: 0.5 }, doors: { style: "metal" }, windows: { look: "arrow slits" } }));
+    expect(c).toMatchObject({ exterior: { thickness: 2, material: "fieldstone" }, interior: { thickness: 0.5 }, doors: { style: "metal" }, windows: { look: "arrow slits" } });
   });
   it("rejects a silly thickness", () => {
     expect(() => house({ interior: { thickness: 0 } })).toThrow();
