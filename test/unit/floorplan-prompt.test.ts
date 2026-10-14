@@ -132,6 +132,12 @@ describe("doorways in the prompt", () => {
     expect(text).toMatch(/the game adds the doors/);
     expect(text).not.toMatch(/Brown bars are doors/);
   });
+  it("tells the painter never to open a wall the blueprint keeps closed, even for a room with no visible entrance", () => {
+    // Seen live: a pantry whose only way in is a secret door (painted as wall) got an invented doorway.
+    const text = buildFloorplanPrompt(plan(), 0, stairsOf(plan()));
+    expect(text).toMatch(/A room may have no visible entrance/);
+    expect(text).toMatch(/never open a wall where the blueprint's dark line is unbroken/);
+  });
   it("does not accept a painter look for doors any more (construction.doors has style and tone only)", () => {
     const p = plan({ construction: { doors: { style: "metal", tone: "rusty", look: "iron-banded" } } });
     expect(buildConstructionText(p)).not.toContain("iron-banded");

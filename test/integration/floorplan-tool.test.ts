@@ -35,8 +35,8 @@ const house = {
 
 const dir = () => mkdtempSync(join(tmpdir(), "floorplan-"));
 
-async function setup(opts: { failOn?: number; foundryVersion?: string; pictureSize?: [number, number]; magick?: boolean } = {}) {
-  const mock = new MockFoundry({ worldInfo: { foundryVersion: opts.foundryVersion ?? "14.368" } });
+async function setup(opts: { failOn?: number; foundryVersion?: string; pictureSize?: [number, number]; magick?: boolean; reverseCreated?: boolean } = {}) {
+  const mock = new MockFoundry({ worldInfo: { foundryVersion: opts.foundryVersion ?? "14.368" }, reverseCreated: opts.reverseCreated });
   const transport = new MockTransport(mock);
   const requests: ImageRequest[] = [];
   const runner: ImageRunner = async (request) => {
@@ -413,6 +413,16 @@ describe("build_floorplan_scene: a roof per wing", () => {
     expect((out as any).data.roof.tileId).toBe(byName("roof: main")._id);
   });
 
+  it("names each roof's tile id right even when Foundry returns the tiles in another order", async () => {
+    const t = await setup({ reverseCreated: true });
+    const out = await t.runFinish(wings);
+    const scene = onlyScene(t.mock);
+    for (const r of (out as any).data.roofs) {
+      expect(scene.tiles.find((x: any) => x._id === r.tileId).name).toBe(r.name === "main" ? "Manor roof: main" : `Manor roof: ${r.name}`);
+    }
+    expect((out as any).data.roof.tileId).toBe(scene.tiles.find((x: any) => x.name === "Manor roof: main")._id);
+  });
+
   it("masks every roof with its own mask", async () => {
     const t = await setup();
     await t.runFinish(wings);
@@ -485,6 +495,43 @@ describe("build_floorplan_scene: cellars", () => {
     expect(scene.tiles[0]).toMatchObject({ elevation: 20, levels: [ground._id, upstairs._id] });
     // every floor has its own walls
     for (const lv of [crypt, cellar, ground, upstairs]) expect(scene.walls.some((w: any) => w.levels[0] === lv._id)).toBe(true);
+  });
+  it("matches each level to its floor even when Foundry returns the created levels in another order", async () => {
+    // Foundry 14 does not keep the input order of createEmbeddedDocuments (seen live: B,A,C,D for A,B,C,D).
+    const t = await setup({ reverseCreated: true });
+    const out = await t.runFinish(inn);
+    expect(out.ok).toBe(true);
+    const scene = onlyScene(t.mock);
+    const level = (name: string) => scene.levels.find((l: any) => l.name === name);
+    const [crypt, cellar, ground, upstairs] = ["Crypt", "Cellar", "Ground", "Upstairs"].map(level);
+    expect(ground.elevation).toEqual({ bottom: 0, top: 10 });
+    expect(upstairs.elevation).toEqual({ bottom: 10, top: 20 });
+    // the reported ids are the levels with those names
+    for (const l of (out as any).data.levels) expect(scene.levels.find((x: any) => x._id === l.id).name).toBe(l.name);
+    // the ground floor's door is on the ground floor, and every floor has walls of its own
+    expect(scene.walls.filter((w: any) => w.door).map((w: any) => w.levels[0])).toEqual([ground._id]);
+    for (const lv of [crypt, cellar, ground, upstairs]) expect(scene.walls.some((w: any) => w.levels[0] === lv._id)).toBe(true);
+    // stairs join the right floors, and the roof lies on the ground floor and up
+    const pairs = scene.regions.map((r: any) => r.levels.map((id: string) => scene.levels.find((x: any) => x._id === id).name).join("+")).sort();
+    expect(pairs).toEqual(["Cellar+Ground", "Crypt+Cellar", "Ground+Upstairs"]);
+    expect(scene.tiles[0].levels).toEqual([ground._id, upstairs._id]);
+  });
+  it("opens on the ground floor: initialLevel is the ground floor, not the deepest cellar", async () => {
+    const t = await setup();
+    const out = await t.runFinish(inn);
+    const scene = onlyScene(t.mock);
+    const ground = scene.levels.find((l: any) => l.name === "Ground");
+    expect(scene.initialLevel).toBe(ground._id);
+    // and the reported picture is the ground floor's
+    expect((out as any).data.src).toBe(ground.background.src);
+  });
+  it("puts each floor's lights at that floor's height", async () => {
+    const t = await setup();
+    await t.runFinish({ ...inn, cellars: [{ ...inn.cellars[0], lights: [{ at: [3, 3], source: "lantern" }] }, { ...inn.cellars[1], lights: [{ at: [3, 3], source: "torch" }] }] });
+    const scene = onlyScene(t.mock);
+    const heightOf = (name: string) => scene.lights.find((l: any) => l.levels[0] === scene.levels.find((x: any) => x.name === name)._id).elevation;
+    expect(heightOf("Crypt")).toBe(-20);
+    expect(heightOf("Cellar")).toBe(-10);
   });
   it("the tool paints one picture per floor, cellars included, and one roof: five images", async () => {
     const t = await setup();

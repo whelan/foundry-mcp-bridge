@@ -245,6 +245,7 @@ export async function runAddWalls(transport: RelayTransport, args: AddWallsArgs,
 export const AddLightsShape = {
   sceneId,
   levels: z.array(z.string().min(1)).optional().describe("Foundry 14: the level ids these lights belong to; omit for every level"),
+  elevation: z.number().optional().describe("Elevation of the lights (default 0); on a Foundry 14 level, use the level's bottom"),
   lights: z
     .array(
       z.object({
@@ -269,7 +270,8 @@ export async function runAddLights(transport: RelayTransport, args: AddLightsArg
     const r = resolveLightInput(light);
     return buildLight({ x, y, bright: r.bright, dim: r.dim, color: r.color, animation: r.animation });
   });
-  const data = levels?.length ? built.map((d) => ({ ...d, levels })) : built;
+  const placed = args.elevation === undefined ? built : built.map((d) => ({ ...d, elevation: args.elevation }));
+  const data = levels?.length ? placed.map((d) => ({ ...d, levels })) : placed;
   return withSteps(
     gridResult.steps,
     await createEmbeddedReliable(transport, { parentType: "Scene", parentId: args.sceneId, embeddedName: "AmbientLight", data }, opts),

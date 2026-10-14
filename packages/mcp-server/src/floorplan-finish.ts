@@ -148,13 +148,22 @@ export async function finishFloorplan(
         parentId: sceneId,
         embeddedName: "Level",
         data: apply.floors.slice(1).map((f, k) => ({ name: f.name, sort: k + 1, elevation: { bottom: FLOOR_HEIGHT * (k + 1 - plan.groundFloor), top: FLOOR_HEIGHT * (k + 2 - plan.groundFloor) }, background: { src: floorSrcs[k + 1]! } })),
-        fields: ["_id", "name"],
+        fields: ["_id", "sort"],
       } as never,
       opts,
     );
     if (!created.ok) return { ...created, steps: [...steps, ...created.steps] };
-    for (const d of created.data as Array<{ _id: string }>) levelIds.push(d._id);
+    // Foundry 14 does not return created documents in the order they were sent, so match each level by its sort.
+    const bySort = new Map((created.data as Array<{ _id: string; sort: number }>).map((d) => [d.sort, d._id]));
+    for (let k = 1; k < apply.floors.length; k++) {
+      const id = bySort.get(k);
+      if (!id) return fail("INTERNAL", `Foundry did not return the level for ${apply.floors[k]!.name}`, steps);
+      levelIds.push(id);
+    }
   }
+  // The scene opens on its initial level, which is otherwise the first level made: the deepest cellar.
+  const initial = await runUpdateDocument(transport, { documentType: "Scene", id: sceneId, data: { initialLevel: levelIds[plan.groundFloor]! } } as never, opts);
+  if (!initial.ok) return { ...initial, steps: [...steps, ...initial.steps] };
 
   // Walls and lights, floor by floor.
   for (let i = 0; i < apply.floors.length; i++) {
@@ -169,7 +178,7 @@ export async function finishFloorplan(
     if (f.lights.length) {
       const lights = await runAddLights(
         transport,
-        { sceneId, levels: [levelIds[i]!], lights: f.lights.map((l) => ({ col: l.col, row: l.row, source: l.source, bright: l.bright, dim: l.dim, color: l.color ?? undefined, animation: l.animation.type ?? undefined })) } as never,
+        { sceneId, levels: [levelIds[i]!], elevation: FLOOR_HEIGHT * (i - plan.groundFloor), lights: f.lights.map((l) => ({ col: l.col, row: l.row, source: l.source, bright: l.bright, dim: l.dim, color: l.color ?? undefined, animation: l.animation.type ?? undefined })) } as never,
         opts,
       );
       if (!lights.ok) return { ...lights, steps: [...steps, ...lights.steps] };
@@ -230,12 +239,14 @@ export async function finishFloorplan(
           texture: { src: r.src, anchorX: 0, anchorY: 0 },
           occlusion: { modes: [OCCLUSION_FADE, OCCLUSION_VISION], alpha: 0 },
         })),
-        fields: ["_id"],
+        fields: ["_id", "name"],
       } as never,
       opts,
     );
     if (!tiles.ok) return { ...tiles, steps: [...steps, ...tiles.steps] };
-    (tiles.data as Array<{ _id: string }>).forEach((t, i) => roofs.push({ name: roofSrcs[i]!.name, tileId: t._id, src: roofSrcs[i]!.src }));
+    // Matched by name, not position: Foundry 14 may return the tiles in another order.
+    const tileByName = new Map((tiles.data as Array<{ _id: string; name: string }>).map((t) => [t.name, t._id]));
+    for (const r of roofSrcs) roofs.push({ name: r.name, tileId: tileByName.get(multi ? `${plan.name} roof: ${r.name}` : `${plan.name} roof`)!, src: r.src });
   }
   const roof = roofs[0] ? { tileId: roofs[0].tileId, src: roofs[0].src } : null;
 
@@ -259,7 +270,7 @@ export async function finishFloorplan(
     ok: true,
     data: {
       sceneId,
-      src: floorSrcs[0],
+      src: floorSrcs[plan.groundFloor],
       levels: apply.floors.map((f, i) => ({ id: levelIds[i]!, name: f.name })),
       groundFloor: plan.groundFloor,
       stairs: apply.stairs.length,
