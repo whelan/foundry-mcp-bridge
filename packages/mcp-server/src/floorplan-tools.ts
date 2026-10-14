@@ -57,9 +57,8 @@ export function buildConstructionText(plan: Floorplan): string {
   return (
     `Construction: the outer walls are about ${ft(c.exterior.thickness)} thick${c.exterior.material ? `, ${c.exterior.material}` : ""}; ` +
     `the walls between rooms are about ${ft(c.interior.thickness)} thick${c.interior.material ? `, ${c.interior.material}` : ""} and are clearly thinner than the outer walls: draw each dark bar of the blueprint at exactly its own thickness. ` +
-    (c.doors.look ? `Doors: ${c.doors.look}. ` : "") +
     (c.windows.look ? `Windows: ${c.windows.look}. ` : "") +
-    "Doors and windows are exactly as thick as the wall they sit in: never draw a door, frame, sill or pane wider than its wall."
+    "Windows are exactly as thick as the wall they sit in: never draw a frame, sill or pane wider than its wall."
   );
 }
 
@@ -91,7 +90,7 @@ export function buildFloorplanPrompt(plan: Floorplan, floor = 0, stairs: PlacedS
   return (
     `Paint a ${plan.style}${multi ? ` (this is the ${f.name} of a ${plan.floors.length}-storey building)` : ""} as a strictly top-down orthographic floorplan for a tabletop RPG map, exactly over the attached blueprint. ` +
     "Keep every wall, doorway and window exactly where the blueprint has it, and keep the image the same size and proportions. " +
-    "Brown bars are doors, light-blue bars are windows (draw glass), the green area outside is grass or ground.\n\n" +
+    "Light-blue bars are windows (draw glass). Where the dark wall line is broken there is an open doorway: leave it completely empty, with the floor running straight through the gap and no door, door leaf, frame, hinges, curtain or threshold, because the game adds the doors afterwards. The green area outside is grass or ground.\n\n" +
     `${buildConstructionText(plan)}\n\n` +
     (stairText ? `${stairText}\n\n` : "") +
     (floor === 0 && plan.surroundings ? `${buildSurroundingsText(plan)}\n\n` : "") +

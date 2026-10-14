@@ -113,9 +113,8 @@ export const ConstructionSchema = z.object({
   interior: WallBuildSchema.optional().describe("The walls between rooms (default 0.3 ft, thinner than the outer walls)"),
   doors: z
     .object({
-      style: z.enum(DOOR_STYLES).optional().describe("Default door look for every door that does not name its own style"),
+      style: z.enum(DOOR_STYLES).optional().describe("Default door look (Foundry's door image) for every door that does not name its own style; doors are not painted, Foundry adds them"),
       tone: z.string().optional().describe("Default tone for those doors, e.g. dark, ashen, rusty"),
-      look: z.string().optional().describe('What the painter draws, e.g. "iron-banded planks with a heavy latch"'),
     })
     .optional(),
   windows: z.object({ look: z.string().min(1).optional().describe('e.g. "small leaded diamond panes behind rotten shutters"') }).optional(),
@@ -130,7 +129,7 @@ export function resolveConstruction(plan: { construction?: z.infer<typeof Constr
   return {
     exterior: { thickness: c?.exterior?.thickness ?? DEFAULT_EXTERIOR_FEET, material: c?.exterior?.material },
     interior: { thickness: c?.interior?.thickness ?? DEFAULT_INTERIOR_FEET, material: c?.interior?.material },
-    doors: { style: c?.doors?.style, tone: c?.doors?.tone, look: c?.doors?.look },
+    doors: { style: c?.doors?.style, tone: c?.doors?.tone },
     windows: { look: c?.windows?.look },
   };
 }
