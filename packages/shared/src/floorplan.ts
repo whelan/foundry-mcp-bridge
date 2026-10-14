@@ -66,7 +66,7 @@ export const StairSchema = z.object({
   dir: z.enum(["n", "e", "s", "w"]).describe("The direction you walk to go UP"),
   length: z.number().int().min(2).default(3).describe("Cells along dir"),
   width: z.number().int().min(1).default(1).describe("Cells across"),
-  from: z.number().int().min(0).default(0).describe("Lower floor index; the stair joins from and from + 1"),
+  from: z.number().int().min(-2).default(0).describe("Lower floor: 0 is the ground floor, 1 the floor above it, -1 the first cellar, -2 the second; the stair joins from and from + 1 (from -1 is a stair between the cellar and the ground floor)"),
 });
 
 /** What the ground outside the house is made of; the guide colours and the painter prompt both read this table. */
@@ -169,6 +169,7 @@ export const FloorplanBaseSchema = z.object({
   openings: z.array(OpeningSchema).optional(),
   lights: z.array(FloorplanLightSchema).optional(),
   floors: z.array(FloorSchema).min(1).max(4).optional().describe("Several floors, index 0 is the ground floor"),
+  cellars: z.array(FloorSchema).max(2).default([]).describe("Underground floors, the first directly below the ground floor. A cellar may use the whole picture (it can run beyond the house); it has no roof, and outside its rooms is solid earth."),
   stairs: z.array(StairSchema).default([]),
   construction: ConstructionSchema.optional().describe("Wall thickness and material, door and window look for this house"),
   surroundings: SurroundingsSchema.optional().describe("The yard, roads and nature around the house (painted on the ground floor only; the picture is cols x rows, so leave a margin)"),
@@ -184,10 +185,17 @@ export const FloorplanSchema = FloorplanBaseSchema.superRefine((p, ctx) => {
     ctx.addIssue({ code: "custom", message: "give either floors or the single-floor rooms/openings/lights, not both" });
   }
   if (!p.floors && !p.rooms) ctx.addIssue({ code: "custom", message: "give floors, or rooms for a single floor" });
-}).transform(({ rooms, openings, lights, floors, ...rest }) => ({
-  ...rest,
-  floors: floors ?? [{ name: "Ground floor", rooms: rooms ?? [], openings: openings ?? [], lights: lights ?? [] }],
-}));
+}).transform(({ rooms, openings, lights, floors, cellars, stairs, ...rest }) => {
+  const above = floors ?? [{ name: "Ground floor", rooms: rooms ?? [], openings: openings ?? [], lights: lights ?? [] }];
+  const c = cellars.length;
+  return {
+    ...rest,
+    // Floors from the bottom up: the deepest cellar first. `groundFloor` is the index of the one at ground level; stair `from` follows.
+    floors: [...[...cellars].reverse(), ...above],
+    groundFloor: c,
+    stairs: stairs.map((s) => ({ ...s, from: s.from + c })),
+  };
+});
 
 export type Room = z.infer<typeof RoomSchema>;
 export type Opening = z.infer<typeof OpeningSchema>;
@@ -270,14 +278,14 @@ function edgeTouches(e: Edge, st: PlacedStair): boolean {
   return e.orient === "h" ? inside(e.x, e.y - 1) || inside(e.x, e.y) : inside(e.x - 1, e.y) || inside(e.x, e.y);
 }
 
-function validateStairs(plan: { floors: Floor[]; stairs: Stair[] }): string[] {
+function validateStairs(plan: { floors: Floor[]; stairs: Stair[]; groundFloor: number }): string[] {
   const errors: string[] = [];
   const placed = plan.stairs.map(placeStair);
   placed.forEach((st, i) => {
     const lower = plan.floors[st.from];
     const upper = plan.floors[st.to];
     if (!lower || !upper) {
-      errors.push(`stair ${i} joins floor ${st.from} to a floor that does not exist`);
+      errors.push(`stair ${i} joins floor ${st.from - plan.groundFloor} to a floor that does not exist`);
       return;
     }
     const sx = plan.stairs[i]!;
@@ -303,8 +311,12 @@ function validateStairs(plan: { floors: Floor[]; stairs: Stair[] }): string[] {
       if (a.from === b.from && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) errors.push(`stairs ${i} and ${j} overlap`);
     }
   }
-  for (let k = 1; k < plan.floors.length; k++) {
-    if (!placed.some((st) => st.to === k)) errors.push(`floor "${plan.floors[k]!.name}" is unreachable (no stair leads to it)`);
+  // Every floor but the ground floor needs a stair: above it a stair that arrives from below, below it one that leaves upward.
+  const g = plan.groundFloor;
+  for (let k = 0; k < plan.floors.length; k++) {
+    if (k === g) continue;
+    const reached = k > g ? placed.some((st) => st.to === k) : placed.some((st) => st.from === k);
+    if (!reached) errors.push(`floor "${plan.floors[k]!.name}" is unreachable (no stair leads to it)`);
   }
   return errors;
 }
@@ -335,7 +347,8 @@ export function resolveRoofs(plan: Floorplan): ResolvedRoof[] {
     const cellsByFloor: Array<Array<{ x: number; y: number; w: number; h: number }>> = [];
     let top = -1;
     plan.floors.forEach((f, fi) => {
-      const mine = f.rooms.filter((r) => member(r.id)).map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
+      // Cellars are underground: no roof over them.
+      const mine = fi < plan.groundFloor ? [] : f.rooms.filter((r) => member(r.id)).map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
       cellsByFloor[fi] = mine;
       if (mine.length) top = fi;
       for (const r of mine) rects.set(rectKey(r), r);
@@ -379,20 +392,22 @@ function validateRoofs(plan: Floorplan): string[] {
   if (!plan.roofs.length) return errors;
   if (!plan.roof) errors.push("roofs are given but roof is false");
   const seen = new Set<string>();
-  const roomIds = new Set(plan.floors.flatMap((f) => f.rooms.map((r) => r.id)));
+  const roomIds = new Set(plan.floors.slice(plan.groundFloor).flatMap((f) => f.rooms.map((r) => r.id)));
+  const cellarOnly = new Set(plan.floors.slice(0, plan.groundFloor).flatMap((f) => f.rooms.map((r) => r.id)).filter((id) => !roomIds.has(id)));
   const owner = new Map<string, string>();
   for (const w of plan.roofs) {
     if (seen.has(w.name)) errors.push(`two roofs are named "${w.name}"`);
     seen.add(w.name);
     for (const id of w.rooms) {
-      if (!roomIds.has(id)) errors.push(`roof "${w.name}" names unknown room "${id}"`);
+      if (cellarOnly.has(id)) errors.push(`roof "${w.name}" names room "${id}", which is in a cellar (a cellar has no roof)`);
+      else if (!roomIds.has(id)) errors.push(`roof "${w.name}" names unknown room "${id}"`);
       else if (owner.has(id) && owner.get(id) !== w.name) errors.push(`room "${id}" is in two roofs ("${owner.get(id)}" and "${w.name}")`);
       else owner.set(id, w.name);
     }
   }
   // A roof covers a whole stack: rooms that overlap in plan on different floors must share a roof.
   const roofOf = (id: string) => owner.get(id) ?? "(default roof)";
-  for (let a = 0; a < plan.floors.length; a++) {
+  for (let a = plan.groundFloor; a < plan.floors.length; a++) {
     for (let b = a + 1; b < plan.floors.length; b++) {
       for (const ra of plan.floors[a]!.rooms) {
         for (const rb of plan.floors[b]!.rooms) {
@@ -409,7 +424,7 @@ function validateRoofs(plan: Floorplan): string[] {
 
 function validateSurroundings(plan: Floorplan): string[] {
   const errors: string[] = [];
-  const rooms = plan.floors[0]!.rooms;
+  const rooms = plan.floors[plan.groundFloor]!.rooms;
   (plan.surroundings?.features ?? []).forEach((f, i) => {
     const name = `surroundings feature ${i} (${f.kind})`;
     if (f.x + f.w > plan.cols || f.y + f.h > plan.rows) errors.push(`${name} leaves the ${plan.cols}x${plan.rows} grid`);
@@ -426,7 +441,7 @@ export function validateFloorplan(plan: Floorplan): string[] {
   const multi = plan.floors.length > 1;
   for (const f of plan.floors) errors.push(...validateFloor(plan, f, multi ? `floor "${f.name}": ` : ""));
   // A floor cannot overhang the one below: every cell of an upper room is a cell of a lower room.
-  for (let i = 1; i < plan.floors.length; i++) {
+  for (let i = plan.groundFloor + 1; i < plan.floors.length; i++) {
     const below = new Set(plan.floors[i - 1]!.rooms.flatMap((r) => cellsOfRect(r.x, r.y, r.w, r.h)));
     for (const r of plan.floors[i]!.rooms) {
       if (cellsOfRect(r.x, r.y, r.w, r.h).some((c) => !below.has(c))) {
@@ -582,10 +597,10 @@ export function buildGeometry(
   const floors: FloorGeometry[] = [];
   for (let i = 0; i < plan.floors.length; i++) {
     const f = plan.floors[i]!;
-    const g = floorGeometry(f, i === 0, resolveConstruction(plan).doors);
+    const g = floorGeometry(f, i === plan.groundFloor, resolveConstruction(plan).doors);
     if (!g.ok) return { ok: false, errors: plan.floors.length > 1 ? g.errors.map((e) => `floor "${f.name}": ${e}`) : g.errors };
     floors.push({ name: f.name, walls: g.walls, lights: g.lights });
   }
   const footprint = plan.floors.flatMap((f) => f.rooms.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h })));
-  return { ok: true, walls: floors[0]!.walls, lights: floors[0]!.lights, floors, stairs: plan.stairs.map(placeStair), footprint };
+  return { ok: true, walls: floors[plan.groundFloor]!.walls, lights: floors[plan.groundFloor]!.lights, floors, stairs: plan.stairs.map(placeStair), footprint };
 }

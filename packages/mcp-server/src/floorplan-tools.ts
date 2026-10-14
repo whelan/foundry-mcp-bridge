@@ -77,6 +77,8 @@ export function buildFloorplanPrompt(plan: Floorplan, floor = 0, stairs: PlacedS
     .map((r) => `- ${r.name ?? r.id}: ${r.floor ? `${r.floor} floor, ` : ""}furnished with ${r.furnishings.length ? r.furnishings.join(", ") : "a few plain furnishings"}`)
     .join("\n");
   const multi = plan.floors.length > 1;
+  const underground = floor < plan.groundFloor;
+  const storeys = plan.floors.length - plan.groundFloor;
   const stairText = stairs
     .map((s) => {
       const ph = STAIR_PHRASE[s.style];
@@ -88,12 +90,15 @@ export function buildFloorplanPrompt(plan: Floorplan, floor = 0, stairs: PlacedS
     .filter(Boolean)
     .join(" ");
   return (
-    `Paint a ${plan.style}${multi ? ` (this is the ${f.name} of a ${plan.floors.length}-storey building)` : ""} as a strictly top-down orthographic floorplan for a tabletop RPG map, exactly over the attached blueprint. ` +
+    `Paint a ${plan.style}${underground ? ` (this is the underground ${f.name}, a cellar beneath the building)` : multi ? ` (this is the ${f.name} of a ${storeys}-storey building)` : ""} as a strictly top-down orthographic floorplan for a tabletop RPG map, exactly over the attached blueprint. ` +
     "Keep every wall, doorway and window exactly where the blueprint has it, and keep the image the same size and proportions. " +
-    "Light-blue bars are windows (draw glass). Where the dark wall line is broken there is an open doorway: leave it completely empty, with the floor running straight through the gap and no door, door leaf, frame, hinges, curtain or threshold, because the game adds the doors afterwards. The green area outside is grass or ground.\n\n" +
+    "Light-blue bars are windows (draw glass). Where the dark wall line is broken there is an open doorway: leave it completely empty, with the floor running straight through the gap and no door, door leaf, frame, hinges, curtain or threshold, because the game adds the doors afterwards. A room may have no visible entrance (its way in can be hidden): never open a wall where the blueprint's dark line is unbroken. " +
+    (underground
+      ? "Everything outside the rooms (the dark brown area) is solid earth and rock: paint it as dark soil, stones and roots, never grass, sky, water or a building, and keep the walls of the rooms exactly as in the blueprint.\n\n"
+      : "The green area outside is grass or ground.\n\n") +
     `${buildConstructionText(plan)}\n\n` +
     (stairText ? `${stairText}\n\n` : "") +
-    (floor === 0 && plan.surroundings ? `${buildSurroundingsText(plan)}\n\n` : "") +
+    (floor === plan.groundFloor && plan.surroundings ? `${buildSurroundingsText(plan)}\n\n` : "") +
     `Rooms:\n${rooms}\n\n` +
     "Light sources (fireplaces, torches, candles) must look lit. No grid lines, no text, no labels, no characters or creatures, no UI."
   );

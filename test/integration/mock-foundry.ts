@@ -196,6 +196,12 @@ export interface MockFoundryOptions {
   allowMacros?: boolean;
   /** Per-category bridge permission, as the GM sets in Module Settings (default: full). */
   permissions?: Partial<Record<PermissionCategory, PermissionLevel>>;
+  /**
+   * Return (and store) created embedded documents in reverse order. Foundry 14's
+   * createEmbeddedDocuments does not keep the input order (seen live with Levels), so code
+   * must never match created documents to its input by position.
+   */
+  reverseCreated?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +232,8 @@ export class MockFoundry {
   readonly users = new Map<string, string>();
   /** The GM's "Allow the bridge to run macros" setting; flip it in a test. */
   allowMacros: boolean;
+  /** See MockFoundryOptions.reverseCreated. */
+  reverseCreated: boolean;
   /** Macros the bridge ran: what was run and the scope it was given, in order. */
   readonly macroRuns: Array<{ id: string; name: string; scope: Json }> = [];
   /** The GM's per-category bridge permissions; flip them in a test. */
@@ -241,6 +249,7 @@ export class MockFoundry {
   constructor(options: MockFoundryOptions = {}) {
     this.isGM = options.isGM ?? true;
     this.allowMacros = options.allowMacros ?? false;
+    this.reverseCreated = options.reverseCreated ?? false;
     this.permissions = { ...options.permissions };
     this.token = options.token;
     this.worldInfo = {
@@ -594,6 +603,7 @@ export class MockFoundry {
       ...entry,
       _id: typeof entry._id === "string" && entry._id ? entry._id : randomID(),
     }));
+    if (this.reverseCreated) created.reverse();
     if (dryRun) return ok(id, created.map((c) => ({ ...c, _dryRun: true })));
     resolved.arr.push(...created);
     return ok(id, created);
