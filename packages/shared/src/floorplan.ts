@@ -140,6 +140,25 @@ export function wallThicknessPx(plan: { pxPerCell: number; feetPerCell: number }
   return Math.max(3, Math.round((feet / plan.feetPerCell) * plan.pxPerCell));
 }
 
+export const ROOF_SHAPES = ["gabled", "hipped", "flat", "conical", "domed"] as const;
+export type RoofShape = (typeof ROOF_SHAPES)[number];
+
+/** One roof over a wing: the rooms it covers (on any floor), and how it looks. Rooms no roof claims share the house's default roof. */
+export const RoofSchema = z.object({
+  name: z.string().min(1).describe('Short name, e.g. "tower" or "kitchen annex"'),
+  rooms: z.array(z.string().min(1)).min(1).describe("Room ids this roof covers; a room with that id on every floor is included (a roof covers the whole stack)"),
+  style: z.string().min(1).optional().describe('Material and look, e.g. "slate roof"; defaults to roofStyle'),
+  look: z.string().min(1).optional().describe('Extra painter text, e.g. "copper green with a weathervane"'),
+  shape: z.enum(ROOF_SHAPES).optional().describe("gabled (pitched, ridge), hipped, flat, conical or domed; left to the painter when omitted"),
+  ridge: z.enum(["ew", "ns"]).optional().describe("Ridge direction for gabled and hipped roofs (default: along the longer side)"),
+  eave: z.number().min(0).max(6).optional().describe("How far the roof overhangs the walls, in feet (default 2)"),
+  condition: z.string().min(1).optional().describe('e.g. "mossy", "missing tiles", "snow-covered", "burnt"'),
+  chimneys: z.boolean().default(true).describe("Draw a chimney over each fireplace under this roof"),
+});
+export type Roof = z.infer<typeof RoofSchema>;
+
+export const DEFAULT_EAVE_FEET = 2;
+
 export const FloorplanBaseSchema = z.object({
   name: z.string().min(1),
   style: z.string().min(1).default("fantasy house"),
@@ -155,6 +174,7 @@ export const FloorplanBaseSchema = z.object({
   construction: ConstructionSchema.optional().describe("Wall thickness and material, door and window look for this house"),
   surroundings: SurroundingsSchema.optional().describe("The yard, roads and nature around the house (painted on the ground floor only; the picture is cols x rows, so leave a margin)"),
   roof: z.boolean().default(true),
+  roofs: z.array(RoofSchema).max(8).default([]).describe("A separate roof per wing; rooms not named in any of them share the default roof (roofStyle)"),
   roofStyle: z.string().min(1).default("thatched roof"),
   codex: z.boolean().default(true),
   seed: z.string().optional(),
@@ -290,6 +310,104 @@ function validateStairs(plan: { floors: Floor[]; stairs: Stair[] }): string[] {
   return errors;
 }
 
+/** A roof with its rooms resolved: the plan-view rectangles it covers, the floor it tops, and what to paint. */
+export interface ResolvedRoof {
+  name: string;
+  explicit: boolean;
+  rects: Array<{ x: number; y: number; w: number; h: number }>;
+  /** Index of the highest floor under this roof: the roof sits on top of it. */
+  top: number;
+  style: string;
+  look?: string;
+  shape?: RoofShape;
+  ridge?: "ew" | "ns";
+  eaveCells: number;
+  condition?: string;
+  chimneys: Array<{ col: number; row: number }>;
+}
+
+/** Every roof of the house: one per explicit wing, plus the default roof over the rooms no wing claims. Empty when roof is false. */
+export function resolveRoofs(plan: Floorplan): ResolvedRoof[] {
+  if (!plan.roof) return [];
+  const rectKey = (r: { x: number; y: number; w: number; h: number }) => `${r.x},${r.y},${r.w},${r.h}`;
+  const claimed = new Set(plan.roofs.flatMap((w) => w.rooms));
+  const make = (name: string, explicit: boolean, member: (id: string) => boolean, wing?: Roof): ResolvedRoof | null => {
+    const rects = new Map<string, { x: number; y: number; w: number; h: number }>();
+    const cellsByFloor: Array<Array<{ x: number; y: number; w: number; h: number }>> = [];
+    let top = -1;
+    plan.floors.forEach((f, fi) => {
+      const mine = f.rooms.filter((r) => member(r.id)).map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
+      cellsByFloor[fi] = mine;
+      if (mine.length) top = fi;
+      for (const r of mine) rects.set(rectKey(r), r);
+    });
+    if (!rects.size) return null;
+    const chimneys: ResolvedRoof["chimneys"] = [];
+    if (wing?.chimneys !== false) {
+      plan.floors.forEach((f, fi) => {
+        for (const l of f.lights) {
+          if (l.source !== "fireplace") continue;
+          if (cellsByFloor[fi]!.some((r) => l.at[0] >= r.x && l.at[0] < r.x + r.w && l.at[1] >= r.y && l.at[1] < r.y + r.h)) {
+            chimneys.push({ col: Math.floor(l.at[0]), row: Math.floor(l.at[1]) });
+          }
+        }
+      });
+    }
+    return {
+      name, explicit, rects: [...rects.values()], top,
+      style: wing?.style ?? plan.roofStyle,
+      ...(wing?.look && { look: wing.look }),
+      ...(wing?.shape && { shape: wing.shape }),
+      ...(wing?.ridge && { ridge: wing.ridge }),
+      eaveCells: (wing?.eave ?? DEFAULT_EAVE_FEET) / plan.feetPerCell,
+      ...(wing?.condition && { condition: wing.condition }),
+      chimneys,
+    };
+  };
+  const out: ResolvedRoof[] = [];
+  const main = make("main", false, (id) => !claimed.has(id));
+  if (main) out.push(main);
+  for (const w of plan.roofs) {
+    const ids = new Set(w.rooms);
+    const r = make(w.name, true, (id) => ids.has(id), w);
+    if (r) out.push(r);
+  }
+  return out;
+}
+
+function validateRoofs(plan: Floorplan): string[] {
+  const errors: string[] = [];
+  if (!plan.roofs.length) return errors;
+  if (!plan.roof) errors.push("roofs are given but roof is false");
+  const seen = new Set<string>();
+  const roomIds = new Set(plan.floors.flatMap((f) => f.rooms.map((r) => r.id)));
+  const owner = new Map<string, string>();
+  for (const w of plan.roofs) {
+    if (seen.has(w.name)) errors.push(`two roofs are named "${w.name}"`);
+    seen.add(w.name);
+    for (const id of w.rooms) {
+      if (!roomIds.has(id)) errors.push(`roof "${w.name}" names unknown room "${id}"`);
+      else if (owner.has(id) && owner.get(id) !== w.name) errors.push(`room "${id}" is in two roofs ("${owner.get(id)}" and "${w.name}")`);
+      else owner.set(id, w.name);
+    }
+  }
+  // A roof covers a whole stack: rooms that overlap in plan on different floors must share a roof.
+  const roofOf = (id: string) => owner.get(id) ?? "(default roof)";
+  for (let a = 0; a < plan.floors.length; a++) {
+    for (let b = a + 1; b < plan.floors.length; b++) {
+      for (const ra of plan.floors[a]!.rooms) {
+        for (const rb of plan.floors[b]!.rooms) {
+          const overlap = ra.x < rb.x + rb.w && rb.x < ra.x + ra.w && ra.y < rb.y + rb.h && rb.y < ra.y + ra.h;
+          if (overlap && roofOf(ra.id) !== roofOf(rb.id)) {
+            errors.push(`rooms "${ra.id}" and "${rb.id}" are stacked but under different roofs ("${roofOf(ra.id)}" and "${roofOf(rb.id)}"); a roof covers the whole stack`);
+          }
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 function validateSurroundings(plan: Floorplan): string[] {
   const errors: string[] = [];
   const rooms = plan.floors[0]!.rooms;
@@ -319,6 +437,7 @@ export function validateFloorplan(plan: Floorplan): string[] {
   }
   errors.push(...validateStairs(plan));
   errors.push(...validateSurroundings(plan));
+  errors.push(...validateRoofs(plan));
   return errors;
 }
 

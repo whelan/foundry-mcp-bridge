@@ -8,7 +8,7 @@ import { MockTransport } from "./mock-transport.js";
 import { ChangeLog } from "../../packages/mcp-server/src/change-log.js";
 import { runUndoChange } from "../../packages/mcp-server/src/change-tools.js";
 import { ImageJobs, ImageRunError, type ImageRequest, type ImageRunner } from "../../packages/mcp-server/src/image-gen.js";
-import { FloorplanSchema, buildGeometry } from "../../packages/shared/src/index.js";
+import { FloorplanSchema, buildGeometry, resolveRoofs } from "../../packages/shared/src/index.js";
 import { finishFloorplan, type FloorplanApply } from "../../packages/mcp-server/src/floorplan-finish.js";
 import { runBuildFloorplanScene } from "../../packages/mcp-server/src/floorplan-tools.js";
 import { runCreateScene } from "../../packages/mcp-server/src/tools.js";
@@ -77,14 +77,19 @@ async function setup(opts: { failOn?: number; foundryVersion?: string; pictureSi
     await mkdir(outputDir, { recursive: true });
     const floors = geo.floors.map((_, i) => join(outputDir, `floor-${i}.webp`));
     for (const f of floors) await writeFile(f, "x");
-    const roof = join(outputDir, "roof-pic.webp");
-    await writeFile(roof, "x");
-    const guide = join(outputDir, "roof-guide.png");
-    await writeFile(guide, "x");
+    const roofs = resolveRoofs(plan);
+    const roofEntries = [];
+    for (let i = 0; i < roofs.length; i++) {
+      const picture = join(outputDir, roofs.length === 1 ? "roof-pic.webp" : `roof-pic-${i}.webp`);
+      const maskPath = join(outputDir, roofs.length === 1 ? "roof-guide.png" : `roof-guide-${i}.png`);
+      await writeFile(picture, "x");
+      await writeFile(maskPath, "x");
+      roofEntries.push({ name: roofs[i]!.name, explicit: roofs[i]!.explicit, top: roofs[i]!.top, picture, maskPath });
+    }
     const apply: FloorplanApply = {
       to: "floorplanScene", plan, floors: geo.floors, stairs: geo.stairs, footprint: geo.footprint,
       overlayPaths: floors.map((_, i) => join(outputDir, `overlay-${i}.png`)),
-      pictures: { floors, roof: plan.roof ? roof : undefined }, roofGuidePath: guide,
+      pictures: { floors }, roofs: roofEntries,
     };
     return finishFloorplan({ apply, source: "data", target: "generated-images", deps }, transport, callOpts("build_floorplan_scene"));
   };
@@ -373,5 +378,77 @@ describe("build_floorplan_scene: floors, stairs and roof through the tool", () =
     const out = await t.run(twoFloors);
     expect(out.ok).toBe(false);
     expect([...t.mock.store.keys()].some((k) => k.startsWith("!scenes!"))).toBe(false);
+  });
+});
+
+describe("build_floorplan_scene: a roof per wing", () => {
+  // A hall of two floors under a slate roof, a one-storey kitchen annex under thatch, and a conical tower.
+  const wings = {
+    name: "Manor", cols: 24, rows: 12, pxPerCell: 50,
+    floors: [
+      { name: "Ground", rooms: [{ id: "hall", x: 1, y: 1, w: 10, h: 8 }, { id: "kitchen", x: 11, y: 4, w: 5, h: 5 }, { id: "tower", x: 16, y: 1, w: 4, h: 4 }],
+        openings: [{ room: "hall", side: "s", at: 3, kind: "door" }], lights: [{ at: [3, 3], source: "fireplace" }, { at: [13, 6], source: "fireplace" }] },
+      { name: "Upstairs", rooms: [{ id: "loft", x: 1, y: 1, w: 10, h: 8 }, { id: "tower", x: 16, y: 1, w: 4, h: 4 }] },
+    ],
+    stairs: [{ at: [3, 5], dir: "e", length: 3 }, { at: [17, 2], dir: "e", length: 2, width: 2, style: "spiral" }],
+    roofStyle: "thatched roof",
+    roofs: [
+      { name: "main house", rooms: ["hall", "loft"], style: "slate roof", shape: "gabled", condition: "mossy" },
+      { name: "tower", rooms: ["tower"], style: "copper roof", shape: "conical", chimneys: false },
+    ],
+  };
+
+  it("builds one tile per roof, each on top of its own floor and seen from the levels up to it", async () => {
+    const t = await setup();
+    const out = await t.runFinish(wings);
+    expect(out.ok).toBe(true);
+    const scene = onlyScene(t.mock);
+    const [l0, l1] = scene.levels;
+    expect(scene.tiles).toHaveLength(3);
+    const byName = (n: string) => scene.tiles.find((x: any) => x.name.endsWith(n));
+    expect(byName("roof: main")).toMatchObject({ elevation: 10, levels: [l0._id] });
+    expect(byName("roof: main house")).toMatchObject({ elevation: 20, levels: [l0._id, l1._id] });
+    expect(byName("roof: tower")).toMatchObject({ elevation: 20, levels: [l0._id, l1._id] });
+    expect((out as any).data.roofs.map((r: any) => r.name)).toEqual(["main", "main house", "tower"]);
+    expect((out as any).data.roof.tileId).toBe(byName("roof: main")._id);
+  });
+
+  it("masks every roof with its own mask", async () => {
+    const t = await setup();
+    await t.runFinish(wings);
+    expect(t.masked).toHaveLength(3);
+    expect(new Set(t.masked.map((m) => m.mask)).size).toBe(3);
+  });
+
+  it("the tool paints one picture per roof with its own prompt: floors, then main, house, tower", async () => {
+    const t = await setup();
+    const out = await t.run(wings);
+    expect(out.ok).toBe(true);
+    expect(t.requests).toHaveLength(5);
+    const [, , main, house2, tower] = t.requests;
+    expect(main!.prompt).toContain("thatched roof");
+    expect(main!.prompt).not.toContain("copper");
+    expect(house2!.prompt).toMatch(/slate roof \(mossy\).*roof over the main house.*gabled/s);
+    expect(tower!.prompt).toMatch(/copper roof.*conical/s);
+    expect(tower!.prompt).toContain("no chimneys");
+    expect(house2!.prompt).toMatch(/chimney stack/);
+    expect(onlyScene(t.mock).tiles).toHaveLength(3);
+  });
+
+  it("without roofs the house still has one roof and the tile is named plainly", async () => {
+    const t = await setup();
+    await t.runFinish({ ...wings, roofs: [] });
+    const scene = onlyScene(t.mock);
+    expect(scene.tiles).toHaveLength(1);
+    expect(scene.tiles[0].name).toBe("Manor roof");
+  });
+
+  it("skips every roof with a warning without ImageMagick", async () => {
+    const t = await setup({ magick: false });
+    const out = await t.runFinish(wings);
+    expect(out.ok).toBe(true);
+    expect((out as any).data.roofs).toEqual([]);
+    expect((out as any).data.roof).toBeNull();
+    expect((out as any).data.warnings.join(" ")).toMatch(/roof was skipped/);
   });
 });

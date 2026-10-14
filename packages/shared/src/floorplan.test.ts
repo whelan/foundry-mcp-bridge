@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FloorplanSchema, validateFloorplan, buildGeometry, resolveConstruction, wallThicknessPx, type FloorplanInput } from "./floorplan.js";
+import { FloorplanSchema, validateFloorplan, buildGeometry, resolveConstruction, wallThicknessPx, resolveRoofs, type FloorplanInput } from "./floorplan.js";
 
 const base = (over: Partial<FloorplanInput> = {}): FloorplanInput => ({
   name: "Cottage",
@@ -361,5 +361,57 @@ describe("stair styles", () => {
   });
   it("rejects an unknown style", () => {
     expect(() => two({ stairs: [{ at: [2, 1], dir: "s", style: "escalator" } as never] })).toThrow();
+  });
+});
+
+describe("roofs per wing", () => {
+  const manor = (over: Record<string, unknown> = {}) => FloorplanSchema.parse({
+    name: "Manor", cols: 24, rows: 12, roofStyle: "thatched roof",
+    floors: [
+      { name: "G", rooms: [{ id: "hall", x: 1, y: 1, w: 10, h: 8 }, { id: "kitchen", x: 11, y: 4, w: 5, h: 5 }, { id: "tower", x: 16, y: 1, w: 4, h: 4 }],
+        openings: [{ room: "hall", side: "s", at: 3, kind: "door" }], lights: [{ at: [3, 3], source: "fireplace" }, { at: [13, 6], source: "fireplace" }] },
+      { name: "U", rooms: [{ id: "loft", x: 1, y: 1, w: 10, h: 8 }, { id: "tower", x: 16, y: 1, w: 4, h: 4 }] },
+    ],
+    stairs: [{ at: [3, 5], dir: "e", length: 3 }, { at: [17, 2], dir: "e", length: 2, width: 2, style: "spiral" }],
+    roofs: [{ name: "house", rooms: ["hall", "loft"], style: "slate roof", shape: "gabled" }, { name: "tower", rooms: ["tower"], shape: "conical", eave: 4, chimneys: false }],
+    ...over,
+  });
+  it("one default roof over every room when no wing is given, as before", () => {
+    const p = manor({ roofs: [] });
+    const r = resolveRoofs(p);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ name: "main", explicit: false, top: 1, style: "thatched roof", eaveCells: 0.4 });
+    expect(r[0]!.rects).toHaveLength(3); // hall (and the loft above it), kitchen, tower: stacked rooms share one rectangle
+  });
+  it("wings get their own roof, the unclaimed rooms keep the default one", () => {
+    const r = resolveRoofs(manor());
+    expect(r.map((x) => x.name)).toEqual(["main", "house", "tower"]);
+    expect(r[0]).toMatchObject({ explicit: false, top: 0, style: "thatched roof" });
+    expect(r[0]!.rects).toEqual([{ x: 11, y: 4, w: 5, h: 5 }]); // only the kitchen is left
+    expect(r[1]).toMatchObject({ explicit: true, top: 1, style: "slate roof", shape: "gabled" });
+    expect(r[2]).toMatchObject({ top: 1, shape: "conical", eaveCells: 0.8, chimneys: [] });
+  });
+  it("puts a chimney over each fireplace under its own roof only", () => {
+    const r = resolveRoofs(manor());
+    expect(r[0]!.chimneys).toEqual([{ col: 13, row: 6 }]);
+    expect(r[1]!.chimneys).toEqual([{ col: 3, row: 3 }]);
+  });
+  it("roof false means no roofs at all, and giving roofs then is an error", () => {
+    expect(resolveRoofs(manor({ roof: false }))).toEqual([]);
+    expect(validateFloorplan(manor({ roof: false })).join("\n")).toContain("roofs are given but roof is false");
+  });
+  it("is valid, and rejects unknown rooms, rooms in two roofs and duplicate names", () => {
+    expect(validateFloorplan(manor())).toEqual([]);
+    expect(validateFloorplan(manor({ roofs: [{ name: "x", rooms: ["nope"] }] })).join("\n")).toContain('names unknown room "nope"');
+    expect(validateFloorplan(manor({ roofs: [{ name: "a", rooms: ["hall"] }, { name: "b", rooms: ["hall"] }] })).join("\n")).toContain('room "hall" is in two roofs');
+    expect(validateFloorplan(manor({ roofs: [{ name: "a", rooms: ["hall"] }, { name: "a", rooms: ["kitchen"] }] })).join("\n")).toContain('two roofs are named "a"');
+  });
+  it("a roof covers the whole stack: stacked rooms cannot be under different roofs", () => {
+    const errs = validateFloorplan(manor({ roofs: [{ name: "ground only", rooms: ["hall"] }] })).join("\n");
+    expect(errs).toMatch(/"hall" and "loft" are stacked but under different roofs/);
+  });
+  it("rejects a silly shape or eave", () => {
+    expect(() => manor({ roofs: [{ name: "a", rooms: ["hall", "loft"], shape: "pyramid" }] })).toThrow();
+    expect(() => manor({ roofs: [{ name: "a", rooms: ["hall", "loft"], eave: 20 }] })).toThrow();
   });
 });

@@ -3,10 +3,10 @@ import { inflateSync } from "node:zlib";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FloorplanSchema, buildGeometry } from "../../packages/shared/src/index.js";
+import { FloorplanSchema, buildGeometry, resolveRoofs } from "../../packages/shared/src/index.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { Raster, renderGuide, renderOverlay, renderRoofGuide, maskToFootprint, fitImage, hasMagick, imageSize } from "../../packages/mcp-server/src/floorplan-render.js";
+import { Raster, renderGuide, renderOverlay, renderRoofWing, maskToFootprint, fitImage, hasMagick, imageSize } from "../../packages/mcp-server/src/floorplan-render.js";
 import { pngSize } from "../../packages/mcp-server/src/image-gen.js";
 
 const plan = FloorplanSchema.parse({
@@ -125,7 +125,7 @@ describe("stairs and roof drawing", () => {
 
   it("the roof guide is white over every room plus the eave, black elsewhere", () => {
     const p = FloorplanSchema.parse({ name: "S", cols: 10, rows: 8, pxPerCell: 50, rooms: [{ id: "a", x: 2, y: 2, w: 4, h: 3 }] });
-    const img = decode(renderRoofGuide(p, [{ x: 2, y: 2, w: 4, h: 3 }], 0.4));
+    const img = decode(renderRoofWing(p, resolveRoofs(p)[0]!).mask);
     expect(img.px(3 * 50, 3 * 50)).toEqual([255, 255, 255, 255]);
     expect(img.px(2 * 50 - 10, 3 * 50)).toEqual([255, 255, 255, 255]);
     expect(img.px(2 * 50 - 30, 3 * 50)).toEqual([0, 0, 0, 255]);
@@ -147,7 +147,7 @@ describe("maskToFootprint", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mask-"));
     const p = FloorplanSchema.parse({ name: "S", cols: 8, rows: 6, pxPerCell: 50, rooms: [{ id: "a", x: 2, y: 2, w: 3, h: 2 }] });
     const mask = join(dir, "mask.png");
-    writeFileSync(mask, renderRoofGuide(p, [{ x: 2, y: 2, w: 3, h: 2 }], 0));
+    writeFileSync(mask, renderRoofWing(p, { ...resolveRoofs(p)[0]!, eaveCells: 0 }).mask);
     const pic = join(dir, "pic.png");
     await run("magick", ["-size", "400x300", "xc:red", pic]);
     const out = join(dir, "out.webp");
@@ -230,5 +230,57 @@ describe("renderGuide: stair styles", () => {
   it("a ladder has rails and fine rungs", () => {
     const ladder = guide(house("ladder"));
     expect(ladder.px(3 * 50 + 9, 2 * 50 + 40)).toEqual([70, 40, 20, 255]); // rail at 15% of the width
+  });
+});
+
+describe("renderRoofWing", () => {
+  const manor = FloorplanSchema.parse({
+    name: "M", cols: 20, rows: 10, pxPerCell: 50,
+    rooms: [{ id: "hall", x: 1, y: 1, w: 8, h: 6 }, { id: "annex", x: 9, y: 2, w: 4, h: 4 }, { id: "tower", x: 14, y: 1, w: 4, h: 4 }],
+    openings: [{ room: "hall", side: "s", at: 1, kind: "door" }],
+    lights: [{ at: [2, 2], source: "fireplace" }],
+    roofs: [{ name: "annex", rooms: ["annex"], shape: "flat" }, { name: "tower", rooms: ["tower"], shape: "conical", eave: 5 }],
+  });
+  const roofs = resolveRoofs(manor);
+  const [main, annex, tower] = [roofs[0]!, roofs[1]!, roofs[2]!];
+  const mask = (r: typeof main) => decode(renderRoofWing(manor, r, roofs.filter((o) => o !== r)).mask);
+  const guide = (r: typeof main) => decode(renderRoofWing(manor, r, roofs.filter((o) => o !== r)).guide);
+  const W = [255, 255, 255, 255], B = [0, 0, 0, 255];
+
+  it("each wing's mask covers only its own rooms and eave", () => {
+    expect(mask(main).px(4 * 50, 4 * 50)).toEqual(W); // hall
+    expect(mask(main).px(11 * 50, 4 * 50)).toEqual(B); // annex belongs to another roof
+    expect(mask(annex).px(11 * 50, 4 * 50)).toEqual(W);
+    expect(mask(annex).px(4 * 50, 4 * 50)).toEqual(B);
+    expect(mask(tower).px(16 * 50, 3 * 50)).toEqual(W);
+  });
+  it("the eave of one roof does not run over a room of another", () => {
+    // main's eave is 0.4 cell (20 px); hall ends at x=9 and the annex starts there, so no white spills into the annex
+    expect(mask(main).px(9 * 50 + 5, 4 * 50)).toEqual(B);
+    expect(mask(annex).px(9 * 50 - 5, 4 * 50)).toEqual(B);
+    // but on a free side the eave is there
+    expect(mask(main).px(1 * 50 - 10, 4 * 50)).toEqual(W);
+  });
+  it("a bigger eave reaches further", () => {
+    // tower eave 5 ft = 1 cell: white one cell left of the tower (x=14) -> x in 13*50..14*50
+    expect(mask(tower).px(14 * 50 - 25, 3 * 50)).toEqual(W);
+    expect(mask(main).px(1 * 50 - 30, 4 * 50)).toEqual(B); // default 0.4 cell = 20 px
+  });
+  it("the guide adds roof lines and chimneys the mask does not have", () => {
+    const g = guide(main), m = mask(main);
+    const ridge = [4 * 50, 4 * 50] as const; // middle of the hall: the gabled ridge runs along it
+    expect(m.px(...ridge)).toEqual(W);
+    expect(g.px(...ridge)).toEqual([150, 150, 150, 255]);
+    expect(g.px(2 * 50 + 25, 2 * 50 + 25)).toEqual([70, 70, 70, 255]); // chimney over the fireplace at (2,2)
+    expect(m.px(2 * 50 + 25, 2 * 50 + 25)).toEqual(W);
+  });
+  it("a flat roof has no lines and a conical one has spokes", () => {
+    const flat = guide(annex);
+    expect(flat.px(11 * 50, 4 * 50)).toEqual(W);
+    const cone = guide(tower);
+    expect(cone.px(16 * 50 + 20, 3 * 50)).toEqual([150, 150, 150, 255]);
+  });
+  it("no chimney squares for a roof without fireplaces under it", () => {
+    expect(guide(tower).px(2 * 50 + 25, 2 * 50 + 25)).toEqual(B);
   });
 });

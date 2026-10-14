@@ -33,10 +33,10 @@ export interface FloorplanApply {
   footprint: Array<{ x: number; y: number; w: number; h: number }>;
   /** One overlay PNG per floor (the alignment preview is made from it). */
   overlayPaths: string[];
-  /** Local picture files: one per floor in order, and the roof picture (not yet masked). */
-  pictures: { floors: string[]; roof?: string };
-  /** The roof footprint guide; it doubles as the roof's transparency mask. */
-  roofGuidePath?: string;
+  /** Local picture files, one per floor in order. */
+  pictures: { floors: string[] };
+  /** One entry per roof (the default roof and each wing): its picture (not yet masked), its transparency mask, and the top floor it sits on. */
+  roofs?: Array<{ name: string; explicit: boolean; top: number; picture: string; maskPath: string }>;
 }
 
 const FLOOR_HEIGHT = 10;
@@ -93,16 +93,17 @@ export async function finishFloorplan(
 
   // Pictures: fit every floor, fit and mask the roof.
   for (let i = 0; i < apply.pictures.floors.length; i++) await fit(apply.pictures.floors[i]!, apply.floors[i]!.name);
-  let roofFile: string | undefined;
-  if (apply.pictures.roof) {
+  const roofFiles: Array<{ name: string; explicit: boolean; top: number; file: string }> = [];
+  for (const r of apply.roofs ?? []) {
     if (!magick) {
-      warnings.push("the roof was skipped: it needs ImageMagick to be masked to the outline of the house");
-    } else {
-      await fit(apply.pictures.roof, "roof");
-      roofFile = apply.pictures.roof.replace(/\.[a-z0-9]+$/i, "-masked.webp");
-      await deps.maskToFootprint(apply.pictures.roof, apply.roofGuidePath!, roofFile);
-      steps.push("mask");
+      warnings.push(`the ${r.explicit ? `${r.name} ` : ""}roof was skipped: it needs ImageMagick to be masked to the outline of the house`);
+      continue;
     }
+    await fit(r.picture, r.explicit ? `${r.name} roof` : "roof");
+    const file = r.picture.replace(/\.[a-z0-9]+$/i, "-masked.webp");
+    await deps.maskToFootprint(r.picture, r.maskPath, file);
+    if (!steps.includes("mask")) steps.push("mask");
+    roofFiles.push({ name: r.name, explicit: r.explicit, top: r.top, file });
   }
 
   steps.push("upload");
@@ -112,11 +113,11 @@ export async function finishFloorplan(
     if (!up.ok) return up;
     floorSrcs.push(up.path!);
   }
-  let roofSrc: string | undefined;
-  if (roofFile) {
-    const up = await upload(roofFile, "roof");
+  const roofSrcs: Array<{ name: string; explicit: boolean; top: number; src: string }> = [];
+  for (const r of roofFiles) {
+    const up = await upload(r.file, r.explicit ? `roof ${r.name}` : "roof");
     if (!up.ok) return up;
-    roofSrc = up.path!;
+    roofSrcs.push({ name: r.name, explicit: r.explicit, top: r.top, src: up.path! });
   }
 
   steps.push("scene");
@@ -206,36 +207,37 @@ export async function finishFloorplan(
     if (!regions.ok) return { ...regions, steps: [...steps, ...regions.steps] };
   }
 
-  let roof: { tileId: string; src: string } | null = null;
-  if (roofSrc) {
+  const roofs: Array<{ name: string; tileId: string; src: string }> = [];
+  if (roofSrcs.length) {
     steps.push("roof");
     const at = gridToPixels(0, 0, size, origin);
-    const tile = await runCreateEmbedded(
+    const multi = roofSrcs.length > 1;
+    // One scene-size tile per roof, each sitting on top of the highest floor under it and seen from every level up to it.
+    const tiles = await runCreateEmbedded(
       transport,
       {
         parentType: "Scene",
         parentId: sceneId,
         embeddedName: "Tile",
-        data: [
-          {
-            name: `${plan.name} roof`,
-            x: at.x,
-            y: at.y,
-            width,
-            height,
-            elevation: FLOOR_HEIGHT * apply.floors.length,
-            levels: levelIds,
-            texture: { src: roofSrc, anchorX: 0, anchorY: 0 },
-            occlusion: { modes: [OCCLUSION_FADE, OCCLUSION_VISION], alpha: 0 },
-          },
-        ],
+        data: roofSrcs.map((r) => ({
+          name: multi ? `${plan.name} roof: ${r.name}` : `${plan.name} roof`,
+          x: at.x,
+          y: at.y,
+          width,
+          height,
+          elevation: FLOOR_HEIGHT * (r.top + 1),
+          levels: levelIds.slice(0, r.top + 1),
+          texture: { src: r.src, anchorX: 0, anchorY: 0 },
+          occlusion: { modes: [OCCLUSION_FADE, OCCLUSION_VISION], alpha: 0 },
+        })),
         fields: ["_id"],
       } as never,
       opts,
     );
-    if (!tile.ok) return { ...tile, steps: [...steps, ...tile.steps] };
-    roof = { tileId: (tile.data as Array<{ _id: string }>)[0]!._id, src: roofSrc };
+    if (!tiles.ok) return { ...tiles, steps: [...steps, ...tiles.steps] };
+    (tiles.data as Array<{ _id: string }>).forEach((t, i) => roofs.push({ name: roofSrcs[i]!.name, tileId: t._id, src: roofSrcs[i]!.src }));
   }
+  const roof = roofs[0] ? { tileId: roofs[0].tileId, src: roofs[0].src } : null;
 
   const previews: string[] = [];
   if (magick) {
@@ -261,6 +263,7 @@ export async function finishFloorplan(
       levels: apply.floors.map((f, i) => ({ id: levelIds[i]!, name: f.name })),
       stairs: apply.stairs.length,
       roof,
+      roofs,
       overlays: apply.overlayPaths,
       previews,
       walls: wallCount,
