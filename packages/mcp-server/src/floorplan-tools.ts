@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z, ZodError } from "zod";
-import { FloorplanBaseSchema, FloorplanSchema, buildGeometry, type Floorplan, type PlacedStair } from "@foundry-mcp-bridge/shared";
+import { FloorplanBaseSchema, FloorplanSchema, SURROUNDING_STYLE, buildGeometry, type Floorplan, type PlacedStair, type SurroundingFeature } from "@foundry-mcp-bridge/shared";
 import type { PipelineOptions, ToolOutcome } from "./reliability.js";
 import type { RelayTransport } from "./relay-transport.js";
 import { runGetWorldInfo, showImageFilename } from "./tools.js";
@@ -23,6 +23,33 @@ const fail = (code: "VALIDATION" | "UNSUPPORTED" | "CONFLICT", message: string):
 const OPPOSITE = { n: "south", e: "west", s: "north", w: "east" } as const;
 const COMPASS = { n: "north", e: "east", s: "south", w: "west" } as const;
 
+/** Where a rectangle sits in the picture, in words the painter can follow. */
+export function describePlace(f: SurroundingFeature, cols: number, rows: number): string {
+  const cx = (f.x + f.w / 2) / cols;
+  const cy = (f.y + f.h / 2) / rows;
+  const v = cy < 1 / 3 ? "north" : cy > 2 / 3 ? "south" : "";
+  const h = cx < 1 / 3 ? "west" : cx > 2 / 3 ? "east" : "";
+  const where = v || h ? `in the ${v}${v && h ? "-" : ""}${h} of the picture` : "in the middle of the picture";
+  const run = f.w >= f.h * 2 ? "running east-west, " : f.h >= f.w * 2 ? "running north-south, " : "";
+  return `${run}${where}`;
+}
+
+/** The paragraph about everything outside the walls (ground floor only). Empty when the plan has no surroundings. */
+export function buildSurroundingsText(plan: Floorplan): string {
+  const s = plan.surroundings;
+  if (!s) return "";
+  const lines = s.features.map((f) => {
+    const st = SURROUNDING_STYLE[f.kind];
+    return `- the ${st.colour} area is ${st.label}${f.note ? `: ${f.note}` : ""}, ${describePlace(f, plan.cols, plan.rows)}`;
+  });
+  return (
+    `Surroundings: the open ground outside the house (the olive-green area of the blueprint) is ${s.ground}.` +
+    (s.mood ? ` Mood: ${s.mood}.` : "") +
+    (lines.length ? `\nThe coloured areas outside the house in the blueprint are landscape features; paint each one as described and keep its position and size:\n${lines.join("\n")}` : "") +
+    "\nBlend the edges naturally; the house itself and its walls stay exactly where the blueprint has them."
+  );
+}
+
 export function buildFloorplanPrompt(plan: Floorplan, floor = 0, stairs: PlacedStair[] = []): string {
   const f = plan.floors[floor]!;
   const rooms = f.rooms
@@ -42,6 +69,7 @@ export function buildFloorplanPrompt(plan: Floorplan, floor = 0, stairs: PlacedS
     "Keep every wall, doorway and window exactly where the blueprint has it, and keep the image the same size and proportions. " +
     "Brown bars are doors, light-blue bars are windows (draw glass), the green area outside is grass or ground.\n\n" +
     (stairText ? `${stairText}\n\n` : "") +
+    (floor === 0 && plan.surroundings ? `${buildSurroundingsText(plan)}\n\n` : "") +
     `Rooms:\n${rooms}\n\n` +
     "Light sources (fireplaces, torches, candles) must look lit. No grid lines, no text, no labels, no characters or creatures, no UI."
   );

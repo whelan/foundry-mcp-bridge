@@ -283,3 +283,32 @@ describe("stairs", () => {
     expect(g.ok && g.footprint).toHaveLength(3);
   });
 });
+
+describe("surroundings", () => {
+  const cottage = (features: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}) =>
+    FloorplanSchema.parse(base({ cols: 20, rows: 14, surroundings: { features: features as never, ...extra } } as never));
+  it("defaults the ground and accepts features outside the house", () => {
+    const p = cottage([{ kind: "road", x: 0, y: 11, w: 20, h: 2, note: "rutted cart road" }, { kind: "trees", x: 16, y: 0, w: 4, h: 6 }]);
+    expect(p.surroundings?.ground).toBe("trampled grass and dirt");
+    expect(validateFloorplan(p)).toEqual([]);
+  });
+  it("is optional", () => {
+    expect(parse().surroundings).toBeUndefined();
+  });
+  it("rejects a feature that leaves the grid", () => {
+    expect(validateFloorplan(cottage([{ kind: "water", x: 18, y: 0, w: 5, h: 2 }])).join("\n")).toContain("leaves the 20x14 grid");
+  });
+  it("rejects a feature on top of the house, naming the room", () => {
+    expect(validateFloorplan(cottage([{ kind: "garden", x: 5, y: 3, w: 2, h: 2 }])).join("\n")).toContain('overlaps the house (room "hall")');
+  });
+  it("allows touching the house and overlapping other features", () => {
+    expect(validateFloorplan(cottage([{ kind: "yard", x: 0, y: 0, w: 20, h: 1 }, { kind: "path", x: 3, y: 0, w: 1, h: 1 }]))).toEqual([]);
+  });
+  it("a custom feature needs a note", () => {
+    expect(validateFloorplan(cottage([{ kind: "custom", x: 0, y: 12, w: 2, h: 2 }])).join("\n")).toContain("needs a note");
+    expect(validateFloorplan(cottage([{ kind: "custom", x: 0, y: 12, w: 2, h: 2, note: "a toppled stone idol" }]))).toEqual([]);
+  });
+  it("rejects an unknown kind", () => {
+    expect(() => cottage([{ kind: "lava", x: 0, y: 12, w: 2, h: 2 }])).toThrow();
+  });
+});

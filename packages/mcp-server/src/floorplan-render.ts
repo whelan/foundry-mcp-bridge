@@ -6,7 +6,7 @@
 import { deflateSync } from "node:zlib";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { Floorplan, PlacedLight, PlacedStair, WallSegment } from "@foundry-mcp-bridge/shared";
+import { SURROUNDING_STYLE, type Floorplan, type PlacedLight, type PlacedStair, type WallSegment } from "@foundry-mcp-bridge/shared";
 
 const run = promisify(execFile);
 
@@ -121,6 +121,13 @@ export function renderGuide(plan: Floorplan, walls: WallSegment[], opts: { floor
   const floor = opts.floor ?? 0;
   const r = new Raster(plan.cols * px, plan.rows * px);
   r.fillRect(0, 0, r.width, r.height, OUTSIDE);
+  // The ground outside is part of the ground floor's picture only.
+  if (floor === 0) {
+    for (const f of plan.surroundings?.features ?? []) {
+      const [cr, cg, cb] = SURROUNDING_STYLE[f.kind].rgb;
+      r.fillRect(f.x * px, f.y * px, f.w * px, f.h * px, [cr, cg, cb, 255]);
+    }
+  }
   plan.floors[floor]!.rooms.forEach((room, i) => r.fillRect(room.x * px, room.y * px, room.w * px, room.h * px, FLOORS[i % FLOORS.length]!));
   drawStairs(r, (opts.stairs ?? []).filter((s) => s.from === floor || s.to === floor), px, false);
   const t = Math.max(4, Math.round(px * 0.12));

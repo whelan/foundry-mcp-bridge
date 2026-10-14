@@ -60,6 +60,39 @@ export const StairSchema = z.object({
   from: z.number().int().min(0).default(0).describe("Lower floor index; the stair joins from and from + 1"),
 });
 
+/** What the ground outside the house is made of; the guide colours and the painter prompt both read this table. */
+export const SURROUNDING_KINDS = ["road", "path", "yard", "field", "garden", "water", "trees", "bushes", "rocks", "fence", "well", "custom"] as const;
+export type SurroundingKind = (typeof SURROUNDING_KINDS)[number];
+export const SURROUNDING_STYLE: Record<SurroundingKind, { rgb: [number, number, number]; colour: string; label: string }> = {
+  road: { rgb: [150, 120, 80], colour: "tan-brown", label: "a road" },
+  path: { rgb: [196, 172, 126], colour: "pale sand", label: "a footpath" },
+  yard: { rgb: [158, 134, 102], colour: "dusty brown", label: "bare ground (a yard)" },
+  field: { rgb: [196, 176, 74], colour: "mustard yellow", label: "a field" },
+  garden: { rgb: [60, 150, 70], colour: "bright green", label: "a garden" },
+  water: { rgb: [60, 112, 192], colour: "blue", label: "water" },
+  trees: { rgb: [28, 78, 40], colour: "dark green", label: "trees (a stand or a wood)" },
+  bushes: { rgb: [78, 128, 52], colour: "medium green", label: "bushes and undergrowth" },
+  rocks: { rgb: [132, 132, 136], colour: "grey", label: "rocks or a rock outcrop" },
+  fence: { rgb: [112, 70, 40], colour: "dark brown", label: "a fence or low wall" },
+  well: { rgb: [84, 84, 100], colour: "slate", label: "a well" },
+  custom: { rgb: [170, 90, 170], colour: "purple", label: "something special" },
+};
+
+export const SurroundingFeatureSchema = z.object({
+  kind: z.enum(SURROUNDING_KINDS),
+  x: z.number().int().min(0),
+  y: z.number().int().min(0),
+  w: z.number().int().min(1),
+  h: z.number().int().min(1),
+  note: z.string().min(1).optional().describe('What it looks like, e.g. "rutted cart road with puddles"; required for kind custom'),
+});
+
+export const SurroundingsSchema = z.object({
+  ground: z.string().min(1).default("trampled grass and dirt").describe("What the open ground is, e.g. frost-hardened mud with dead grass"),
+  mood: z.string().min(1).optional().describe("Season, weather and light the painter should show, e.g. misty dusk, bare branches"),
+  features: z.array(SurroundingFeatureSchema).max(40).default([]).describe("Rectangles in grid cells outside the house; later ones paint over earlier ones"),
+});
+
 export const FloorplanBaseSchema = z.object({
   name: z.string().min(1),
   style: z.string().min(1).default("fantasy house"),
@@ -72,6 +105,7 @@ export const FloorplanBaseSchema = z.object({
   lights: z.array(FloorplanLightSchema).optional(),
   floors: z.array(FloorSchema).min(1).max(4).optional().describe("Several floors, index 0 is the ground floor"),
   stairs: z.array(StairSchema).default([]),
+  surroundings: SurroundingsSchema.optional().describe("The yard, roads and nature around the house (painted on the ground floor only; the picture is cols x rows, so leave a margin)"),
   roof: z.boolean().default(true),
   roofStyle: z.string().min(1).default("thatched roof"),
   codex: z.boolean().default(true),
@@ -93,6 +127,7 @@ export type Opening = z.infer<typeof OpeningSchema>;
 export type FloorplanLight = z.infer<typeof FloorplanLightSchema>;
 export type Floor = z.infer<typeof FloorSchema>;
 export type Stair = z.infer<typeof StairSchema>;
+export type SurroundingFeature = z.infer<typeof SurroundingFeatureSchema>;
 export type Floorplan = z.output<typeof FloorplanSchema>;
 export type FloorplanInput = z.input<typeof FloorplanBaseSchema>;
 
@@ -201,6 +236,19 @@ function validateStairs(plan: { floors: Floor[]; stairs: Stair[] }): string[] {
   return errors;
 }
 
+function validateSurroundings(plan: Floorplan): string[] {
+  const errors: string[] = [];
+  const rooms = plan.floors[0]!.rooms;
+  (plan.surroundings?.features ?? []).forEach((f, i) => {
+    const name = `surroundings feature ${i} (${f.kind})`;
+    if (f.x + f.w > plan.cols || f.y + f.h > plan.rows) errors.push(`${name} leaves the ${plan.cols}x${plan.rows} grid`);
+    if (f.kind === "custom" && !f.note) errors.push(`${name} needs a note saying what it is`);
+    const hit = rooms.find((r) => f.x < r.x + r.w && r.x < f.x + f.w && f.y < r.y + r.h && r.y < f.y + f.h);
+    if (hit) errors.push(`${name} overlaps the house (room "${hit.id}")`);
+  });
+  return errors;
+}
+
 /** Human-readable problems with the floors, rooms, openings, lights and stairs. Empty means valid. */
 export function validateFloorplan(plan: Floorplan): string[] {
   const errors: string[] = [];
@@ -216,6 +264,7 @@ export function validateFloorplan(plan: Floorplan): string[] {
     }
   }
   errors.push(...validateStairs(plan));
+  errors.push(...validateSurroundings(plan));
   return errors;
 }
 

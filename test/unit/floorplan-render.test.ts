@@ -158,3 +158,26 @@ describe("maskToFootprint", async () => {
     expect(outside).toBeLessThan(0.1);
   });
 });
+
+describe("renderGuide: surroundings", () => {
+  const withGround = FloorplanSchema.parse({
+    name: "G", cols: 8, rows: 6, pxPerCell: 50,
+    floors: [
+      { name: "Ground", rooms: [{ id: "a", x: 2, y: 1, w: 4, h: 3 }], openings: [{ room: "a", side: "s", at: 1, kind: "door" }] },
+      { name: "Up", rooms: [{ id: "b", x: 2, y: 1, w: 4, h: 3 }] },
+    ],
+    stairs: [{ at: [3, 1], dir: "s", length: 2 }],
+    surroundings: { features: [{ kind: "road", x: 0, y: 4, w: 8, h: 1 }, { kind: "water", x: 0, y: 0, w: 1, h: 6 }] },
+  });
+  const geo = (() => { const g = buildGeometry(withGround); if (!g.ok) throw new Error(g.errors.join()); return g; })();
+  it("paints the features into the ground floor guide, under the rooms", () => {
+    const img = decode(renderGuide(withGround, geo.floors[0]!.walls, { floor: 0 }));
+    expect(img.px(4 * 50 + 25, 4 * 50 + 25)).toEqual([150, 120, 80, 255]); // road
+    expect(img.px(25, 25)).toEqual([60, 112, 192, 255]); // water
+    expect(img.px(3 * 50, 2 * 50)).not.toEqual([60, 112, 192, 255]); // house interior untouched
+  });
+  it("leaves the upper floors plain", () => {
+    const img = decode(renderGuide(withGround, geo.floors[1]!.walls, { floor: 1 }));
+    expect(img.px(4 * 50 + 25, 4 * 50 + 25)).toEqual([96, 112, 84, 255]);
+  });
+});
