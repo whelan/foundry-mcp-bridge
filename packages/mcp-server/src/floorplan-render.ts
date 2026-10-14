@@ -90,6 +90,8 @@ function drawSegment(r: Raster, seg: WallSegment, px: number, thickness: number,
 }
 
 const OUTSIDE: Rgba = [96, 112, 84, 255];
+/** Below ground the whole picture outside the rooms is solid earth. */
+const EARTH: Rgba = [68, 52, 38, 255];
 const WALL: Rgba = [43, 33, 24, 255];
 const DOOR: Rgba = [139, 90, 43, 255];
 const SECRET: Rgba = [43, 33, 24, 255];
@@ -176,9 +178,10 @@ export function renderGuide(plan: Floorplan, walls: WallSegment[], opts: { floor
   const px = plan.pxPerCell;
   const floor = opts.floor ?? 0;
   const r = new Raster(plan.cols * px, plan.rows * px);
-  r.fillRect(0, 0, r.width, r.height, OUTSIDE);
+  const underground = floor < plan.groundFloor;
+  r.fillRect(0, 0, r.width, r.height, underground ? EARTH : OUTSIDE);
   // The ground outside is part of the ground floor's picture only.
-  if (floor === 0) {
+  if (floor === plan.groundFloor) {
     for (const f of plan.surroundings?.features ?? []) {
       const [cr, cg, cb] = SURROUNDING_STYLE[f.kind].rgb;
       r.fillRect(f.x * px, f.y * px, f.w * px, f.h * px, [cr, cg, cb, 255]);

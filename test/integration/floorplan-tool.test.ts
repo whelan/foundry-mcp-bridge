@@ -452,3 +452,56 @@ describe("build_floorplan_scene: a roof per wing", () => {
     expect((out as any).data.warnings.join(" ")).toMatch(/roof was skipped/);
   });
 });
+
+describe("build_floorplan_scene: cellars", () => {
+  const inn = {
+    name: "Inn", cols: 24, rows: 14, pxPerCell: 50,
+    floors: [
+      { name: "Ground", rooms: [{ id: "bar", x: 4, y: 3, w: 10, h: 7 }], openings: [{ room: "bar", side: "s", at: 2, kind: "door" }] },
+      { name: "Upstairs", rooms: [{ id: "bed", x: 4, y: 3, w: 10, h: 7 }] },
+    ],
+    cellars: [{ name: "Cellar", rooms: [{ id: "store", x: 1, y: 1, w: 12, h: 8 }, { id: "tunnel", x: 13, y: 4, w: 10, h: 2 }] }, { name: "Crypt", rooms: [{ id: "crypt", x: 2, y: 2, w: 6, h: 5 }] }],
+    stairs: [{ at: [6, 4], dir: "e", length: 3 }, { at: [5, 3], dir: "e", length: 3, from: -1 }, { at: [3, 3], dir: "s", length: 3, from: -2 }],
+  };
+  it("creates the cellar levels below zero, the ground floor at zero, and puts stairs and roof at the right heights", async () => {
+    const t = await setup();
+    const out = await t.runFinish(inn);
+    expect(out.ok).toBe(true);
+    const scene = onlyScene(t.mock);
+    const [crypt, cellar, ground, upstairs] = scene.levels;
+    expect(crypt).toMatchObject({ _id: "defaultLevel0000", name: "Crypt", elevation: { bottom: -20, top: -10 } });
+    expect(cellar).toMatchObject({ name: "Cellar", elevation: { bottom: -10, top: 0 } });
+    expect(ground).toMatchObject({ name: "Ground", elevation: { bottom: 0, top: 10 } });
+    expect(upstairs).toMatchObject({ name: "Upstairs", elevation: { bottom: 10, top: 20 } });
+    expect((out as any).data.groundFloor).toBe(2);
+    const regions = scene.regions;
+    expect(regions).toHaveLength(3);
+    const between = (a: any, b: any) => regions.find((r: any) => r.levels[0] === a._id && r.levels[1] === b._id);
+    expect(between(ground, upstairs).elevation).toEqual({ bottom: 0, top: 20 });
+    expect(between(cellar, ground).elevation).toEqual({ bottom: -10, top: 10 });
+    expect(between(crypt, cellar).elevation).toEqual({ bottom: -20, top: 0 });
+    // one roof over the building only: from the ground floor up, never the cellars
+    expect(scene.tiles).toHaveLength(1);
+    expect(scene.tiles[0]).toMatchObject({ elevation: 20, levels: [ground._id, upstairs._id] });
+    // every floor has its own walls
+    for (const lv of [crypt, cellar, ground, upstairs]) expect(scene.walls.some((w: any) => w.levels[0] === lv._id)).toBe(true);
+  });
+  it("the tool paints one picture per floor, cellars included, and one roof: five images", async () => {
+    const t = await setup();
+    const out = await t.run(inn);
+    expect(out.ok).toBe(true);
+    expect(t.requests).toHaveLength(5);
+    const prompts = t.requests.map((r) => r.prompt);
+    expect(prompts[0]).toContain("underground Crypt");
+    expect(prompts[1]).toContain("underground Cellar");
+    expect(prompts[2]).toContain("green area outside is grass");
+    expect(prompts[4]).toMatch(/roof/i);
+    expect(prompts.filter((p) => /solid earth and rock/.test(p))).toHaveLength(2);
+  });
+  it("a house without cellars is unchanged: ground floor at zero", async () => {
+    const t = await setup();
+    await t.runFinish(twoFloors);
+    const [l0] = onlyScene(t.mock).levels;
+    expect(l0.elevation).toEqual({ bottom: 0, top: 10 });
+  });
+});

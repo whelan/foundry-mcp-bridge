@@ -415,3 +415,86 @@ describe("roofs per wing", () => {
     expect(() => manor({ roofs: [{ name: "a", rooms: ["hall", "loft"], eave: 20 }] })).toThrow();
   });
 });
+
+describe("cellars", () => {
+  const house = (over: Record<string, unknown> = {}) => FloorplanSchema.parse({
+    name: "Inn", cols: 24, rows: 14,
+    floors: [
+      { name: "Ground", rooms: [{ id: "bar", x: 4, y: 3, w: 10, h: 7 }], openings: [{ room: "bar", side: "s", at: 2, kind: "door" }], lights: [{ at: [5, 4], source: "fireplace" }] },
+      { name: "Upstairs", rooms: [{ id: "bed", x: 4, y: 3, w: 10, h: 7 }] },
+    ],
+    // the cellar runs far beyond the house, over the whole picture
+    cellars: [
+      { name: "Cellar", rooms: [{ id: "store", x: 1, y: 1, w: 12, h: 8 }, { id: "tunnel", x: 13, y: 4, w: 10, h: 2 }], openings: [{ room: "store", side: "e", at: 3, kind: "door" }] },
+      { name: "Crypt", rooms: [{ id: "crypt", x: 2, y: 2, w: 6, h: 5 }] },
+    ],
+    stairs: [{ at: [6, 4], dir: "e", length: 3 }, { at: [5, 3], dir: "e", length: 3, from: -1 }, { at: [3, 3], dir: "s", length: 3, from: -2 }],
+    ...over,
+  });
+  it("lists floors bottom to top with the deepest cellar first and marks the ground floor", () => {
+    const p = house();
+    expect(p.floors.map((f) => f.name)).toEqual(["Crypt", "Cellar", "Ground", "Upstairs"]);
+    expect(p.groundFloor).toBe(2);
+    expect("cellars" in p).toBe(false);
+  });
+  it("shifts the stairs: from 0 is still ground to upstairs, -1 cellar to ground, -2 crypt to cellar", () => {
+    const g = buildGeometry(house());
+    if (!g.ok) throw new Error(g.errors.join());
+    expect(g.stairs.map((s) => [s.from, s.to])).toEqual([[2, 3], [1, 2], [0, 1]]);
+  });
+  it("without cellars nothing changes: ground floor is index 0 and stairs keep their numbers", () => {
+    const p = FloorplanSchema.parse({ ...base(), floors: undefined, rooms: base().rooms });
+    expect(p.groundFloor).toBe(0);
+    expect(p.floors).toHaveLength(1);
+  });
+  it("a cellar may use the whole picture and run beyond the house: no overhang rule below ground", () => {
+    expect(validateFloorplan(house())).toEqual([]);
+  });
+  it("the exterior-door rule is for the ground floor, not the cellar", () => {
+    expect(buildGeometry(house()).ok).toBe(true);
+    const noDoor = buildGeometry(house({ floors: [{ name: "Ground", rooms: [{ id: "bar", x: 4, y: 3, w: 10, h: 7 }] }, { name: "Upstairs", rooms: [{ id: "bed", x: 4, y: 3, w: 10, h: 7 }] }] }));
+    expect(noDoor.ok).toBe(false);
+    if (!noDoor.ok) expect(noDoor.errors.join()).toMatch(/Ground.*no exterior door|no exterior door/);
+  });
+  it("floors above the ground floor still cannot overhang", () => {
+    const out = validateFloorplan(house({ floors: [{ name: "Ground", rooms: [{ id: "bar", x: 4, y: 3, w: 10, h: 7 }], openings: [{ room: "bar", side: "s", at: 2, kind: "door" }] }, { name: "Upstairs", rooms: [{ id: "bed", x: 4, y: 3, w: 12, h: 7 }] }] }));
+    expect(out.join("\n")).toMatch(/Upstairs.*overhang/);
+  });
+  it("every cellar needs a stair that leaves it upward", () => {
+    const out = buildGeometry(house({ stairs: [{ at: [6, 4], dir: "e", length: 3 }, { at: [5, 3], dir: "e", length: 3, from: -1 }] }));
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.errors.join()).toMatch(/floor "Crypt" is unreachable/);
+  });
+  it("a stair must lie inside one room on both floors it joins (cellar and ground)", () => {
+    const out = buildGeometry(house({ stairs: [{ at: [6, 4], dir: "e", length: 3 }, { at: [2, 1], dir: "e", length: 3, from: -1 }, { at: [3, 3], dir: "s", length: 3, from: -2 }] }));
+    expect(out.ok).toBe(false);
+  });
+  it("rejects more than two cellars and a stair from below the deepest cellar", () => {
+    expect(() => house({ cellars: [{ name: "a", rooms: [{ id: "a", x: 1, y: 1, w: 3, h: 3 }] }, { name: "b", rooms: [{ id: "b", x: 1, y: 1, w: 3, h: 3 }] }, { name: "c", rooms: [{ id: "c", x: 1, y: 1, w: 3, h: 3 }] }] })).toThrow();
+    expect(() => house({ stairs: [{ at: [3, 3], dir: "s", length: 3, from: -3 }] })).toThrow();
+    const o = buildGeometry(house({ cellars: [{ name: "Cellar", rooms: [{ id: "store", x: 1, y: 1, w: 12, h: 8 }] }], stairs: [{ at: [6, 4], dir: "e", length: 3 }, { at: [5, 3], dir: "e", length: 3, from: -2 }] }));
+    expect(o.ok).toBe(false);
+  });
+  it("roofs cover the floors from the ground up only: never a cellar, and a cellar room cannot be named", () => {
+    const p = house();
+    const r = resolveRoofs(p);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ top: 3 });
+    expect(r[0]!.rects).toEqual([{ x: 4, y: 3, w: 10, h: 7 }]);
+    expect(r[0]!.chimneys).toEqual([{ col: 5, row: 4 }]);
+    const bad = validateFloorplan(house({ roofs: [{ name: "x", rooms: ["store"] }] })).join("\n");
+    expect(bad).toContain('names room "store", which is in a cellar');
+  });
+  it("surroundings are checked against the ground floor, not the cellar", () => {
+    const p = house({ surroundings: { features: [{ kind: "road", x: 1, y: 12, w: 22, h: 2 }, { kind: "trees", x: 1, y: 1, w: 2, h: 2 }] } });
+    expect(validateFloorplan(p)).toEqual([]); // the cellar store covers x1..13,y1..9 underground, but features are surface
+    const bad = validateFloorplan(house({ surroundings: { features: [{ kind: "well", x: 5, y: 4, w: 1, h: 1 }] } })).join("\n");
+    expect(bad).toContain('overlaps the house (room "bar")');
+  });
+  it("the top-level walls and lights are those of the ground floor", () => {
+    const g = buildGeometry(house());
+    if (!g.ok) throw new Error(g.errors.join());
+    expect(g.walls).toBe(g.floors[2]!.walls);
+    expect(g.lights).toBe(g.floors[2]!.lights);
+  });
+});

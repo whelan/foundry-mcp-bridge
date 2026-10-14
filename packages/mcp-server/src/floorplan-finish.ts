@@ -121,7 +121,7 @@ export async function finishFloorplan(
   }
 
   steps.push("scene");
-  const scene = await runCreateScene(transport, { name: plan.name, width, height, gridSize: plan.pxPerCell, gridDistance: plan.feetPerCell, background: floorSrcs[0] } as never, opts);
+  const scene = await runCreateScene(transport, { name: plan.name, width, height, gridSize: plan.pxPerCell, gridDistance: plan.feetPerCell, background: floorSrcs[plan.groundFloor] } as never, opts);
   if (!scene.ok) return { ...scene, steps: [...steps, ...scene.steps] };
   const sceneId = (scene.data as { _id: string })._id;
   const vision = await runUpdateDocument(transport, { documentType: "Scene", id: sceneId, data: { tokenVision: true } } as never, opts);
@@ -136,7 +136,7 @@ export async function finishFloorplan(
   const levelIds = [first._id];
   const ground = await runUpdateEmbedded(
     transport,
-    { parentType: "Scene", parentId: sceneId, embeddedName: "Level", data: [{ _id: first._id, name: apply.floors[0]!.name, "elevation.bottom": 0, "elevation.top": FLOOR_HEIGHT, "background.src": floorSrcs[0]!, sort: 0 }] },
+    { parentType: "Scene", parentId: sceneId, embeddedName: "Level", data: [{ _id: first._id, name: apply.floors[0]!.name, "elevation.bottom": FLOOR_HEIGHT * (0 - plan.groundFloor), "elevation.top": FLOOR_HEIGHT * (1 - plan.groundFloor), "background.src": floorSrcs[0]!, sort: 0 }] },
     opts,
   );
   if (!ground.ok) return { ...ground, steps: [...steps, ...ground.steps] };
@@ -147,7 +147,7 @@ export async function finishFloorplan(
         parentType: "Scene",
         parentId: sceneId,
         embeddedName: "Level",
-        data: apply.floors.slice(1).map((f, k) => ({ name: f.name, sort: k + 1, elevation: { bottom: FLOOR_HEIGHT * (k + 1), top: FLOOR_HEIGHT * (k + 2) }, background: { src: floorSrcs[k + 1]! } })),
+        data: apply.floors.slice(1).map((f, k) => ({ name: f.name, sort: k + 1, elevation: { bottom: FLOOR_HEIGHT * (k + 1 - plan.groundFloor), top: FLOOR_HEIGHT * (k + 2 - plan.groundFloor) }, background: { src: floorSrcs[k + 1]! } })),
         fields: ["_id", "name"],
       } as never,
       opts,
@@ -196,7 +196,7 @@ export async function finishFloorplan(
             color: "#e6be3c",
             shapes: [{ type: "rectangle", x: at.x, y: at.y, width: s.w * size, height: s.h * size, rotation: 0, hole: false }],
             levels: [levelIds[s.from]!, levelIds[s.to]!],
-            elevation: { bottom: FLOOR_HEIGHT * s.from, top: FLOOR_HEIGHT * (s.to + 1) },
+            elevation: { bottom: FLOOR_HEIGHT * (s.from - plan.groundFloor), top: FLOOR_HEIGHT * (s.to + 1 - plan.groundFloor) },
             behaviors: [{ type: "changeLevel", name: "Change level", system: { movementActions: ["walk"] } }],
           };
         }),
@@ -225,8 +225,8 @@ export async function finishFloorplan(
           y: at.y,
           width,
           height,
-          elevation: FLOOR_HEIGHT * (r.top + 1),
-          levels: levelIds.slice(0, r.top + 1),
+          elevation: FLOOR_HEIGHT * (r.top + 1 - plan.groundFloor),
+          levels: levelIds.slice(plan.groundFloor, r.top + 1),
           texture: { src: r.src, anchorX: 0, anchorY: 0 },
           occlusion: { modes: [OCCLUSION_FADE, OCCLUSION_VISION], alpha: 0 },
         })),
@@ -261,6 +261,7 @@ export async function finishFloorplan(
       sceneId,
       src: floorSrcs[0],
       levels: apply.floors.map((f, i) => ({ id: levelIds[i]!, name: f.name })),
+      groundFloor: plan.groundFloor,
       stairs: apply.stairs.length,
       roof,
       roofs,

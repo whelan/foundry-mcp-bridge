@@ -137,3 +137,32 @@ describe("doorways in the prompt", () => {
     expect(buildConstructionText(p)).not.toContain("iron-banded");
   });
 });
+
+describe("cellars in the prompt", () => {
+  const house = FloorplanSchema.parse({
+    name: "C", cols: 12, rows: 8, pxPerCell: 50,
+    floors: [{ name: "Ground", rooms: [{ id: "a", x: 3, y: 2, w: 4, h: 3 }], openings: [{ room: "a", side: "s", at: 1, kind: "door" }] }, { name: "Upstairs", rooms: [{ id: "u", x: 3, y: 2, w: 4, h: 3 }] }],
+    cellars: [{ name: "Wine cellar", rooms: [{ id: "c", x: 0, y: 0, w: 12, h: 5, furnishings: ["wine racks"] }] }],
+    stairs: [{ at: [3, 3], dir: "e", length: 2 }, { at: [4, 2], dir: "s", length: 2, from: -1, style: "stone" }],
+    surroundings: { ground: "frost-hardened mud", features: [] },
+  });
+  const g = (() => { const x = buildGeometry(house); if (!x.ok) throw new Error(x.errors.join()); return x; })();
+  it("tells the painter it is underground and that outside the rooms is earth, not grass", () => {
+    const t = buildFloorplanPrompt(house, 0, g.stairs);
+    expect(t).toContain("underground Wine cellar, a cellar beneath the building");
+    expect(t).toMatch(/solid earth and rock/);
+    expect(t).not.toMatch(/green area outside is grass/);
+    expect(t).not.toContain("frost-hardened mud"); // the yard is a surface thing
+    expect(t).toContain("wine racks");
+  });
+  it("the ground floor still gets the grass, the yard and a storey count that leaves the cellar out", () => {
+    const t = buildFloorplanPrompt(house, 1, g.stairs);
+    expect(t).toContain("green area outside is grass");
+    expect(t).toContain("frost-hardened mud");
+    expect(t).toContain("2-storey building");
+  });
+  it("describes a stair between the cellar and the ground floor on both", () => {
+    expect(buildFloorplanPrompt(house, 0, g.stairs)).toMatch(/rough stone staircase/);
+    expect(buildFloorplanPrompt(house, 1, g.stairs)).toMatch(/top of a staircase|stair opening/);
+  });
+});

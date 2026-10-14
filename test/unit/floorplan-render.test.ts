@@ -303,3 +303,31 @@ describe("renderRoofWing", () => {
     expect(guide(tower).px(2 * 50 + 25, 2 * 50 + 25)).toEqual(B);
   });
 });
+
+describe("renderGuide: cellars", () => {
+  const house = FloorplanSchema.parse({
+    name: "C", cols: 12, rows: 8, pxPerCell: 50,
+    floors: [{ name: "G", rooms: [{ id: "a", x: 3, y: 2, w: 4, h: 3 }], openings: [{ room: "a", side: "s", at: 1, kind: "door" }] }],
+    cellars: [{ name: "Cellar", rooms: [{ id: "c", x: 0, y: 0, w: 12, h: 5 }] }],
+    stairs: [{ at: [4, 2], dir: "s", length: 2, from: -1 }],
+    surroundings: { features: [{ kind: "road", x: 0, y: 6, w: 12, h: 1 }] },
+  });
+  const geo = (() => { const g = buildGeometry(house); if (!g.ok) throw new Error(g.errors.join()); return g; })();
+  const guide = (floor: number) => decode(renderGuide(house, geo.floors[floor]!.walls, { floor, stairs: geo.stairs }));
+  it("outside the rooms of a cellar is solid earth, over the whole picture, with no grass and no road", () => {
+    const cellar = guide(0);
+    expect(cellar.px(11 * 50 + 25, 7 * 50 + 25)).toEqual([68, 52, 38, 255]); // far corner, outside any room
+    expect(cellar.px(5 * 50, 6 * 50 + 25)).toEqual([68, 52, 38, 255]); // where the road is on the surface
+    expect(cellar.px(5 * 50, 1 * 50 + 25)).not.toEqual([68, 52, 38, 255]); // inside the cellar room
+  });
+  it("a cellar room can fill the whole width of the picture", () => {
+    const cellar = guide(0);
+    expect(cellar.px(0 * 50 + 25, 1 * 50 + 25)).toEqual([217, 201, 168, 255]);
+    expect(cellar.px(11 * 50 + 25, 1 * 50 + 25)).toEqual([217, 201, 168, 255]);
+  });
+  it("the ground floor keeps grass and its surroundings; the surface features are not painted below", () => {
+    const ground = guide(1);
+    expect(ground.px(11 * 50, 7 * 50 + 25)).toEqual([96, 112, 84, 255]);
+    expect(ground.px(5 * 50, 6 * 50 + 25)).toEqual([150, 120, 80, 255]); // the road
+  });
+});
