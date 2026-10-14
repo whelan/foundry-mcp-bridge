@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { FloorplanSchema, buildGeometry } from "../../packages/shared/src/index.js";
-import { buildFloorplanPrompt, buildRoofPrompt } from "../../packages/mcp-server/src/floorplan-tools.js";
+import { buildFloorplanPrompt, buildRoofPrompt, buildSurroundingsText, describePlace } from "../../packages/mcp-server/src/floorplan-tools.js";
 
 const input = {
   name: "Tower", cols: 16, rows: 10, pxPerCell: 50,
@@ -41,5 +41,32 @@ describe("buildRoofPrompt", () => {
     expect(p).toMatch(/white/i);
     expect(p).toMatch(/black/i);
     expect(p).not.toMatch(/furnish/i);
+  });
+});
+
+describe("surroundings in the prompt", () => {
+  const surroundings = {
+    ground: "frost-hardened mud with dead grass", mood: "misty dusk",
+    features: [
+      { kind: "road", x: 0, y: 12, w: 24, h: 2, note: "rutted cart road with puddles" },
+      { kind: "trees", x: 18, y: 0, w: 4, h: 4 },
+    ],
+  };
+  it("describes the ground, the mood and every feature with its colour and place (ground floor only)", () => {
+    const p = plan({ cols: 24, rows: 16, surroundings });
+    const ground = buildFloorplanPrompt(p, 0, stairsOf(p));
+    expect(ground).toContain("frost-hardened mud with dead grass");
+    expect(ground).toContain("misty dusk");
+    expect(ground).toMatch(/tan-brown area is a road: rutted cart road with puddles, running east-west, in the south of the picture/);
+    expect(ground).toMatch(/dark green area is trees.*north-east/);
+    expect(buildFloorplanPrompt(p, 1, stairsOf(p))).not.toContain("frost-hardened");
+  });
+  it("adds nothing without surroundings", () => {
+    expect(buildSurroundingsText(plan())).toBe("");
+    expect(buildFloorplanPrompt(plan(), 0, stairsOf(plan()))).not.toContain("Surroundings");
+  });
+  it("describes places in words", () => {
+    expect(describePlace({ kind: "well", x: 7, y: 4, w: 2, h: 2 }, 16, 10)).toBe("in the middle of the picture");
+    expect(describePlace({ kind: "path", x: 0, y: 2, w: 2, h: 6 }, 16, 10)).toBe("running north-south, in the west of the picture");
   });
 });
