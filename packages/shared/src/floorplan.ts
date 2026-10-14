@@ -93,6 +93,44 @@ export const SurroundingsSchema = z.object({
   features: z.array(SurroundingFeatureSchema).max(40).default([]).describe("Rectangles in grid cells outside the house; later ones paint over earlier ones"),
 });
 
+const WallBuildSchema = z.object({
+  thickness: z.number().min(0.1).max(5).optional().describe("Thickness in feet"),
+  material: z.string().min(1).optional().describe('What it is made of, e.g. "fieldstone with lime wash" or "plastered timber partition"'),
+});
+
+/** How this particular house is built; per house, so a hovel, a manor and a crypt look different. */
+export const ConstructionSchema = z.object({
+  exterior: WallBuildSchema.optional().describe("The outer walls (default 0.6 ft)"),
+  interior: WallBuildSchema.optional().describe("The walls between rooms (default 0.3 ft, thinner than the outer walls)"),
+  doors: z
+    .object({
+      style: z.enum(DOOR_STYLES).optional().describe("Default door look for every door that does not name its own style"),
+      tone: z.string().optional().describe("Default tone for those doors, e.g. dark, ashen, rusty"),
+      look: z.string().optional().describe('What the painter draws, e.g. "iron-banded planks with a heavy latch"'),
+    })
+    .optional(),
+  windows: z.object({ look: z.string().min(1).optional().describe('e.g. "small leaded diamond panes behind rotten shutters"') }).optional(),
+});
+
+export const DEFAULT_EXTERIOR_FEET = 0.6;
+export const DEFAULT_INTERIOR_FEET = 0.3;
+
+/** The construction with defaults filled in. */
+export function resolveConstruction(plan: { construction?: z.infer<typeof ConstructionSchema> }) {
+  const c = plan.construction;
+  return {
+    exterior: { thickness: c?.exterior?.thickness ?? DEFAULT_EXTERIOR_FEET, material: c?.exterior?.material },
+    interior: { thickness: c?.interior?.thickness ?? DEFAULT_INTERIOR_FEET, material: c?.interior?.material },
+    doors: { style: c?.doors?.style, tone: c?.doors?.tone, look: c?.doors?.look },
+    windows: { look: c?.windows?.look },
+  };
+}
+
+/** Wall thickness in pixels of the blueprint (never under 3). Doors and windows are drawn exactly this thick. */
+export function wallThicknessPx(plan: { pxPerCell: number; feetPerCell: number }, feet: number): number {
+  return Math.max(3, Math.round((feet / plan.feetPerCell) * plan.pxPerCell));
+}
+
 export const FloorplanBaseSchema = z.object({
   name: z.string().min(1),
   style: z.string().min(1).default("fantasy house"),
@@ -105,6 +143,7 @@ export const FloorplanBaseSchema = z.object({
   lights: z.array(FloorplanLightSchema).optional(),
   floors: z.array(FloorSchema).min(1).max(4).optional().describe("Several floors, index 0 is the ground floor"),
   stairs: z.array(StairSchema).default([]),
+  construction: ConstructionSchema.optional().describe("Wall thickness and material, door and window look for this house"),
   surroundings: SurroundingsSchema.optional().describe("The yard, roads and nature around the house (painted on the ground floor only; the picture is cols x rows, so leave a margin)"),
   roof: z.boolean().default(true),
   roofStyle: z.string().min(1).default("thatched roof"),
@@ -315,7 +354,7 @@ function openingEdges(r: Room, o: Opening): Edge[] {
 
 const KIND_OF: Record<Opening["kind"], WallKind> = { door: "door", secretDoor: "secretDoor", window: "window" };
 
-function floorGeometry(floor: Floor, isGround: boolean): { ok: true; walls: WallSegment[]; lights: PlacedLight[] } | { ok: false; errors: string[] } {
+function floorGeometry(floor: Floor, isGround: boolean, doorDefaults: { style?: Opening["style"]; tone?: string } = {}): { ok: true; walls: WallSegment[]; lights: PlacedLight[] } | { ok: false; errors: string[] } {
   const errors: string[] = [];
   const rooms = new Map(floor.rooms.map((r) => [r.id, r]));
   const roomsPerEdge = new Map<string, number>();
@@ -349,8 +388,8 @@ function floorGeometry(floor: Floor, isGround: boolean): { ok: true; walls: Wall
       seg.doorOptions = {
         double: o.double ?? o.width >= 2,
         ...(o.animation && { animation: o.animation }),
-        ...(o.style && { style: o.style }),
-        ...(o.tone && { tone: o.tone }),
+        ...((o.style ?? doorDefaults.style) && { style: o.style ?? doorDefaults.style }),
+        ...((o.tone ?? (o.style ? undefined : doorDefaults.tone)) && { tone: o.tone ?? doorDefaults.tone }),
         ...(o.texture && { texture: o.texture }),
         ...(o.flip !== undefined && { flip: o.flip }),
         ...(o.locked !== undefined && { locked: o.locked }),
@@ -410,7 +449,7 @@ export function buildGeometry(
   const floors: FloorGeometry[] = [];
   for (let i = 0; i < plan.floors.length; i++) {
     const f = plan.floors[i]!;
-    const g = floorGeometry(f, i === 0);
+    const g = floorGeometry(f, i === 0, resolveConstruction(plan).doors);
     if (!g.ok) return { ok: false, errors: plan.floors.length > 1 ? g.errors.map((e) => `floor "${f.name}": ${e}`) : g.errors };
     floors.push({ name: f.name, walls: g.walls, lights: g.lights });
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FloorplanSchema, validateFloorplan, buildGeometry, type FloorplanInput } from "./floorplan.js";
+import { FloorplanSchema, validateFloorplan, buildGeometry, resolveConstruction, wallThicknessPx, type FloorplanInput } from "./floorplan.js";
 
 const base = (over: Partial<FloorplanInput> = {}): FloorplanInput => ({
   name: "Cottage",
@@ -310,5 +310,38 @@ describe("surroundings", () => {
   });
   it("rejects an unknown kind", () => {
     expect(() => cottage([{ kind: "lava", x: 0, y: 12, w: 2, h: 2 }])).toThrow();
+  });
+});
+
+describe("construction", () => {
+  const house = (construction?: Record<string, unknown>) =>
+    FloorplanSchema.parse(base({ ...(construction ? { construction } : {}), openings: [{ room: "hall", side: "w", at: 3, kind: "door" }, { room: "hall", side: "s", at: 2, kind: "door", style: "stone" }] } as never));
+  it("defaults: outer walls thicker than the walls between rooms", () => {
+    const c = resolveConstruction(house());
+    expect(c.exterior.thickness).toBe(0.6);
+    expect(c.interior.thickness).toBe(0.3);
+    expect(c.interior.thickness).toBeLessThan(c.exterior.thickness);
+  });
+  it("takes thickness, material and looks per house", () => {
+    const c = resolveConstruction(house({ exterior: { thickness: 2, material: "fieldstone" }, interior: { thickness: 0.5 }, doors: { look: "iron-banded" }, windows: { look: "arrow slits" } }));
+    expect(c).toMatchObject({ exterior: { thickness: 2, material: "fieldstone" }, interior: { thickness: 0.5 }, doors: { look: "iron-banded" }, windows: { look: "arrow slits" } });
+  });
+  it("rejects a silly thickness", () => {
+    expect(() => house({ interior: { thickness: 0 } })).toThrow();
+    expect(() => house({ exterior: { thickness: 9 } })).toThrow();
+  });
+  it("wallThicknessPx scales with the grid and never drops under 3", () => {
+    expect(wallThicknessPx({ pxPerCell: 100, feetPerCell: 5 }, 0.6)).toBe(12);
+    expect(wallThicknessPx({ pxPerCell: 50, feetPerCell: 5 }, 0.1)).toBe(3);
+  });
+  it("a house-wide door style fills in doors that name none and leaves the others alone", () => {
+    const g = buildGeometry(house({ doors: { style: "metal", tone: "rusty" } }));
+    if (!g.ok) throw new Error(g.errors.join());
+    const doors = g.walls.filter((w) => w.kind === "door");
+    const west = doors.find((d) => d.x1 === 1)!;
+    const south = doors.find((d) => d.y1 === 9)!;
+    expect(west.doorOptions).toMatchObject({ style: "metal", tone: "rusty" });
+    expect(south.doorOptions).toMatchObject({ style: "stone" });
+    expect(south.doorOptions?.tone).toBeUndefined();
   });
 });

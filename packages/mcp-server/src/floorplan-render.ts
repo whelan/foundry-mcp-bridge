@@ -6,7 +6,7 @@
 import { deflateSync } from "node:zlib";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { SURROUNDING_STYLE, type Floorplan, type PlacedLight, type PlacedStair, type WallSegment } from "@foundry-mcp-bridge/shared";
+import { SURROUNDING_STYLE, resolveConstruction, wallThicknessPx, type Floorplan, type PlacedLight, type PlacedStair, type WallSegment } from "@foundry-mcp-bridge/shared";
 
 const run = promisify(execFile);
 
@@ -130,10 +130,30 @@ export function renderGuide(plan: Floorplan, walls: WallSegment[], opts: { floor
   }
   plan.floors[floor]!.rooms.forEach((room, i) => r.fillRect(room.x * px, room.y * px, room.w * px, room.h * px, FLOORS[i % FLOORS.length]!));
   drawStairs(r, (opts.stairs ?? []).filter((s) => s.from === floor || s.to === floor), px, false);
-  const t = Math.max(4, Math.round(px * 0.12));
+  // Outer walls and the walls between rooms differ per house; a door or window is exactly as thick as the wall it sits in.
+  const build = resolveConstruction(plan);
+  const tOuter = wallThicknessPx(plan, build.exterior.thickness);
+  const tInner = wallThicknessPx(plan, build.interior.thickness);
+  const roomsPerEdge = new Map<string, number>();
+  const edgeId = (o: "h" | "v", x: number, y: number) => `${o}:${x}:${y}`;
+  for (const room of plan.floors[floor]!.rooms) {
+    for (let i = 0; i < room.w; i++) for (const y of [room.y, room.y + room.h]) roomsPerEdge.set(edgeId("h", room.x + i, y), (roomsPerEdge.get(edgeId("h", room.x + i, y)) ?? 0) + 1);
+    for (let j = 0; j < room.h; j++) for (const x of [room.x, room.x + room.w]) roomsPerEdge.set(edgeId("v", x, room.y + j), (roomsPerEdge.get(edgeId("v", x, room.y + j)) ?? 0) + 1);
+  }
   for (const w of walls) {
     const colour = w.kind === "door" ? DOOR : w.kind === "secretDoor" ? SECRET : w.kind === "window" ? WINDOW : WALL;
-    drawSegment(r, w, px, t, colour);
+    const horizontal = w.y1 === w.y2;
+    const from = horizontal ? Math.min(w.x1, w.x2) : Math.min(w.y1, w.y2);
+    const to = horizontal ? Math.max(w.x1, w.x2) : Math.max(w.y1, w.y2);
+    for (let u = from; u < to; u++) {
+      const exterior = roomsPerEdge.get(horizontal ? edgeId("h", u, w.y1) : edgeId("v", w.x1, u)) === 1;
+      const t = exterior ? tOuter : tInner;
+      const piece: WallSegment = horizontal ? { ...w, x1: u, x2: u + 1 } : { ...w, y1: u, y2: u + 1 };
+      // Plain walls overshoot by half a thickness so corners close; doors and windows stay inside their gap.
+      if (w.kind === "wall") drawSegment(r, piece, px, t, colour);
+      else if (horizontal) r.fillRect(u * px, w.y1 * px - t / 2, px, t, colour);
+      else r.fillRect(w.x1 * px - t / 2, u * px, t, px, colour);
+    }
   }
   return r.toPng();
 }
