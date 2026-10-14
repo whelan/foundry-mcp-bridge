@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z, ZodError } from "zod";
-import { FloorplanBaseSchema, FloorplanSchema, SURROUNDING_STYLE, buildGeometry, type Floorplan, type PlacedStair, type SurroundingFeature } from "@foundry-mcp-bridge/shared";
+import { FloorplanBaseSchema, FloorplanSchema, SURROUNDING_STYLE, buildGeometry, resolveConstruction, type Floorplan, type PlacedStair, type SurroundingFeature } from "@foundry-mcp-bridge/shared";
 import type { PipelineOptions, ToolOutcome } from "./reliability.js";
 import type { RelayTransport } from "./relay-transport.js";
 import { runGetWorldInfo, showImageFilename } from "./tools.js";
@@ -50,6 +50,19 @@ export function buildSurroundingsText(plan: Floorplan): string {
   );
 }
 
+/** How the walls, doors and windows are built in this house, in words for the painter. */
+export function buildConstructionText(plan: Floorplan): string {
+  const c = resolveConstruction(plan);
+  const ft = (n: number) => `${Math.round(n * 100) / 100} ft`;
+  return (
+    `Construction: the outer walls are about ${ft(c.exterior.thickness)} thick${c.exterior.material ? `, ${c.exterior.material}` : ""}; ` +
+    `the walls between rooms are about ${ft(c.interior.thickness)} thick${c.interior.material ? `, ${c.interior.material}` : ""} and are clearly thinner than the outer walls: draw each dark bar of the blueprint at exactly its own thickness. ` +
+    (c.doors.look ? `Doors: ${c.doors.look}. ` : "") +
+    (c.windows.look ? `Windows: ${c.windows.look}. ` : "") +
+    "Doors and windows are exactly as thick as the wall they sit in: never draw a door, frame, sill or pane wider than its wall."
+  );
+}
+
 export function buildFloorplanPrompt(plan: Floorplan, floor = 0, stairs: PlacedStair[] = []): string {
   const f = plan.floors[floor]!;
   const rooms = f.rooms
@@ -68,6 +81,7 @@ export function buildFloorplanPrompt(plan: Floorplan, floor = 0, stairs: PlacedS
     `Paint a ${plan.style}${multi ? ` (this is the ${f.name} of a ${plan.floors.length}-storey building)` : ""} as a strictly top-down orthographic floorplan for a tabletop RPG map, exactly over the attached blueprint. ` +
     "Keep every wall, doorway and window exactly where the blueprint has it, and keep the image the same size and proportions. " +
     "Brown bars are doors, light-blue bars are windows (draw glass), the green area outside is grass or ground.\n\n" +
+    `${buildConstructionText(plan)}\n\n` +
     (stairText ? `${stairText}\n\n` : "") +
     (floor === 0 && plan.surroundings ? `${buildSurroundingsText(plan)}\n\n` : "") +
     `Rooms:\n${rooms}\n\n` +

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { FloorplanSchema, buildGeometry } from "../../packages/shared/src/index.js";
-import { buildFloorplanPrompt, buildRoofPrompt, buildSurroundingsText, describePlace } from "../../packages/mcp-server/src/floorplan-tools.js";
+import { buildFloorplanPrompt, buildRoofPrompt, buildSurroundingsText, describePlace, buildConstructionText } from "../../packages/mcp-server/src/floorplan-tools.js";
 
 const input = {
   name: "Tower", cols: 16, rows: 10, pxPerCell: 50,
@@ -68,5 +68,22 @@ describe("surroundings in the prompt", () => {
   it("describes places in words", () => {
     expect(describePlace({ kind: "well", x: 7, y: 4, w: 2, h: 2 }, 16, 10)).toBe("in the middle of the picture");
     expect(describePlace({ kind: "path", x: 0, y: 2, w: 2, h: 6 }, 16, 10)).toBe("running north-south, in the west of the picture");
+  });
+});
+
+describe("construction in the prompt", () => {
+  it("always says the walls between rooms are thinner and that doors and windows are as thick as their wall", () => {
+    const text = buildFloorplanPrompt(plan(), 0, stairsOf(plan()));
+    expect(text).toMatch(/outer walls are about 0\.6 ft thick/);
+    expect(text).toMatch(/between rooms are about 0\.3 ft thick.*thinner than the outer walls/);
+    expect(text).toMatch(/exactly as thick as the wall they sit in/);
+  });
+  it("carries this house's materials and door and window looks", () => {
+    const p = plan({ construction: { exterior: { thickness: 2, material: "fieldstone" }, interior: { thickness: 0.5, material: "wattle and daub" }, doors: { look: "iron-banded planks" }, windows: { look: "arrow slits" } } });
+    const text = buildConstructionText(p);
+    expect(text).toContain("about 2 ft thick, fieldstone");
+    expect(text).toContain("about 0.5 ft thick, wattle and daub");
+    expect(text).toContain("Doors: iron-banded planks.");
+    expect(text).toContain("Windows: arrow slits.");
   });
 });

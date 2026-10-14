@@ -181,3 +181,29 @@ describe("renderGuide: surroundings", () => {
     expect(img.px(4 * 50 + 25, 4 * 50 + 25)).toEqual([96, 112, 84, 255]);
   });
 });
+
+describe("renderGuide: wall thickness", () => {
+  const house = FloorplanSchema.parse({
+    name: "W", cols: 12, rows: 6, pxPerCell: 50,
+    rooms: [{ id: "a", x: 1, y: 1, w: 5, h: 4 }, { id: "b", x: 6, y: 1, w: 5, h: 4 }],
+    openings: [{ room: "a", side: "w", at: 1, kind: "door" }, { room: "a", side: "e", at: 2, kind: "door" }, { room: "b", side: "n", at: 1, kind: "window" }],
+    construction: { exterior: { thickness: 1.2 }, interior: { thickness: 0.4 } }, // 12 px and 4 px
+  });
+  const geo = (() => { const g = buildGeometry(house); if (!g.ok) throw new Error(g.errors.join()); return g; })();
+  const img = decode(renderGuide(house, geo.floors[0]!.walls, { floor: 0 }));
+  /** Pixels along x on row y that are not the room fill or the ground. */
+  const across = (y: number, x0: number, x1: number) => { let n = 0; for (let x = x0; x < x1; x++) { const p = img.px(x, y) as number[]; if (p[0]! < 60 || (p[0] === 139 && p[1] === 90) || (p[0] === 150 && p[2] === 230)) n++; } return n; };
+  it("draws the walls between rooms thinner than the outer walls", () => {
+    const outer = across(1 * 50 + 10, 1 * 50 - 15, 1 * 50 + 15 );
+    const inner = across(4 * 50, 6 * 50 - 15, 6 * 50 + 15);
+    expect(outer).toBeGreaterThanOrEqual(11);
+    expect(inner).toBeLessThanOrEqual(5);
+    expect(inner).toBeGreaterThanOrEqual(3);
+  });
+  it("draws a door in an inner wall exactly as thick as that wall, and one in an outer wall as thick as the outer wall", () => {
+    const innerDoor = across(1 * 50 + 2 * 50 + 25, 6 * 50 - 15, 6 * 50 + 15); // door on x=6, row 3 (y 150..200)
+    const outerDoor = across(1 * 50 + 1 * 50 + 25, 1 * 50 - 15, 1 * 50 + 15);   // door on x=1, row 2
+    expect(innerDoor).toBe(4);
+    expect(outerDoor).toBe(12);
+  });
+});
