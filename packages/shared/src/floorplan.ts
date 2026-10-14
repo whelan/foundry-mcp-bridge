@@ -52,7 +52,16 @@ export const FloorSchema = z.object({
   lights: z.array(FloorplanLightSchema).default([]),
 });
 
+/** What kind of stair: the blueprint draws it differently and the painter is told what it is. */
+export const STAIR_STYLES = ["plain", "grand", "stone", "ladder", "spiral"] as const;
+export type StairStyle = (typeof STAIR_STYLES)[number];
+
 export const StairSchema = z.object({
+  style: z
+    .enum(STAIR_STYLES)
+    .default("plain")
+    .describe("plain wooden stair (default), grand (wide, balustrades, carpet runner; width 2+), stone, ladder (width 1) or spiral (square footprint, 2x2 or more)"),
+  look: z.string().min(1).optional().describe('Painter text, e.g. "black marble with a worn red carpet" or "rotting steps with a missing tread"'),
   at: z.tuple([z.number().int().min(0), z.number().int().min(0)]).describe("[col, row] of the top-left cell of the stair"),
   dir: z.enum(["n", "e", "s", "w"]).describe("The direction you walk to go UP"),
   length: z.number().int().min(2).default(3).describe("Cells along dir"),
@@ -191,11 +200,13 @@ export interface PlacedStair {
   w: number;
   h: number;
   dir: Stair["dir"];
+  style: StairStyle;
+  look?: string;
 }
 
 export function placeStair(s: Stair): PlacedStair {
   const horizontal = s.dir === "e" || s.dir === "w";
-  return { from: s.from, to: s.from + 1, x: s.at[0], y: s.at[1], w: horizontal ? s.length : s.width, h: horizontal ? s.width : s.length, dir: s.dir };
+  return { from: s.from, to: s.from + 1, x: s.at[0], y: s.at[1], w: horizontal ? s.length : s.width, h: horizontal ? s.width : s.length, dir: s.dir, style: s.style, ...(s.look && { look: s.look }) };
 }
 
 function validateFloor(plan: { cols: number; rows: number }, floor: Floor, prefix: string): string[] {
@@ -250,6 +261,10 @@ function validateStairs(plan: { floors: Floor[]; stairs: Stair[] }): string[] {
       errors.push(`stair ${i} joins floor ${st.from} to a floor that does not exist`);
       return;
     }
+    const sx = plan.stairs[i]!;
+    if (sx.style === "grand" && sx.width < 2) errors.push(`stair ${i}: a grand stair needs width 2 or more`);
+    if (sx.style === "ladder" && sx.width !== 1) errors.push(`stair ${i}: a ladder has width 1`);
+    if (sx.style === "spiral" && sx.length !== sx.width) errors.push(`stair ${i}: a spiral stair needs a square footprint (length equal to width)`);
     if (!roomHolding(lower, st) || !roomHolding(upper, st)) {
       errors.push(`stair ${i} must lie inside a single room on both floors it joins`);
       return;

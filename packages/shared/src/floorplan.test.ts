@@ -234,7 +234,7 @@ describe("floors", () => {
 describe("stairs", () => {
   it("places a stair footprint (dir e: length runs along x) joining floor 0 and 1", () => {
     const g = buildGeometry(two());
-    expect(g.ok && g.stairs).toEqual([{ from: 0, to: 1, x: 5, y: 1, w: 3, h: 1, dir: "e" }]);
+    expect(g.ok && g.stairs).toEqual([{ from: 0, to: 1, x: 5, y: 1, w: 3, h: 1, dir: "e", style: "plain" }]);
   });
 
   it("dir n/s runs along y", () => {
@@ -343,5 +343,23 @@ describe("construction", () => {
     expect(west.doorOptions).toMatchObject({ style: "metal", tone: "rusty" });
     expect(south.doorOptions).toMatchObject({ style: "stone" });
     expect(south.doorOptions?.tone).toBeUndefined();
+  });
+});
+
+describe("stair styles", () => {
+  it("defaults to plain and carries style and look onto the placed stair", () => {
+    const g = buildGeometry(two({ stairs: [{ at: [2, 1], dir: "s", length: 3, width: 2, style: "grand", look: "black marble" }] }));
+    expect(g.ok && g.stairs[0]).toMatchObject({ style: "grand", look: "black marble" });
+  });
+  it("a grand stair needs width 2, a ladder width 1, a spiral a square footprint", () => {
+    const err = (st: Record<string, unknown>) => { const o = buildGeometry(two({ stairs: [st as never] })); return o.ok ? "" : o.errors.join(" "); };
+    expect(err({ at: [2, 1], dir: "s", length: 3, width: 1, style: "grand" })).toMatch(/grand stair needs width 2/);
+    expect(err({ at: [2, 1], dir: "s", length: 3, width: 2, style: "ladder" })).toMatch(/ladder has width 1/);
+    expect(err({ at: [2, 1], dir: "s", length: 3, width: 2, style: "spiral" })).toMatch(/spiral stair needs a square/);
+    expect(err({ at: [2, 1], dir: "s", length: 2, width: 2, style: "spiral" })).toBe("");
+    expect(err({ at: [2, 1], dir: "s", length: 3, width: 1, style: "ladder" })).toBe("");
+  });
+  it("rejects an unknown style", () => {
+    expect(() => two({ stairs: [{ at: [2, 1], dir: "s", style: "escalator" } as never] })).toThrow();
   });
 });

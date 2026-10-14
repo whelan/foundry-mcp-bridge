@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z, ZodError } from "zod";
-import { FloorplanBaseSchema, FloorplanSchema, SURROUNDING_STYLE, buildGeometry, resolveConstruction, type Floorplan, type PlacedStair, type SurroundingFeature } from "@foundry-mcp-bridge/shared";
+import { FloorplanBaseSchema, FloorplanSchema, SURROUNDING_STYLE, buildGeometry, resolveConstruction, type Floorplan, type PlacedStair, type StairStyle, type SurroundingFeature } from "@foundry-mcp-bridge/shared";
 import type { PipelineOptions, ToolOutcome } from "./reliability.js";
 import type { RelayTransport } from "./relay-transport.js";
 import { runGetWorldInfo, showImageFilename } from "./tools.js";
@@ -63,6 +63,15 @@ export function buildConstructionText(plan: Floorplan): string {
   );
 }
 
+/** What the painter draws for each kind of stair: the climb on the lower floor, and the opening where it arrives on the upper one. */
+export const STAIR_PHRASE: Record<StairStyle, { climb: string; top: string }> = {
+  plain: { climb: "a plain wooden staircase with simple treads and one handrail", top: "the stair opening with a simple wooden balustrade" },
+  grand: { climb: "a grand staircase with carved balustrades on both sides and a carpet runner down the middle", top: "the stair opening framed by a carved balustrade, with a carpeted landing" },
+  stone: { climb: "a rough stone staircase with worn, uneven steps", top: "the stair opening with worn stone steps and a low stone parapet" },
+  ladder: { climb: "a steep wooden ladder with rungs and two rails, leaning up to a hatch", top: "a hatch in the floor with the ladder coming through it" },
+  spiral: { climb: "a tight spiral staircase around a central post, seen from above", top: "the top of a spiral staircase with a railing around the round opening" },
+};
+
 export function buildFloorplanPrompt(plan: Floorplan, floor = 0, stairs: PlacedStair[] = []): string {
   const f = plan.floors[floor]!;
   const rooms = f.rooms
@@ -71,8 +80,10 @@ export function buildFloorplanPrompt(plan: Floorplan, floor = 0, stairs: PlacedS
   const multi = plan.floors.length > 1;
   const stairText = stairs
     .map((s) => {
-      if (s.from === floor) return `The yellow area with treads is a staircase leading up: paint a wooden staircase climbing toward the ${COMPASS[s.dir]} side.`;
-      if (s.to === floor) return `The yellow area is the top of a staircase coming up from below: paint the stair opening with a balustrade, the stairs descending toward the ${OPPOSITE[s.dir]} side.`;
+      const ph = STAIR_PHRASE[s.style];
+      const extra = s.look ? ` (${s.look})` : "";
+      if (s.from === floor) return `The yellow area with treads is a staircase leading up: paint ${ph.climb}${extra}, climbing toward the ${COMPASS[s.dir]} side.`;
+      if (s.to === floor) return `The yellow area is the top of a staircase coming up from below: paint ${ph.top}${extra}, the stairs descending toward the ${OPPOSITE[s.dir]} side.`;
       return "";
     })
     .filter(Boolean)

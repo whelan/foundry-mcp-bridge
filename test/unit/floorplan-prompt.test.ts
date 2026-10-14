@@ -87,3 +87,18 @@ describe("construction in the prompt", () => {
     expect(text).toContain("Windows: arrow slits.");
   });
 });
+
+describe("stair styles in the prompt", () => {
+  const styled = (style: string, look?: string) => plan({ stairs: [{ at: [4, 3], dir: "e", length: 3, width: style === "grand" ? 2 : 1, style, ...(look ? { look } : {}) }] });
+  it("describes each style on the lower floor and at the top", () => {
+    for (const [style, climb, top] of [["plain", /plain wooden staircase/, /simple wooden balustrade/], ["grand", /grand staircase.*carpet runner/, /carved balustrade.*carpeted landing/], ["stone", /rough stone staircase/, /stone parapet/], ["ladder", /steep wooden ladder/, /hatch in the floor/]] as const) {
+      const p = styled(style);
+      expect(buildFloorplanPrompt(p, 0, stairsOf(p))).toMatch(climb);
+      expect(buildFloorplanPrompt(p, 1, stairsOf(p))).toMatch(top);
+    }
+  });
+  it("adds the look", () => {
+    const p = styled("grand", "black marble with a worn red carpet");
+    expect(buildFloorplanPrompt(p, 0, stairsOf(p))).toContain("(black marble with a worn red carpet)");
+  });
+});

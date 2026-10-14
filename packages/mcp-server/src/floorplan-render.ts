@@ -92,6 +92,8 @@ const FLOORS: Rgba[] = [[217, 201, 168, 255], [201, 190, 170, 255], [208, 186, 1
 
 const STAIR: Rgba = [230, 190, 60, 255];
 const STAIR_TREAD: Rgba = [120, 90, 30, 255];
+const STAIR_RAIL: Rgba = [70, 40, 20, 255];
+const STAIR_CARPET: Rgba = [190, 60, 50, 255];
 const OV_STAIR: Rgba = [230, 60, 230, 255];
 
 /** A stair as a yellow block with treads, or (for the overlay) just its outline. */
@@ -108,9 +110,57 @@ function drawStairs(r: Raster, stairs: PlacedStair[], px: number, outline: boole
     r.fillRect(s.x * px, s.y * px, s.w * px, s.h * px, STAIR);
     const horizontal = s.dir === "e" || s.dir === "w";
     const steps = horizontal ? s.w : s.h;
-    for (let i = 1; i < steps; i++) {
-      if (horizontal) r.fillRect((s.x + i) * px - 1, s.y * px, 3, s.h * px, STAIR_TREAD);
-      else r.fillRect(s.x * px, (s.y + i) * px - 1, s.w * px, 3, STAIR_TREAD);
+    const x0 = s.x * px;
+    const y0 = s.y * px;
+    const W = s.w * px;
+    const H = s.h * px;
+    if (s.style === "spiral") {
+      // A round stair around a post: ring, spokes, post.
+      const cx = x0 + W / 2;
+      const cy = y0 + H / 2;
+      const rad = Math.min(W, H) / 2;
+      r.fillCircle(cx, cy, rad - 2, STAIR_TREAD);
+      r.fillCircle(cx, cy, rad - 5, STAIR);
+      for (let a = 0; a < 8; a++) {
+        const ang = (a * Math.PI) / 4;
+        for (let d = rad * 0.2; d < rad - 4; d += 1) r.fillRect(cx + Math.cos(ang) * d - 1, cy + Math.sin(ang) * d - 1, 3, 3, STAIR_TREAD);
+      }
+      r.fillCircle(cx, cy, Math.max(4, rad * 0.18), STAIR_TREAD);
+      continue;
+    }
+    // Treads: coarse for stone, fine and thin for a ladder (rungs), normal otherwise.
+    const tread = s.style === "stone" ? 5 : 3;
+    const count = s.style === "ladder" ? steps * 3 : steps;
+    for (let i = 1; i < count; i++) {
+      const at = (i * (horizontal ? W : H)) / count;
+      if (horizontal) r.fillRect(x0 + at - tread / 2, y0, tread, H, STAIR_TREAD);
+      else r.fillRect(x0, y0 + at - tread / 2, W, tread, STAIR_TREAD);
+    }
+    const rail = Math.max(4, Math.round(px * 0.08));
+    if (s.style === "grand") {
+      // A carpet runner down the middle and a balustrade along both long sides.
+      if (horizontal) {
+        r.fillRect(x0, y0 + H * 0.3, W, H * 0.4, STAIR_CARPET);
+        r.fillRect(x0, y0, W, rail, STAIR_RAIL);
+        r.fillRect(x0, y0 + H - rail, W, rail, STAIR_RAIL);
+      } else {
+        r.fillRect(x0 + W * 0.3, y0, W * 0.4, H, STAIR_CARPET);
+        r.fillRect(x0, y0, rail, H, STAIR_RAIL);
+        r.fillRect(x0 + W - rail, y0, rail, H, STAIR_RAIL);
+      }
+    } else if (s.style === "ladder") {
+      // Two rails; the rungs are the fine treads above.
+      if (horizontal) {
+        r.fillRect(x0, y0 + H * 0.15, W, 3, STAIR_RAIL);
+        r.fillRect(x0, y0 + H * 0.85 - 3, W, 3, STAIR_RAIL);
+      } else {
+        r.fillRect(x0 + W * 0.15, y0, 3, H, STAIR_RAIL);
+        r.fillRect(x0 + W * 0.85 - 3, y0, 3, H, STAIR_RAIL);
+      }
+    } else if (s.style === "plain") {
+      // One handrail along the long side.
+      if (horizontal) r.fillRect(x0, y0, W, 3, STAIR_RAIL);
+      else r.fillRect(x0, y0, 3, H, STAIR_RAIL);
     }
   }
 }

@@ -134,7 +134,7 @@ describe("stairs and roof drawing", () => {
 
   it("renderOverlay outlines stairs", () => {
     const p = stairPlan(2);
-    const img = decode(renderOverlay(p, [], [], [{ from: 0, to: 1, x: 2, y: 2, w: 3, h: 1, dir: "e" }]));
+    const img = decode(renderOverlay(p, [], [], [{ from: 0, to: 1, x: 2, y: 2, w: 3, h: 1, dir: "e", style: "plain" }]));
     expect(img.px(2 * 50 + 2, 2 * 50 + 25)![3]).toBeGreaterThan(0);
     expect(img.px(2 * 50 + 25, 2 * 50 + 25)![3]).toBe(0);
   });
@@ -205,5 +205,30 @@ describe("renderGuide: wall thickness", () => {
     const outerDoor = across(1 * 50 + 1 * 50 + 25, 1 * 50 - 15, 1 * 50 + 15);   // door on x=1, row 2
     expect(innerDoor).toBe(4);
     expect(outerDoor).toBe(12);
+  });
+});
+
+describe("renderGuide: stair styles", () => {
+  const house = (style: string, w = 1, length = 3) => FloorplanSchema.parse({
+    name: "S", cols: 10, rows: 8, pxPerCell: 50,
+    floors: [{ name: "G", rooms: [{ id: "a", x: 1, y: 1, w: 8, h: 6 }], openings: [{ room: "a", side: "s", at: 1, kind: "door" }] }, { name: "U", rooms: [{ id: "b", x: 1, y: 1, w: 8, h: 6 }] }],
+    stairs: [{ at: [3, 2], dir: "s", length, width: w, style }],
+  });
+  const guide = (p: ReturnType<typeof house>) => { const g = buildGeometry(p); if (!g.ok) throw new Error(g.errors.join()); return decode(renderGuide(p, g.floors[0]!.walls, { floor: 0, stairs: g.stairs })); };
+  it("a grand stair has a carpet runner and balustrades, a plain stair neither", () => {
+    const grand = guide(house("grand", 2));
+    expect(grand.px(3 * 50 + 50, 2 * 50 + 75)).toEqual([190, 60, 50, 255]); // carpet down the middle
+    expect(grand.px(3 * 50 + 2, 2 * 50 + 75)).toEqual([70, 40, 20, 255]); // balustrade on the long side
+    const plain = guide(house("plain"));
+    expect(plain.px(3 * 50 + 25, 2 * 50 + 75)).not.toEqual([190, 60, 50, 255]);
+  });
+  it("a spiral stair draws a ring with a post at its centre", () => {
+    const spiral = guide(house("spiral", 2, 2));
+    expect(spiral.px(3 * 50 + 50, 2 * 50 + 50)).toEqual([120, 90, 30, 255]); // the post
+    expect(spiral.px(3 * 50 + 50, 2 * 50 + 25)).not.toEqual([230, 190, 60, 255]); // spokes/ring are not plain yellow here
+  });
+  it("a ladder has rails and fine rungs", () => {
+    const ladder = guide(house("ladder"));
+    expect(ladder.px(3 * 50 + 9, 2 * 50 + 40)).toEqual([70, 40, 20, 255]); // rail at 15% of the width
   });
 });
