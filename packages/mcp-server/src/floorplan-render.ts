@@ -6,7 +6,7 @@
 import { deflateSync } from "node:zlib";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { SURROUNDING_STYLE, resolveConstruction, wallThicknessPx, type Floorplan, type PlacedLight, type PlacedStair, type WallSegment } from "@foundry-mcp-bridge/shared";
+import { SURROUNDING_STYLE, resolveConstruction, wallThicknessPx, type ResolvedRoof, type Floorplan, type PlacedLight, type PlacedStair, type WallSegment } from "@foundry-mcp-bridge/shared";
 
 const run = promisify(execFile);
 
@@ -55,6 +55,12 @@ export class Raster {
     for (let py = Math.max(0, Math.floor(cy - r)); py <= Math.min(this.height - 1, Math.ceil(cy + r)); py++)
       for (let px = Math.max(0, Math.floor(cx - r)); px <= Math.min(this.width - 1, Math.ceil(cx + r)); px++)
         if ((px - cx) ** 2 + (py - cy) ** 2 <= r * r) this.data.set(c, (py * this.width + px) * 4);
+  }
+  /** A line of the given thickness, drawn as overlapping discs. */
+  drawLine(x1: number, y1: number, x2: number, y2: number, thickness: number, c: Rgba): void {
+    const len = Math.max(1, Math.hypot(x2 - x1, y2 - y1));
+    const r = thickness / 2;
+    for (let i = 0; i <= len; i++) this.fillCircle(x1 + ((x2 - x1) * i) / len, y1 + ((y2 - y1) * i) / len, r, c);
   }
   toPng(): Buffer {
     const row = 1 + this.width * 4;
@@ -208,14 +214,53 @@ export function renderGuide(plan: Floorplan, walls: WallSegment[], opts: { floor
   return r.toPng();
 }
 
-/** White = under the roof (every room of every floor plus an eave), black = open sky. Also the roof's transparency mask. */
-export function renderRoofGuide(plan: Floorplan, footprint: Array<{ x: number; y: number; w: number; h: number }>, eaveCells = 0.4): Buffer {
+const ROOF_LINE: Rgba = [150, 150, 150, 255];
+const ROOF_CHIMNEY: Rgba = [70, 70, 70, 255];
+
+/**
+ * One roof over one wing, at scene size. `mask` is pure white (under this roof, eave included) on black, and
+ * is also the roof's transparency; `guide` is the same plus thin grey roof lines (ridges, hips) and dark
+ * chimney squares for the painter. The eave never runs over a room of another roof.
+ */
+export function renderRoofWing(plan: Floorplan, roof: ResolvedRoof, others: ResolvedRoof[] = []): { guide: Buffer; mask: Buffer } {
   const px = plan.pxPerCell;
-  const r = new Raster(plan.cols * px, plan.rows * px);
-  r.fillRect(0, 0, r.width, r.height, [0, 0, 0, 255]);
-  const eave = eaveCells * px;
-  for (const f of footprint) r.fillRect(f.x * px - eave, f.y * px - eave, f.w * px + 2 * eave, f.h * px + 2 * eave, [255, 255, 255, 255]);
-  return r.toPng();
+  const eave = roof.eaveCells * px;
+  const draw = (withLines: boolean): Buffer => {
+    const r = new Raster(plan.cols * px, plan.rows * px);
+    r.fillRect(0, 0, r.width, r.height, [0, 0, 0, 255]);
+    for (const f of roof.rects) r.fillRect(f.x * px - eave, f.y * px - eave, f.w * px + 2 * eave, f.h * px + 2 * eave, [255, 255, 255, 255]);
+    for (const o of others) for (const f of o.rects) r.fillRect(f.x * px, f.y * px, f.w * px, f.h * px, [0, 0, 0, 255]);
+    if (!withLines) return r.toPng();
+    const line = Math.max(2, Math.round(px * 0.04));
+    for (const f of roof.rects) {
+      const x0 = f.x * px, y0 = f.y * px, w = f.w * px, h = f.h * px;
+      const cx = x0 + w / 2, cy = y0 + h / 2;
+      const along = roof.ridge ? roof.ridge === "ew" : w >= h; // ridge runs east-west when true
+      if (roof.shape === "flat") continue;
+      if (roof.shape === "conical") {
+        for (let k = 0; k < 8; k++) r.drawLine(cx, cy, cx + Math.cos((k * Math.PI) / 4) * (Math.min(w, h) / 2), cy + Math.sin((k * Math.PI) / 4) * (Math.min(w, h) / 2), line, ROOF_LINE);
+      } else if (roof.shape === "domed") {
+        const rad = Math.min(w, h) / 2;
+        for (const k of [1, 0.66, 0.33]) for (let a = 0; a < 72; a++) r.fillCircle(cx + Math.cos((a * Math.PI) / 36) * rad * k, cy + Math.sin((a * Math.PI) / 36) * rad * k, line / 2, ROOF_LINE);
+      } else {
+        // gabled (or unspecified): one ridge along the long axis; hipped: shorter ridge plus four hips to the corners.
+        const inset = roof.shape === "hipped" ? Math.min(w, h) / 2 : px * 0.25;
+        const rx1 = along ? x0 + inset : cx, rx2 = along ? x0 + w - inset : cx;
+        const ry1 = along ? cy : y0 + inset, ry2 = along ? cy : y0 + h - inset;
+        r.drawLine(rx1, ry1, rx2, ry2, line, ROOF_LINE);
+        if (roof.shape === "hipped") {
+          r.drawLine(x0, y0, rx1, ry1, line, ROOF_LINE);
+          r.drawLine(x0 + w, y0, rx2, ry1, line, ROOF_LINE);
+          r.drawLine(x0, y0 + h, rx1, ry2, line, ROOF_LINE);
+          r.drawLine(x0 + w, y0 + h, rx2, ry2, line, ROOF_LINE);
+        }
+      }
+    }
+    const chim = Math.round(px * 0.4);
+    for (const c of roof.chimneys) r.fillRect(c.col * px + (px - chim) / 2, c.row * px + (px - chim) / 2, chim, chim, ROOF_CHIMNEY);
+    return r.toPng();
+  };
+  return { guide: draw(true), mask: draw(false) };
 }
 
 const OV_WALL: Rgba = [255, 40, 40, 255];

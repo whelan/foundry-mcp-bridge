@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FloorplanSchema, buildGeometry } from "../../packages/shared/src/index.js";
+import { FloorplanSchema, buildGeometry, resolveRoofs } from "../../packages/shared/src/index.js";
 import { buildFloorplanPrompt, buildRoofPrompt, buildSurroundingsText, describePlace, buildConstructionText } from "../../packages/mcp-server/src/floorplan-tools.js";
 
 const input = {
@@ -100,5 +100,27 @@ describe("stair styles in the prompt", () => {
   it("adds the look", () => {
     const p = styled("grand", "black marble with a worn red carpet");
     expect(buildFloorplanPrompt(p, 0, stairsOf(p))).toContain("(black marble with a worn red carpet)");
+  });
+});
+
+describe("roof prompts per wing", () => {
+  const manor = plan({ roofs: [{ name: "tower", rooms: ["kitchen"], style: "copper roof", shape: "conical", look: "green with a weathervane", condition: "weathered", chimneys: false }, { name: "flat bit", rooms: ["hall"], shape: "flat" }] });
+  const [, tower, flat] = resolveRoofs(manor).length === 3 ? resolveRoofs(manor) : [undefined, undefined, undefined] as never;
+  it("says the style, condition, shape, look and what the wing is", () => {
+    const text = buildRoofPrompt(manor, tower!);
+    expect(text).toContain("copper roof (weathered)");
+    expect(text).toContain("roof over the tower");
+    expect(text).toContain("a conical roof rising to a point");
+    expect(text).toContain("green with a weathervane");
+    expect(text).toContain("no chimneys");
+    expect(text).toContain("thin grey lines");
+  });
+  it("a flat roof has no roof lines to follow", () => {
+    expect(buildRoofPrompt(manor, flat!)).not.toContain("grey lines");
+  });
+  it("the default roof still reads as before", () => {
+    const base = buildRoofPrompt(plan({ roofStyle: "slate roof" }));
+    expect(base).toContain("slate roof");
+    expect(base).not.toContain("roof over the");
   });
 });
