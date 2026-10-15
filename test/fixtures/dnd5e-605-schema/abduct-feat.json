@@ -20,16 +20,25 @@
     "identifier": "abduct",
     "source": {
       "revision": 1,
-      "rules": "2024"
+      "rules": "2024",
+      "book": "SRD 5.2",
+      "bookPlaceholder": "SRD 5.2",
+      "label": "SRD 5.2",
+      "value": "SRD 5.2",
+      "slug": "srd-52"
     },
     "enchant": {},
     "prerequisites": {
-      "level": null
+      "level": null,
+      "items": [],
+      "repeatable": false
     },
     "properties": [
       "trait"
     ],
-    "requirements": ""
+    "requirements": "",
+    "advancement": {},
+    "crewed": false
   },
   "folder": "L9Zgr8qAPc3ngKhb",
   "img": "icons/magic/movement/portal-vortex-orange.webp",
@@ -43,7 +52,8 @@
     "createdTime": 1733432292956,
     "modifiedTime": 1734456868770,
     "lastModifiedBy": "dnd5ebuilder0000",
-    "exportSource": null
+    "exportSource": null,
+    "compendiumSource": null
   },
   "sort": 100000,
   "ownership": {

@@ -13,7 +13,7 @@ const fresh: CompendiumDocument & { uuid: string } = {
   img: "icons/archmage.webp",
   system: {
     attributes: {
-      ac: { flat: 12, calc: "natural" },
+      ac: { flat: 12, calcs: ["natural"], override: null },
       hp: { value: 40, max: 99, temp: 5, tempmax: 0, formula: "18d8" },
       exhaustion: 2,
     },

@@ -1,7 +1,7 @@
 /**
  * Builders for dnd5e Activities (dnd5e 3.0+ / verified against 5.3.3).
  *
- * Shapes are copied from real documents in test/fixtures/dnd5e-53-schema/
+ * Shapes are copied from real documents in test/fixtures/dnd5e-605-schema/
  * (see its README): attack follows rotting-touch-weapon.json (flat bonus),
  * save follows Cold Breath in white-dragon-wyrmling-full.json, utility
  * follows Multiattack in the same file. Do not invent fields — if a shape
@@ -80,7 +80,7 @@ export function parseTemplate(description: string): AreaTemplate | undefined {
 /**
  * dnd5e's activation-type enum (CONFIG.DND5E.activityActivationTypes)
  * includes "legendary"/"lair" alongside "action"/"reaction"; none of our
- * committed fixtures (test/fixtures/dnd5e-53-schema/) include a legendary or
+ * committed fixtures (test/fixtures/dnd5e-605-schema/) include a legendary or
  * lair action, so this pairing isn't fixture-verified the way the rest of
  * this file is — confirm against a live world in M6b if a legendary-action
  * statblock is imported.

@@ -136,7 +136,8 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
   const abilities_ = statblock.abilities_;
   const prof = getProficiencyBonus(statblock.challenge.cr);
 
-  // Skill proficiencies as multipliers; statblock-vs-derived deltas go in bonuses.check.
+  // Skill proficiencies as multipliers; statblock-vs-derived deltas go in roll.bonus
+  // (dnd5e 6.0 moved it from bonuses.check; the old path is migrated away, not stored).
   // `ability` must be written explicitly: dnd5e's SkillData default is NOT
   // per-skill, so omitting it made Perception roll off DEX (found live in M6b —
   // the sheet showed Perception +4 instead of +3; the wight fixture stores
@@ -151,7 +152,7 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
     skills[abbrev] = {
       value: 1,
       ability,
-      ...(delta === 0 ? {} : { bonuses: { check: String(delta) } }),
+      ...(delta === 0 ? {} : { roll: { bonus: String(delta) } }),
     };
   }
 
@@ -165,7 +166,7 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
     if (!abilities[key]) continue;
     const delta = save.bonus - (getAbilityMod(abilities_, key) + prof);
     abilities[key]!.proficient = 1;
-    if (delta !== 0) abilities[key]!.bonuses = { save: String(delta) };
+    if (delta !== 0) abilities[key]!.save = { roll: { bonus: String(delta) } };
   }
 
   const dr = splitKnown(statblock.traits.damageResistances, KNOWN_DAMAGE_TYPES);
@@ -190,10 +191,13 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
   // Build system object
   const system: Record<string, unknown> = {
     attributes: {
-      ac: {
-        flat: statblock.attributes.armorClass,
-        calc: /natural/i.test(statblock.data.ac_class ?? "") ? "natural" : "flat",
-      },
+      // dnd5e 6.0.5 no longer stores `ac.calc` (it is a derived, non-persisted field), so a
+      // write that carries it can never read back. Natural armor is calcs ["natural"] with the
+      // value in `flat`; any other stated AC is a fixed `override`, which is what the system's own
+      // migration turns the old calc "flat" into.
+      ac: /natural/i.test(statblock.data.ac_class ?? "")
+        ? { flat: statblock.attributes.armorClass, calcs: ["natural"] }
+        : { flat: statblock.attributes.armorClass, override: statblock.attributes.armorClass },
       hp: {
         value: statblock.attributes.hitPoints.value,
         max: statblock.attributes.hitPoints.value,
@@ -202,11 +206,12 @@ export function statblockToFoundryActor(statblock: StatblockData, resolvedImageP
       movement: {
         // Only the speeds the statblock has — officials omit absent speeds
         // entirely (ghast: walk only; wyrmling: walk/fly/swim/burrow).
-        // Values as strings: dnd5e 5.3.3 stores speeds as strings (ghast
-        // walk: "30") and coerces numbers on write, so a numeric 30 reads
-        // back as "30" and fails the pipeline's strict read-back verify
-        // (found live in M6a; the mock stores writes verbatim and can't see it).
-        ...Object.fromEntries(
+        // Values as strings: dnd5e stores speeds as strings (ghast walk: "30") and
+        // coerces numbers on write, so a numeric 30 reads back as "30" and fails the
+        // pipeline's strict read-back verify (found live in M6a; the mock stores
+        // writes verbatim and can't see it). Since dnd5e 6.0 they live under
+        // `movement.speeds`; the flat `movement.walk` is migrated away and not stored.
+        speeds: Object.fromEntries(
           Object.entries(statblock.attributes.speed)
             .filter(([, v]) => typeof v === "number" && v > 0)
             .map(([k, v]) => [k, String(v)]),

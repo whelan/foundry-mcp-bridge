@@ -481,7 +481,10 @@ export function buildNpcUpdatePatch(
   // System fields — statblock-owned subset
   const attributes = sys.attributes as Record<string, any>;
   patch["system.attributes.ac.flat"] = attributes.ac?.flat;
-  patch["system.attributes.ac.calc"] = attributes.ac?.calc;
+  // dnd5e 6.0: natural armor is calcs ["natural"], a fixed AC is `override`; both are rewritten so a
+  // refresh can switch an actor from one to the other (null clears an old override).
+  patch["system.attributes.ac.calcs"] = attributes.ac?.calcs ?? ["unarmored", "armored"];
+  patch["system.attributes.ac.override"] = attributes.ac?.override ?? null;
   patch["system.attributes.hp.max"] = attributes.hp?.max;
   patch["system.attributes.hp.formula"] = attributes.hp?.formula;
   patch["system.attributes.movement"] = attributes.movement;

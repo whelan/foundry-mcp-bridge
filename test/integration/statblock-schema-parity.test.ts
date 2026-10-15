@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { parseStatblock, statblockToFoundryActor } from "@foundry-mcp-bridge/statblock-sync";
 
 const load = (f: string) =>
-  JSON.parse(fs.readFileSync(`test/fixtures/dnd5e-53-schema/${f}`, "utf-8"));
+  JSON.parse(fs.readFileSync(`test/fixtures/dnd5e-605-schema/${f}`, "utf-8"));
 const ghast = load("ghast-full.json");
 const wyrmling = load("white-dragon-wyrmling-full.json");
 const rottingTouch = load("rotting-touch-weapon.json");
@@ -54,7 +54,7 @@ function expectKeySubset(emitted: unknown, official: unknown, path = "$"): void 
   for (const [k, v] of Object.entries(emitted as Record<string, unknown>)) {
     expect(
       Object.prototype.hasOwnProperty.call(official as object, k),
-      `${path}.${k} is a real dnd5e 5.3.3 key`,
+      `${path}.${k} is a real dnd5e 6.0.5 key`,
     ).toBe(true);
     expectKeySubset(v, (official as Record<string, unknown>)[k], `${path}.${k}`);
   }
@@ -65,7 +65,7 @@ const itemByName = (doc: { items: any[] }, name: string) =>
 const activityOfType = (item: any, type: string): any =>
   Object.values(item.system.activities as Record<string, any>).find((a) => a.type === type);
 
-describe("emitted shapes are key-subsets of real dnd5e 5.3.3 documents", () => {
+describe("emitted shapes are key-subsets of real dnd5e 6.0.5 documents", () => {
   const ghastClaw = itemByName(ghast, "Claw");
   const stench = itemByName(ghast, "Stench");
   const breathOfficial = itemByName(wyrmling, "Cold Breath");

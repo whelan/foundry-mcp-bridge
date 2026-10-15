@@ -2,8 +2,9 @@
   "_id": "mmWhiteDragonWyr",
   "name": "White Dragon Wyrmling",
   "type": "npc",
-  "img": null,
+  "img": "systems/dnd5e/tokens/thumbs/dragon/WhiteDragonWyrmling.webp",
   "system": {
+    "identifier": "white-dragon-wyrmling",
     "currency": {
       "pp": 0,
       "gp": 0,
@@ -16,10 +17,6 @@
         "value": 14,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -28,6 +25,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -39,10 +43,6 @@
         "value": 10,
         "proficient": 1,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -51,6 +51,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -62,10 +69,6 @@
         "value": 14,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -74,6 +77,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -85,10 +95,6 @@
         "value": 5,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -97,6 +103,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -108,10 +121,6 @@
         "value": 10,
         "proficient": 1,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -120,6 +129,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -131,10 +147,6 @@
         "value": 11,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -148,31 +160,17 @@
             "max": null,
             "mode": 0
           }
+        },
+        "attack": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
         }
       }
     },
     "bonuses": {
-      "mwak": {
-        "attack": "",
-        "damage": ""
-      },
-      "rwak": {
-        "attack": "",
-        "damage": ""
-      },
-      "msak": {
-        "attack": "",
-        "damage": ""
-      },
-      "rsak": {
-        "attack": "",
-        "damage": ""
-      },
-      "abilities": {
-        "check": "",
-        "save": "",
-        "skill": ""
-      },
       "spell": {
         "dc": ""
       }
@@ -187,7 +185,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -200,7 +197,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -213,7 +209,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -226,7 +221,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -239,7 +233,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -252,7 +245,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -265,7 +257,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -278,7 +269,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -291,7 +281,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -304,7 +293,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -317,7 +305,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -330,7 +317,6 @@
         },
         "value": 2,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -343,7 +329,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -356,7 +341,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -369,7 +353,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -382,7 +365,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -395,7 +377,6 @@
         },
         "value": 1,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -408,7 +389,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       }
@@ -462,22 +442,24 @@
         "roll": {
           "min": null,
           "max": null,
-          "mode": 0
-        },
-        "bonus": "@prof"
+          "mode": 0,
+          "bonus": "@prof"
+        }
       },
       "movement": {
-        "burrow": "15",
-        "fly": "60",
-        "swim": "30",
-        "walk": "30",
         "units": null,
         "hover": false,
         "ignoredDifficultTerrain": [
           "ice",
           "snow"
         ],
-        "special": ""
+        "special": "",
+        "speeds": {
+          "walk": "30",
+          "burrow": "15",
+          "fly": "60",
+          "swim": "30"
+        }
       },
       "attunement": {
         "max": 3
@@ -501,14 +483,15 @@
           "max": null,
           "mode": 0
         },
-        "bonuses": {
-          "save": ""
-        },
         "limit": 1
       },
       "ac": {
         "flat": 16,
-        "calc": "natural"
+        "calcs": [
+          "natural"
+        ],
+        "formulas": [],
+        "override": null
       },
       "hd": {
         "spent": 0
@@ -527,10 +510,7 @@
           "mode": 0
         },
         "success": 0,
-        "failure": 0,
-        "bonuses": {
-          "save": ""
-        }
+        "failure": 0
       },
       "spell": {
         "level": 0
@@ -545,7 +525,7 @@
     },
     "details": {
       "biography": {
-        "value": "",
+        "value": "<p><em>Token artwork by <a href=\"https://www.forgotten-adventures.net/\" target=\"_blank\" rel=\"noopener\">Forgotten Adventures</a>.</em></p>",
         "public": ""
       },
       "alignment": "Chaotic Evil",
@@ -630,7 +610,8 @@
         "communication": {}
       },
       "important": false
-    }
+    },
+    "rolls": {}
   },
   "prototypeToken": {
     "name": "White Dragon Wyrmling",
@@ -641,12 +622,12 @@
     "width": 1,
     "height": 1,
     "texture": {
-      "src": null,
+      "src": "systems/dnd5e/tokens/dragon/WhiteDragonWyrmling.webp",
       "anchorX": 0.5,
       "anchorY": 0.5,
       "fit": "contain",
-      "scaleX": 2,
-      "scaleY": 2,
+      "scaleX": 3,
+      "scaleY": 3,
       "tint": "#ffffff",
       "alphaThreshold": 0.75
     },
@@ -726,6 +707,416 @@
   },
   "items": [
     {
+      "_id": "mmIceWalk0000000",
+      "name": "Ice Walk",
+      "type": "feat",
+      "system": {
+        "type": {
+          "value": "monster",
+          "subtype": ""
+        },
+        "activities": {},
+        "uses": {
+          "spent": 0,
+          "recovery": [],
+          "max": ""
+        },
+        "description": {
+          "value": "<p>The [[lookup @name lowercase]]{monster} can move across and climb icy surfaces without needing to make an ability check. Additionally, &amp;Reference[Difficult Terrain] composed of ice or snow doesn't cost it extra movement.</p>",
+          "chat": ""
+        },
+        "identifier": "ice-walk",
+        "source": {
+          "revision": 1,
+          "rules": "2024",
+          "book": "",
+          "license": "CC-BY-4.0"
+        },
+        "enchant": {},
+        "prerequisites": {
+          "level": null,
+          "repeatable": false,
+          "items": []
+        },
+        "properties": [
+          "trait"
+        ],
+        "requirements": "",
+        "advancement": {},
+        "cover": null,
+        "crewed": false
+      },
+      "folder": "L9Zgr8qAPc3ngKhb",
+      "img": "icons/magic/water/water-iceberg-bubbles.webp",
+      "effects": [],
+      "flags": {},
+      "_stats": {
+        "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmIceWalk0000000",
+        "duplicateSource": null,
+        "exportSource": null,
+        "coreVersion": "14.364",
+        "systemId": "dnd5e",
+        "systemVersion": "5.3.0",
+        "lastModifiedBy": null,
+        "createdTime": null,
+        "modifiedTime": null
+      },
+      "ownership": {
+        "default": 0
+      },
+      "sort": 0
+    },
+    {
+      "_id": "mmRend0000000000",
+      "name": "Rend",
+      "type": "weapon",
+      "system": {
+        "type": {
+          "value": "natural",
+          "baseItem": ""
+        },
+        "activities": {
+          "VP3t6lmmuXKGCRwX": {
+            "_id": "VP3t6lmmuXKGCRwX",
+            "type": "attack",
+            "sort": 0,
+            "activation": {
+              "type": "action",
+              "value": null,
+              "override": false,
+              "condition": ""
+            },
+            "consumption": {
+              "scaling": {
+                "allowed": false
+              },
+              "spellSlot": true,
+              "targets": []
+            },
+            "description": {
+              "chatFlavor": "",
+              "value": ""
+            },
+            "duration": {
+              "units": "inst",
+              "concentration": false,
+              "override": false,
+              "expiry": null
+            },
+            "effects": [],
+            "range": {
+              "override": false,
+              "units": "self"
+            },
+            "target": {
+              "template": {
+                "contiguous": false,
+                "units": "ft",
+                "type": "",
+                "stationary": false
+              },
+              "affects": {
+                "choice": false,
+                "type": ""
+              },
+              "override": false,
+              "prompt": true
+            },
+            "uses": {
+              "spent": 0,
+              "recovery": [],
+              "max": ""
+            },
+            "attack": {
+              "critical": {
+                "threshold": null
+              },
+              "flat": false,
+              "type": {
+                "value": "",
+                "classification": ""
+              },
+              "ability": "",
+              "bonus": ""
+            },
+            "damage": {
+              "critical": {
+                "bonus": ""
+              },
+              "includeBase": true,
+              "parts": [
+                {
+                  "custom": {
+                    "enabled": false,
+                    "formula": ""
+                  },
+                  "number": 1,
+                  "denomination": 4,
+                  "bonus": "",
+                  "types": [
+                    "cold"
+                  ],
+                  "scaling": {
+                    "number": 1
+                  },
+                  "modifiers": []
+                }
+              ]
+            },
+            "name": "",
+            "img": null,
+            "flags": {},
+            "visibility": {
+              "level": {},
+              "requireAttunement": false,
+              "requireIdentification": false,
+              "requireMagic": false
+            },
+            "behaviors": []
+          }
+        },
+        "uses": {
+          "spent": 0,
+          "recovery": [],
+          "max": ""
+        },
+        "description": {
+          "value": "<p>[[/attack extended]]. [[/damage average extended]].</p>",
+          "chat": ""
+        },
+        "identifier": "rend",
+        "source": {
+          "revision": 1,
+          "rules": "2024",
+          "book": "",
+          "license": "CC-BY-4.0"
+        },
+        "identified": true,
+        "unidentified": {
+          "description": ""
+        },
+        "container": null,
+        "quantity": 1,
+        "weight": {
+          "value": 0,
+          "units": "lb"
+        },
+        "price": {
+          "value": 0,
+          "denomination": "gp"
+        },
+        "attunement": "",
+        "attuned": false,
+        "equipped": true,
+        "armor": {
+          "value": null
+        },
+        "cover": null,
+        "hp": {
+          "value": null,
+          "max": null,
+          "dt": null,
+          "conditions": ""
+        },
+        "ammunition": {},
+        "damage": {
+          "base": {
+            "number": 1,
+            "denomination": 8,
+            "types": [
+              "slashing"
+            ],
+            "custom": {
+              "enabled": false
+            },
+            "scaling": {
+              "number": 1
+            },
+            "bonus": "",
+            "modifiers": []
+          },
+          "versatile": {
+            "number": null,
+            "denomination": null,
+            "types": [],
+            "custom": {
+              "enabled": false
+            },
+            "scaling": {
+              "number": 1
+            },
+            "modifiers": []
+          }
+        },
+        "properties": [],
+        "proficient": null,
+        "range": {
+          "value": null,
+          "long": null,
+          "reach": null,
+          "units": "ft"
+        },
+        "mastery": "",
+        "crew": {
+          "value": []
+        },
+        "rarities": []
+      },
+      "folder": "pSCWWdqMX9eUATRJ",
+      "img": "icons/skills/melee/shield-damaged-broken-orange.webp",
+      "effects": [],
+      "flags": {
+        "dnd5e": {
+          "riders": {
+            "activity": [],
+            "effect": []
+          }
+        }
+      },
+      "_stats": {
+        "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmRend0000000000",
+        "duplicateSource": null,
+        "exportSource": null,
+        "coreVersion": "14.364",
+        "systemId": "dnd5e",
+        "systemVersion": "5.3.0",
+        "lastModifiedBy": null,
+        "createdTime": null,
+        "modifiedTime": null
+      },
+      "ownership": {
+        "default": 0
+      },
+      "sort": 1
+    },
+    {
+      "_id": "mmMultiattack000",
+      "name": "Multiattack",
+      "type": "feat",
+      "system": {
+        "type": {
+          "value": "monster",
+          "subtype": ""
+        },
+        "activities": {
+          "Ms63W7e3Mv2Margn": {
+            "type": "utility",
+            "name": "Use",
+            "_id": "Ms63W7e3Mv2Margn",
+            "sort": 0,
+            "activation": {
+              "type": "action",
+              "value": null,
+              "override": false
+            },
+            "consumption": {
+              "scaling": {
+                "allowed": false
+              },
+              "spellSlot": true,
+              "targets": []
+            },
+            "description": {
+              "value": ""
+            },
+            "duration": {
+              "units": "inst",
+              "concentration": false,
+              "override": false,
+              "expiry": null
+            },
+            "effects": [],
+            "range": {
+              "override": false,
+              "units": "self"
+            },
+            "target": {
+              "template": {
+                "contiguous": false,
+                "units": "ft",
+                "stationary": false
+              },
+              "affects": {
+                "choice": false
+              },
+              "override": false,
+              "prompt": true
+            },
+            "uses": {
+              "spent": 0,
+              "recovery": []
+            },
+            "roll": {
+              "prompt": false,
+              "visible": false
+            },
+            "img": null,
+            "flags": {},
+            "visibility": {
+              "level": {},
+              "requireAttunement": false,
+              "requireIdentification": false,
+              "requireMagic": false
+            },
+            "behaviors": []
+          }
+        },
+        "uses": {
+          "spent": 0,
+          "recovery": [],
+          "max": ""
+        },
+        "description": {
+          "value": "<p>The [[lookup @name lowercase]]{monster} makes two [[/item .mmRend0000000000]] attacks.</p>",
+          "chat": ""
+        },
+        "identifier": "multiattack",
+        "source": {
+          "revision": 1,
+          "rules": "2024",
+          "book": "",
+          "license": "CC-BY-4.0"
+        },
+        "enchant": {},
+        "prerequisites": {
+          "level": null,
+          "repeatable": false,
+          "items": []
+        },
+        "properties": [],
+        "requirements": "",
+        "advancement": {},
+        "cover": null,
+        "crewed": false
+      },
+      "folder": "4T18pEvubPMQLzvD",
+      "img": "icons/skills/melee/strike-weapons-orange.webp",
+      "effects": [],
+      "flags": {
+        "dnd5e": {
+          "riders": {
+            "activity": [],
+            "effect": []
+          }
+        }
+      },
+      "_stats": {
+        "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmMultiattack000",
+        "duplicateSource": null,
+        "exportSource": null,
+        "coreVersion": "14.364",
+        "systemId": "dnd5e",
+        "systemVersion": "5.3.0",
+        "lastModifiedBy": null,
+        "createdTime": null,
+        "modifiedTime": null
+      },
+      "ownership": {
+        "default": 0
+      },
+      "sort": -99999
+    },
+    {
       "_id": "mmColdBreath0000",
       "name": "Cold Breath",
       "type": "feat",
@@ -760,12 +1151,14 @@
               ]
             },
             "description": {
-              "chatFlavor": ""
+              "chatFlavor": "",
+              "value": ""
             },
             "duration": {
               "units": "inst",
               "concentration": false,
-              "override": false
+              "override": false,
+              "expiry": null
             },
             "effects": [],
             "range": {
@@ -779,7 +1172,8 @@
                 "units": "ft",
                 "type": "cone",
                 "size": "15",
-                "count": ""
+                "count": "",
+                "stationary": false
               },
               "affects": {
                 "choice": false,
@@ -810,7 +1204,8 @@
                   ],
                   "scaling": {
                     "number": 1
-                  }
+                  },
+                  "modifiers": []
                 }
               ],
               "onSave": "half"
@@ -822,7 +1217,8 @@
               "dc": {
                 "calculation": "con",
                 "formula": ""
-              }
+              },
+              "visible": true
             },
             "name": "",
             "img": null,
@@ -832,7 +1228,8 @@
               "requireAttunement": false,
               "requireIdentification": false,
               "requireMagic": false
-            }
+            },
+            "behaviors": []
           }
         },
         "uses": {
@@ -884,7 +1281,7 @@
         "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmColdBreath0000",
         "duplicateSource": null,
         "exportSource": null,
-        "coreVersion": "14.363",
+        "coreVersion": "14.364",
         "systemId": "dnd5e",
         "systemVersion": "5.3.0",
         "lastModifiedBy": null,
@@ -895,404 +1292,6 @@
         "default": 0
       },
       "sort": 3
-    },
-    {
-      "_id": "mmIceWalk0000000",
-      "name": "Ice Walk",
-      "type": "feat",
-      "system": {
-        "type": {
-          "value": "monster",
-          "subtype": ""
-        },
-        "activities": {},
-        "uses": {
-          "spent": 0,
-          "recovery": [],
-          "max": ""
-        },
-        "description": {
-          "value": "<p>The [[lookup @name lowercase]]{monster} can move across and climb icy surfaces without needing to make an ability check. Additionally, &amp;Reference[Difficult Terrain] composed of ice or snow doesn't cost it extra movement.</p>",
-          "chat": ""
-        },
-        "identifier": "ice-walk",
-        "source": {
-          "revision": 1,
-          "rules": "2024",
-          "book": "",
-          "license": "CC-BY-4.0"
-        },
-        "enchant": {},
-        "prerequisites": {
-          "level": null,
-          "repeatable": false,
-          "items": []
-        },
-        "properties": [
-          "trait"
-        ],
-        "requirements": "",
-        "advancement": {},
-        "cover": null,
-        "crewed": false
-      },
-      "folder": "L9Zgr8qAPc3ngKhb",
-      "img": "icons/magic/water/water-iceberg-bubbles.webp",
-      "effects": [],
-      "flags": {},
-      "_stats": {
-        "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmIceWalk0000000",
-        "duplicateSource": null,
-        "exportSource": null,
-        "coreVersion": "14.363",
-        "systemId": "dnd5e",
-        "systemVersion": "5.3.0",
-        "lastModifiedBy": null,
-        "createdTime": null,
-        "modifiedTime": null
-      },
-      "ownership": {
-        "default": 0
-      },
-      "sort": 0
-    },
-    {
-      "_id": "mmMultiattack000",
-      "name": "Multiattack",
-      "type": "feat",
-      "system": {
-        "type": {
-          "value": "monster",
-          "subtype": ""
-        },
-        "activities": {
-          "Ms63W7e3Mv2Margn": {
-            "type": "utility",
-            "name": "Use",
-            "_id": "Ms63W7e3Mv2Margn",
-            "sort": 0,
-            "activation": {
-              "type": "action",
-              "value": null,
-              "override": false
-            },
-            "consumption": {
-              "scaling": {
-                "allowed": false
-              },
-              "spellSlot": true,
-              "targets": []
-            },
-            "description": {},
-            "duration": {
-              "units": "inst",
-              "concentration": false,
-              "override": false
-            },
-            "effects": [],
-            "range": {
-              "override": false,
-              "units": "self"
-            },
-            "target": {
-              "template": {
-                "contiguous": false,
-                "units": "ft"
-              },
-              "affects": {
-                "choice": false
-              },
-              "override": false,
-              "prompt": true
-            },
-            "uses": {
-              "spent": 0,
-              "recovery": []
-            },
-            "roll": {
-              "prompt": false,
-              "visible": false
-            },
-            "img": null,
-            "flags": {},
-            "visibility": {
-              "level": {},
-              "requireAttunement": false,
-              "requireIdentification": false,
-              "requireMagic": false
-            }
-          }
-        },
-        "uses": {
-          "spent": 0,
-          "recovery": [],
-          "max": ""
-        },
-        "description": {
-          "value": "<p>The [[lookup @name lowercase]]{monster} makes two [[/item .mmRend0000000000]] attacks.</p>",
-          "chat": ""
-        },
-        "identifier": "multiattack",
-        "source": {
-          "revision": 1,
-          "rules": "2024",
-          "book": "",
-          "license": "CC-BY-4.0"
-        },
-        "enchant": {},
-        "prerequisites": {
-          "level": null,
-          "repeatable": false,
-          "items": []
-        },
-        "properties": [],
-        "requirements": "",
-        "advancement": {},
-        "cover": null,
-        "crewed": false
-      },
-      "folder": "4T18pEvubPMQLzvD",
-      "img": "icons/skills/melee/strike-weapons-orange.webp",
-      "effects": [],
-      "flags": {
-        "dnd5e": {
-          "riders": {
-            "activity": [],
-            "effect": []
-          }
-        }
-      },
-      "_stats": {
-        "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmMultiattack000",
-        "duplicateSource": null,
-        "exportSource": null,
-        "coreVersion": "14.363",
-        "systemId": "dnd5e",
-        "systemVersion": "5.3.0",
-        "lastModifiedBy": null,
-        "createdTime": null,
-        "modifiedTime": null
-      },
-      "ownership": {
-        "default": 0
-      },
-      "sort": -99999
-    },
-    {
-      "_id": "mmRend0000000000",
-      "name": "Rend",
-      "type": "weapon",
-      "system": {
-        "type": {
-          "value": "natural",
-          "baseItem": ""
-        },
-        "activities": {
-          "VP3t6lmmuXKGCRwX": {
-            "_id": "VP3t6lmmuXKGCRwX",
-            "type": "attack",
-            "sort": 0,
-            "activation": {
-              "type": "action",
-              "value": null,
-              "override": false,
-              "condition": ""
-            },
-            "consumption": {
-              "scaling": {
-                "allowed": false
-              },
-              "spellSlot": true,
-              "targets": []
-            },
-            "description": {
-              "chatFlavor": ""
-            },
-            "duration": {
-              "units": "inst",
-              "concentration": false,
-              "override": false
-            },
-            "effects": [],
-            "range": {
-              "override": false,
-              "units": "self"
-            },
-            "target": {
-              "template": {
-                "contiguous": false,
-                "units": "ft",
-                "type": ""
-              },
-              "affects": {
-                "choice": false,
-                "type": ""
-              },
-              "override": false,
-              "prompt": true
-            },
-            "uses": {
-              "spent": 0,
-              "recovery": [],
-              "max": ""
-            },
-            "attack": {
-              "critical": {
-                "threshold": null
-              },
-              "flat": false,
-              "type": {
-                "value": "",
-                "classification": ""
-              },
-              "ability": "",
-              "bonus": ""
-            },
-            "damage": {
-              "critical": {
-                "bonus": ""
-              },
-              "includeBase": true,
-              "parts": [
-                {
-                  "custom": {
-                    "enabled": false,
-                    "formula": ""
-                  },
-                  "number": 1,
-                  "denomination": 4,
-                  "bonus": "",
-                  "types": [
-                    "cold"
-                  ],
-                  "scaling": {
-                    "number": 1
-                  }
-                }
-              ]
-            },
-            "name": "",
-            "img": null,
-            "flags": {},
-            "visibility": {
-              "level": {},
-              "requireAttunement": false,
-              "requireIdentification": false,
-              "requireMagic": false
-            }
-          }
-        },
-        "uses": {
-          "spent": 0,
-          "recovery": [],
-          "max": ""
-        },
-        "description": {
-          "value": "<p>[[/attack extended]]. [[/damage average extended]].</p>",
-          "chat": ""
-        },
-        "identifier": "rend",
-        "source": {
-          "revision": 1,
-          "rules": "2024",
-          "book": "",
-          "license": "CC-BY-4.0"
-        },
-        "identified": true,
-        "unidentified": {
-          "description": ""
-        },
-        "container": null,
-        "quantity": 1,
-        "weight": {
-          "value": 0,
-          "units": "lb"
-        },
-        "price": {
-          "value": 0,
-          "denomination": "gp"
-        },
-        "rarity": "",
-        "attunement": "",
-        "attuned": false,
-        "equipped": true,
-        "armor": {
-          "value": null
-        },
-        "cover": null,
-        "hp": {
-          "value": null,
-          "max": null,
-          "dt": null,
-          "conditions": ""
-        },
-        "ammunition": {},
-        "damage": {
-          "base": {
-            "number": 1,
-            "denomination": 8,
-            "types": [
-              "slashing"
-            ],
-            "custom": {
-              "enabled": false
-            },
-            "scaling": {
-              "number": 1
-            },
-            "bonus": ""
-          },
-          "versatile": {
-            "number": null,
-            "denomination": null,
-            "types": [],
-            "custom": {
-              "enabled": false
-            },
-            "scaling": {
-              "number": 1
-            }
-          }
-        },
-        "properties": [],
-        "proficient": null,
-        "range": {
-          "value": null,
-          "long": null,
-          "reach": null,
-          "units": "ft"
-        },
-        "mastery": "",
-        "crew": {
-          "value": []
-        }
-      },
-      "folder": "pSCWWdqMX9eUATRJ",
-      "img": "icons/skills/melee/shield-damaged-broken-orange.webp",
-      "effects": [],
-      "flags": {
-        "dnd5e": {
-          "riders": {
-            "activity": [],
-            "effect": []
-          }
-        }
-      },
-      "_stats": {
-        "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmRend0000000000",
-        "duplicateSource": null,
-        "exportSource": null,
-        "coreVersion": "14.363",
-        "systemId": "dnd5e",
-        "systemVersion": "5.3.0",
-        "lastModifiedBy": null,
-        "createdTime": null,
-        "modifiedTime": null
-      },
-      "ownership": {
-        "default": 0
-      },
-      "sort": 1
     }
   ],
   "effects": [],
@@ -1301,7 +1300,7 @@
   "_stats": {
     "duplicateSource": null,
     "exportSource": null,
-    "coreVersion": "14.363",
+    "coreVersion": "14.364",
     "systemId": "dnd5e",
     "systemVersion": "5.3.0",
     "createdTime": 1771452717979,

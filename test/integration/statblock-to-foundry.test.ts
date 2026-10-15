@@ -44,9 +44,11 @@ describe("M4: Convert to Foundry dnd5e Actor", () => {
 
   it("sets movement from the parsed speed (strings — dnd5e coerces numbers on write)", () => {
     const system = gravemireActor.system as Record<string, any>;
-    expect(system.attributes.movement.walk).toBe("30");
-    expect(system.attributes.movement.swim).toBe("20");
+    expect(system.attributes.movement.speeds.walk).toBe("30");
+    expect(system.attributes.movement.speeds.swim).toBe("20");
     expect(system.attributes.movement.units).toBe("ft");
+    // dnd5e 6.0 migrates the flat movement.walk away and never stores it.
+    expect(system.attributes.movement.walk).toBeUndefined();
   });
 
   it("does not assume a 30ft walk speed when speed is omitted", () => {
@@ -63,6 +65,7 @@ stats: [10, 10, 10, 10, 10, 10]
 
     // Officials omit absent speeds entirely rather than emitting walk: 0.
     const system = actor.system as Record<string, any>;
+    expect(system.attributes.movement.speeds).toEqual({});
     expect(system.attributes.movement.walk).toBeUndefined();
   });
 
@@ -251,7 +254,7 @@ describe("modern dnd5e item shapes (5.3.3 Activities)", () => {
   });
 });
 
-describe("modern dnd5e actor system shapes (5.3.3)", () => {
+describe("modern dnd5e actor system shapes (6.0.5)", () => {
   const sys = gravemireActor.system as Record<string, any>;
 
   it("puts senses under attributes.senses.ranges and never emits passive Perception", () => {
@@ -262,9 +265,29 @@ describe("modern dnd5e actor system shapes (5.3.3)", () => {
     });
   });
 
-  it("uses natural-armor AC calc when the statblock says so", () => {
-    // gravemire-stalker.md: "ac: 14 (natural armor)"
-    expect(sys.attributes.ac).toEqual({ flat: 14, calc: "natural" });
+  it("uses natural-armor AC calcs when the statblock says so", () => {
+    // gravemire-stalker.md: "ac: 14 (natural armor)". dnd5e 6.0.5 does not store ac.calc
+    // (derived, not persisted), so the natural calc is calcs ["natural"] with the value in flat.
+    expect(sys.attributes.ac).toEqual({ flat: 14, calcs: ["natural"] });
+    expect(sys.attributes.ac.calc).toBeUndefined();
+  });
+
+  it("uses a fixed AC override for any other stated AC", () => {
+    // The system's own migration turns the old calc "flat" into override = flat.
+    const sb = parseStatblock("```statblock\nname: Plain\ncr: 1\nac: 12\nac_class: leather armor\nhp: 10\nspeed: 30 ft.\nstats: [10, 10, 10, 10, 10, 10]\n```\n");
+    const a = statblockToFoundryActor(sb).system as Record<string, any>;
+    expect(a.attributes.ac).toEqual({ flat: 12, override: 12 });
+    expect(a.attributes.ac.calc).toBeUndefined();
+  });
+
+  it("puts a skill or save delta in roll.bonus (dnd5e 6.0 moved it from bonuses.*)", () => {
+    // DEX 14 (+2), CR 1 (prof +2): Stealth +6 is a +2 delta over proficiency; DEX save +5 is +1 over it.
+    const sb = parseStatblock("```statblock\nname: Sneaky\ncr: 1\nac: 12\nhp: 10\nspeed: 30 ft.\nstats: [10, 14, 10, 10, 10, 10]\nsaves:\n  - dexterity: 5\nskillsaves:\n  - stealth: 6\n```\n");
+    const a = statblockToFoundryActor(sb).system as Record<string, any>;
+    expect(a.skills.ste).toEqual({ value: 1, ability: "dex", roll: { bonus: "2" } });
+    expect(a.skills.ste.bonuses).toBeUndefined();
+    expect(a.abilities.dex.save).toEqual({ roll: { bonus: "1" } });
+    expect(a.abilities.dex.bonuses).toBeUndefined();
   });
 
   it("emits damage/condition traits under traits.dr/di/dv/ci", () => {
@@ -303,9 +326,9 @@ describe("modern dnd5e actor system shapes (5.3.3)", () => {
 
   it("emits only the speeds the statblock defines", () => {
     // gravemire-stalker.md: "speed: 30 ft., swim 20 ft." — no climb: 0 noise.
-    // String values: dnd5e 5.3.3 stores speeds as strings (read-back verify
-    // fails on numeric 30 vs "30"; found live in M6a).
-    expect(sys.attributes.movement).toEqual({ walk: "30", swim: "20", units: "ft", hover: false });
+    // String values: dnd5e stores speeds as strings (read-back verify
+    // fails on numeric 30 vs "30"; found live in M6a), under movement.speeds since 6.0.
+    expect(sys.attributes.movement).toEqual({ speeds: { walk: "30", swim: "20" }, units: "ft", hover: false });
   });
 
   it("does not emit details.race (LocalDocumentField) or details.xp (derived)", () => {

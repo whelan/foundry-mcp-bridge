@@ -11999,6 +11999,31 @@ var ShowImageCommand = external_exports.object({
   /** Optional UUID of the document the image belongs to (e.g. a JournalEntryPage). */
   uuid: external_exports.string().min(1).optional()
 });
+var RunMacroCommand = external_exports.object({
+  action: external_exports.literal("runMacro"),
+  /** Macro id. Pass exactly one of `id` or `name`. */
+  id: external_exports.string().min(1).optional(),
+  /** Exact macro name; it must be unique in the world. */
+  name: external_exports.string().min(1).optional(),
+  /** Passed to the macro as its `scope` (e.g. `{ mode: "test" }`). */
+  args: external_exports.record(external_exports.unknown()).optional()
+});
+var ActivateSceneCommand = external_exports.object({
+  action: external_exports.literal("activateScene"),
+  id: external_exports.string().min(1),
+  mode: external_exports.enum(["activate", "view"]).default("activate")
+});
+var GetSceneStateCommand = external_exports.object({
+  action: external_exports.literal("getSceneState"),
+  id: external_exports.string().min(1).optional()
+});
+var ToggleConditionCommand = external_exports.object({
+  action: external_exports.literal("toggleCondition"),
+  sceneId: external_exports.string().min(1),
+  tokenId: external_exports.string().min(1),
+  statusId: external_exports.string().min(1),
+  active: external_exports.boolean().optional()
+});
 var Command = external_exports.discriminatedUnion("action", [
   CreateCommand,
   UpdateCommand,
@@ -12020,7 +12045,11 @@ var Command = external_exports.discriminatedUnion("action", [
   ImportEmbeddedFromCompendiumCommand,
   GetCompendiumDocumentCommand,
   GetChatLogCommand,
-  ShowImageCommand
+  ShowImageCommand,
+  RunMacroCommand,
+  ActivateSceneCommand,
+  GetSceneStateCommand,
+  ToggleConditionCommand
 ]);
 var CommandEnvelope = external_exports.object({
   /** Correlation id (uuid) tying a result back to its command. */
@@ -12040,6 +12069,7 @@ var ErrorCode = external_exports.enum([
   "TIMEOUT",
   "READBACK_MISMATCH",
   "UNSUPPORTED",
+  "FORBIDDEN",
   "INTERNAL"
 ]);
 var CommandError = external_exports.object({
@@ -12059,6 +12089,182 @@ var CommandResult = external_exports.discriminatedUnion("ok", [
     error: CommandError
   })
 ]);
+
+// packages/shared/dist/door-textures.js
+var DOOR_STYLES = ["wood", "stone", "metal", "portcullis"];
+
+// packages/shared/dist/scene-builders.js
+var SceneStateSchema = external_exports.object({
+  _id: external_exports.string(),
+  name: external_exports.string(),
+  active: external_exports.boolean(),
+  width: external_exports.number(),
+  height: external_exports.number(),
+  padding: external_exports.number().optional(),
+  grid: external_exports.object({
+    type: external_exports.number(),
+    size: external_exports.number().positive(),
+    distance: external_exports.number().optional(),
+    units: external_exports.string().optional()
+  }),
+  /**
+   * Pixel position of grid square (0,0) as Foundry computes it (`scene.dimensions.sceneX/Y`,
+   * including padding rounding and shifts). Token/wall/light pixels are relative to the canvas,
+   * so tools must add this to grid → pixel conversions.
+   */
+  origin: external_exports.object({ x: external_exports.number(), y: external_exports.number() }),
+  /** Pre-V14 top-level background; null on V14 scenes (see `levels`). */
+  background: external_exports.string().nullable(),
+  /** V14 levels with their own backgrounds. Which one the GM currently views is not reported. */
+  levels: external_exports.array(external_exports.object({ _id: external_exports.string(), name: external_exports.string().optional(), background: external_exports.string().nullable() })),
+  tokens: external_exports.array(external_exports.object({
+    _id: external_exports.string(),
+    name: external_exports.string().optional(),
+    x: external_exports.number(),
+    y: external_exports.number(),
+    width: external_exports.number().optional(),
+    height: external_exports.number().optional(),
+    actorId: external_exports.string().nullable().optional(),
+    hidden: external_exports.boolean().optional(),
+    disposition: external_exports.number().optional(),
+    /** Active status ids on the token's resolved actor (empty without an actor). */
+    conditions: external_exports.array(external_exports.string())
+  })),
+  walls: external_exports.array(external_exports.object({ _id: external_exports.string(), c: external_exports.array(external_exports.number()), door: external_exports.number().optional(), ds: external_exports.number().optional(), move: external_exports.number().optional(), sight: external_exports.number().optional() })),
+  lights: external_exports.array(external_exports.object({ _id: external_exports.string(), x: external_exports.number(), y: external_exports.number(), bright: external_exports.number().optional(), dim: external_exports.number().optional() })),
+  tiles: external_exports.array(external_exports.object({ _id: external_exports.string(), x: external_exports.number(), y: external_exports.number(), width: external_exports.number().optional(), height: external_exports.number().optional(), hidden: external_exports.boolean().optional(), src: external_exports.string().nullable().optional() })),
+  notes: external_exports.array(external_exports.object({ _id: external_exports.string(), x: external_exports.number(), y: external_exports.number(), entryId: external_exports.string().nullable().optional(), text: external_exports.string().optional() }))
+});
+
+// packages/shared/dist/floorplan.js
+var LIGHT_SOURCES = ["torch", "fireplace", "candle", "lantern", "daylight"];
+var DOOR_ANIMATIONS = ["swing", "slide", "swivel", "ascend", "descend"];
+var RoomSchema = external_exports.object({
+  id: external_exports.string().min(1),
+  name: external_exports.string().optional(),
+  x: external_exports.number().int().min(0),
+  y: external_exports.number().int().min(0),
+  w: external_exports.number().int().min(1),
+  h: external_exports.number().int().min(1),
+  floor: external_exports.string().optional().describe("Floor material for the painter, e.g. wooden planks"),
+  furnishings: external_exports.array(external_exports.string().min(1)).default([])
+});
+var OpeningSchema = external_exports.object({
+  room: external_exports.string().min(1),
+  side: external_exports.enum(["n", "e", "s", "w"]),
+  at: external_exports.number().int().min(0).describe("Cells from the left end (n/s walls) or the top end (e/w walls)"),
+  width: external_exports.number().int().min(1).default(1),
+  kind: external_exports.enum(["door", "window", "secretDoor"]).default("door"),
+  animation: external_exports.enum(DOOR_ANIMATIONS).optional().describe("Default follows the style: swing, slide for stone, ascend for a portcullis"),
+  style: external_exports.enum(DOOR_STYLES).optional().describe("Look of the door from Foundry's core door images (default wood)"),
+  tone: external_exports.string().optional().describe("Narrow the style to a colour, e.g. dark, walnut, light, red, ashen (wood); volcanic, earthy, redrock (stone); rusty, gray (metal)"),
+  texture: external_exports.string().optional().describe("Your own door image path; wins over style"),
+  double: external_exports.boolean().optional(),
+  flip: external_exports.boolean().optional(),
+  locked: external_exports.boolean().optional(),
+  open: external_exports.boolean().optional()
+});
+var FloorplanLightSchema = external_exports.object({
+  at: external_exports.tuple([external_exports.number().min(0), external_exports.number().min(0)]).describe("[col, row] of the cell; the light sits at its centre"),
+  source: external_exports.enum(LIGHT_SOURCES),
+  bright: external_exports.number().min(0).optional(),
+  dim: external_exports.number().min(0).optional(),
+  color: external_exports.string().optional(),
+  animation: external_exports.string().optional()
+});
+var FloorSchema = external_exports.object({
+  name: external_exports.string().min(1),
+  rooms: external_exports.array(RoomSchema).min(1).max(12),
+  openings: external_exports.array(OpeningSchema).default([]),
+  lights: external_exports.array(FloorplanLightSchema).default([])
+});
+var STAIR_STYLES = ["plain", "grand", "stone", "ladder", "spiral"];
+var StairSchema = external_exports.object({
+  style: external_exports.enum(STAIR_STYLES).default("plain").describe("plain wooden stair (default), grand (wide, balustrades, carpet runner; width 2+), stone, ladder (width 1) or spiral (square footprint, 2x2 or more)"),
+  look: external_exports.string().min(1).optional().describe('Painter text, e.g. "black marble with a worn red carpet" or "rotting steps with a missing tread"'),
+  at: external_exports.tuple([external_exports.number().int().min(0), external_exports.number().int().min(0)]).describe("[col, row] of the top-left cell of the stair"),
+  dir: external_exports.enum(["n", "e", "s", "w"]).describe("The direction you walk to go UP"),
+  length: external_exports.number().int().min(2).default(3).describe("Cells along dir"),
+  width: external_exports.number().int().min(1).default(1).describe("Cells across"),
+  from: external_exports.number().int().min(-2).default(0).describe("Lower floor: 0 is the ground floor, 1 the floor above it, -1 the first cellar, -2 the second; the stair joins from and from + 1 (from -1 is a stair between the cellar and the ground floor)")
+});
+var SURROUNDING_KINDS = ["road", "path", "yard", "field", "garden", "water", "trees", "bushes", "rocks", "fence", "well", "custom"];
+var SurroundingFeatureSchema = external_exports.object({
+  kind: external_exports.enum(SURROUNDING_KINDS),
+  x: external_exports.number().int().min(0),
+  y: external_exports.number().int().min(0),
+  w: external_exports.number().int().min(1),
+  h: external_exports.number().int().min(1),
+  note: external_exports.string().min(1).optional().describe('What it looks like, e.g. "rutted cart road with puddles"; required for kind custom')
+});
+var SurroundingsSchema = external_exports.object({
+  ground: external_exports.string().min(1).default("trampled grass and dirt").describe("What the open ground is, e.g. frost-hardened mud with dead grass"),
+  mood: external_exports.string().min(1).optional().describe("Season, weather and light the painter should show, e.g. misty dusk, bare branches"),
+  features: external_exports.array(SurroundingFeatureSchema).max(40).default([]).describe("Rectangles in grid cells outside the house; later ones paint over earlier ones")
+});
+var WallBuildSchema = external_exports.object({
+  thickness: external_exports.number().min(0.1).max(5).optional().describe("Thickness in feet"),
+  material: external_exports.string().min(1).optional().describe('What it is made of, e.g. "fieldstone with lime wash" or "plastered timber partition"')
+});
+var ConstructionSchema = external_exports.object({
+  exterior: WallBuildSchema.optional().describe("The outer walls (default 0.6 ft)"),
+  interior: WallBuildSchema.optional().describe("The walls between rooms (default 0.3 ft, thinner than the outer walls)"),
+  doors: external_exports.object({
+    style: external_exports.enum(DOOR_STYLES).optional().describe("Default door look (Foundry's door image) for every door that does not name its own style; doors are not painted, Foundry adds them"),
+    tone: external_exports.string().optional().describe("Default tone for those doors, e.g. dark, ashen, rusty")
+  }).optional(),
+  windows: external_exports.object({ look: external_exports.string().min(1).optional().describe('e.g. "small leaded diamond panes behind rotten shutters"') }).optional()
+});
+var ROOF_SHAPES = ["gabled", "hipped", "flat", "conical", "domed"];
+var RoofSchema = external_exports.object({
+  name: external_exports.string().min(1).describe('Short name, e.g. "tower" or "kitchen annex"'),
+  rooms: external_exports.array(external_exports.string().min(1)).min(1).describe("Room ids this roof covers; a room with that id on every floor is included (a roof covers the whole stack)"),
+  style: external_exports.string().min(1).optional().describe('Material and look, e.g. "slate roof"; defaults to roofStyle'),
+  look: external_exports.string().min(1).optional().describe('Extra painter text, e.g. "copper green with a weathervane"'),
+  shape: external_exports.enum(ROOF_SHAPES).optional().describe("gabled (pitched, ridge), hipped, flat, conical or domed; left to the painter when omitted"),
+  ridge: external_exports.enum(["ew", "ns"]).optional().describe("Ridge direction for gabled and hipped roofs (default: along the longer side)"),
+  eave: external_exports.number().min(0).max(6).optional().describe("How far the roof overhangs the walls, in feet (default 2)"),
+  condition: external_exports.string().min(1).optional().describe('e.g. "mossy", "missing tiles", "snow-covered", "burnt"'),
+  chimneys: external_exports.boolean().default(true).describe("Draw a chimney over each fireplace under this roof")
+});
+var FloorplanBaseSchema = external_exports.object({
+  name: external_exports.string().min(1),
+  style: external_exports.string().min(1).default("fantasy house"),
+  cols: external_exports.number().int().min(4).max(60),
+  rows: external_exports.number().int().min(4).max(60),
+  feetPerCell: external_exports.number().positive().default(5),
+  pxPerCell: external_exports.number().int().min(50).max(200).default(100),
+  rooms: external_exports.array(RoomSchema).min(1).max(12).optional().describe("Single-floor shortcut: the rooms of floor 1 (use floors for several)"),
+  openings: external_exports.array(OpeningSchema).optional(),
+  lights: external_exports.array(FloorplanLightSchema).optional(),
+  floors: external_exports.array(FloorSchema).min(1).max(4).optional().describe("Several floors, index 0 is the ground floor"),
+  cellars: external_exports.array(FloorSchema).max(2).default([]).describe("Underground floors, the first directly below the ground floor. A cellar may use the whole picture (it can run beyond the house); it has no roof, and outside its rooms is solid earth."),
+  stairs: external_exports.array(StairSchema).default([]),
+  construction: ConstructionSchema.optional().describe("Wall thickness and material, door and window look for this house"),
+  surroundings: SurroundingsSchema.optional().describe("The yard, roads and nature around the house (painted on the ground floor only; the picture is cols x rows, so leave a margin)"),
+  roof: external_exports.boolean().default(true),
+  roofs: external_exports.array(RoofSchema).max(8).default([]).describe("A separate roof per wing; rooms not named in any of them share the default roof (roofStyle)"),
+  roofStyle: external_exports.string().min(1).default("thatched roof"),
+  codex: external_exports.boolean().default(true),
+  seed: external_exports.string().optional()
+});
+var FloorplanSchema = FloorplanBaseSchema.superRefine((p, ctx) => {
+  if (p.floors && (p.rooms || p.openings || p.lights)) {
+    ctx.addIssue({ code: "custom", message: "give either floors or the single-floor rooms/openings/lights, not both" });
+  }
+  if (!p.floors && !p.rooms)
+    ctx.addIssue({ code: "custom", message: "give floors, or rooms for a single floor" });
+}).transform(({ rooms, openings, lights, floors, cellars, stairs, ...rest }) => {
+  const above = floors ?? [{ name: "Ground floor", rooms: rooms ?? [], openings: openings ?? [], lights: lights ?? [] }];
+  const c = cellars.length;
+  return {
+    ...rest,
+    // Floors from the bottom up: the deepest cellar first. `groundFloor` is the index of the one at ground level; stair `from` follows.
+    floors: [...[...cellars].reverse(), ...above],
+    groundFloor: c,
+    stairs: stairs.map((s) => ({ ...s, from: s.from + c }))
+  };
+});
 
 // packages/statblock-sync/dist/lint.js
 var LOOKS_LIKE_ATTACK = /\b(?:attack roll|weapon attack|spell attack)\b/i;

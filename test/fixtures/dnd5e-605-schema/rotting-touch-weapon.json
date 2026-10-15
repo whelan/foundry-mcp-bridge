@@ -26,22 +26,26 @@
           "targets": []
         },
         "description": {
-          "chatFlavor": ""
+          "chatFlavor": "",
+          "value": ""
         },
         "duration": {
           "units": "inst",
           "concentration": false,
-          "override": false
+          "override": false,
+          "expiry": null
         },
         "effects": [],
         "range": {
-          "override": false
+          "override": false,
+          "units": "self"
         },
         "target": {
           "template": {
             "contiguous": false,
             "units": "ft",
-            "type": ""
+            "type": "",
+            "stationary": false
           },
           "affects": {
             "choice": false,
@@ -76,7 +80,14 @@
         },
         "name": "",
         "img": "",
-        "appliedEffects": []
+        "behaviors": [],
+        "flags": {},
+        "visibility": {
+          "level": {},
+          "requireAttunement": false,
+          "requireIdentification": false,
+          "requireMagic": false
+        }
       }
     },
     "uses": {
@@ -91,7 +102,12 @@
     "identifier": "rotting-touch",
     "source": {
       "revision": 1,
-      "rules": "2024"
+      "rules": "2024",
+      "book": "SRD 5.2",
+      "bookPlaceholder": "SRD 5.2",
+      "label": "SRD 5.2",
+      "value": "SRD 5.2",
+      "slug": "srd-52"
     },
     "identified": true,
     "unidentified": {
@@ -107,7 +123,6 @@
       "value": 0,
       "denomination": "gp"
     },
-    "rarity": "",
     "attunement": "",
     "attuned": false,
     "equipped": false,
@@ -115,7 +130,6 @@
       "value": null
     },
     "cover": null,
-    "crewed": false,
     "hp": {
       "value": null,
       "max": null,
@@ -137,7 +151,8 @@
         "scaling": {
           "number": 1
         },
-        "bonus": ""
+        "bonus": "",
+        "modifiers": []
       },
       "versatile": {
         "number": null,
@@ -148,10 +163,10 @@
         },
         "scaling": {
           "number": 1
-        }
+        },
+        "modifiers": []
       }
     },
-    "magicalBonus": null,
     "properties": [],
     "proficient": null,
     "range": {
@@ -160,7 +175,11 @@
       "reach": 10,
       "units": "ft"
     },
-    "mastery": ""
+    "mastery": "",
+    "rarities": [],
+    "crew": {
+      "value": []
+    }
   },
   "folder": "pSCWWdqMX9eUATRJ",
   "img": "icons/magic/nature/beam-hand-leaves-green.webp",
@@ -181,7 +200,8 @@
     "createdTime": 1733432292956,
     "modifiedTime": 1737065561511,
     "lastModifiedBy": "dnd5ebuilder0000",
-    "exportSource": null
+    "exportSource": null,
+    "compendiumSource": null
   },
   "sort": 17200000,
   "ownership": {
