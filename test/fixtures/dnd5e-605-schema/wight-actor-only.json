@@ -2,8 +2,9 @@
   "_id": "mmWight000000000",
   "name": "Wight",
   "type": "npc",
-  "img": null,
+  "img": "systems/dnd5e/tokens/undead/Wight.webp",
   "system": {
+    "identifier": "wight",
     "currency": {
       "pp": 0,
       "gp": 0,
@@ -16,10 +17,6 @@
         "value": 15,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -28,6 +25,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -39,10 +43,6 @@
         "value": 14,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -51,6 +51,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -62,10 +69,6 @@
         "value": 16,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -74,6 +77,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -85,10 +95,6 @@
         "value": 10,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -97,6 +103,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -108,10 +121,6 @@
         "value": 13,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -120,6 +129,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -131,10 +147,6 @@
         "value": 15,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -148,31 +160,17 @@
             "max": null,
             "mode": 0
           }
+        },
+        "attack": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
         }
       }
     },
     "bonuses": {
-      "mwak": {
-        "attack": "",
-        "damage": ""
-      },
-      "rwak": {
-        "attack": "",
-        "damage": ""
-      },
-      "msak": {
-        "attack": "",
-        "damage": ""
-      },
-      "rsak": {
-        "attack": "",
-        "damage": ""
-      },
-      "abilities": {
-        "check": "",
-        "save": "",
-        "skill": ""
-      },
       "spell": {
         "dc": ""
       }
@@ -187,7 +185,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -200,7 +197,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -213,7 +209,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -226,7 +221,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -239,7 +233,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -252,7 +245,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -265,7 +257,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -278,7 +269,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -291,7 +281,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -304,7 +293,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -317,7 +305,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -330,7 +317,6 @@
         },
         "value": 1,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -343,7 +329,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -356,7 +341,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -369,7 +353,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -382,7 +365,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -395,7 +377,6 @@
         },
         "value": 1,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -408,7 +389,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       }
@@ -462,15 +442,17 @@
         "roll": {
           "min": null,
           "max": null,
-          "mode": 0
-        },
-        "bonus": "@prof"
+          "mode": 0,
+          "bonus": "@prof"
+        }
       },
       "movement": {
-        "walk": "30",
         "units": null,
         "hover": false,
-        "ignoredDifficultTerrain": []
+        "ignoredDifficultTerrain": [],
+        "speeds": {
+          "walk": "30"
+        }
       },
       "attunement": {
         "max": 3
@@ -494,14 +476,16 @@
           "max": null,
           "mode": 0
         },
-        "bonuses": {
-          "save": ""
-        },
         "limit": 1
       },
       "ac": {
         "flat": null,
-        "calc": "default"
+        "calcs": [
+          "unarmored",
+          "armored"
+        ],
+        "formulas": [],
+        "override": null
       },
       "hd": {
         "spent": 0
@@ -520,10 +504,7 @@
           "mode": 0
         },
         "success": 0,
-        "failure": 0,
-        "bonuses": {
-          "save": ""
-        }
+        "failure": 0
       },
       "spell": {
         "level": 0
@@ -538,7 +519,7 @@
     },
     "details": {
       "biography": {
-        "value": "",
+        "value": "<p><em>Token artwork by <a href=\"https://www.forgotten-adventures.net/\" target=\"_blank\" rel=\"noopener\">Forgotten Adventures</a>.</em></p>",
         "public": ""
       },
       "alignment": "Neutral Evil",
@@ -641,7 +622,8 @@
         }
       },
       "important": false
-    }
+    },
+    "rolls": {}
   },
   "prototypeToken": {
     "name": "Wight",
@@ -652,7 +634,7 @@
     "width": 1,
     "height": 1,
     "texture": {
-      "src": null,
+      "src": "systems/dnd5e/tokens/undead/Wight.webp",
       "anchorX": 0.5,
       "anchorY": 0.5,
       "fit": "contain",
@@ -735,14 +717,7 @@
     "movementAction": null,
     "depth": 1
   },
-  "items": [
-    "H1F8HwTAk3IA9UoP",
-    "mmSunlightSensit",
-    "mmMultiattack000",
-    "mmNecroticSword0",
-    "mmLifeDrain00000",
-    "mmNecroticBow000"
-  ],
+  "items": [],
   "effects": [],
   "folder": "fSNeRtZ6WOSjk4f8",
   "flags": {
@@ -753,7 +728,7 @@
   "_stats": {
     "duplicateSource": null,
     "exportSource": null,
-    "coreVersion": "14.363",
+    "coreVersion": "14.364",
     "systemId": "dnd5e",
     "systemVersion": "5.3.0",
     "createdTime": 1771452718051,

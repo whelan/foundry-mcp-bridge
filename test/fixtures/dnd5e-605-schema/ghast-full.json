@@ -2,8 +2,9 @@
   "_id": "mmGhast000000000",
   "name": "Ghast",
   "type": "npc",
-  "img": null,
+  "img": "systems/dnd5e/tokens/undead/Ghast.webp",
   "system": {
+    "identifier": "ghast",
     "currency": {
       "pp": 0,
       "gp": 0,
@@ -16,10 +17,6 @@
         "value": 16,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -28,6 +25,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -39,10 +43,6 @@
         "value": 17,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -51,6 +51,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -62,10 +69,6 @@
         "value": 10,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -74,6 +77,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -85,10 +95,6 @@
         "value": 11,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -97,6 +103,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -108,10 +121,6 @@
         "value": 10,
         "proficient": 1,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -120,6 +129,13 @@
           }
         },
         "save": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
+        },
+        "attack": {
           "roll": {
             "min": null,
             "max": null,
@@ -131,10 +147,6 @@
         "value": 8,
         "proficient": 0,
         "max": null,
-        "bonuses": {
-          "check": "",
-          "save": ""
-        },
         "check": {
           "roll": {
             "min": null,
@@ -148,31 +160,17 @@
             "max": null,
             "mode": 0
           }
+        },
+        "attack": {
+          "roll": {
+            "min": null,
+            "max": null,
+            "mode": 0
+          }
         }
       }
     },
     "bonuses": {
-      "mwak": {
-        "attack": "",
-        "damage": ""
-      },
-      "rwak": {
-        "attack": "",
-        "damage": ""
-      },
-      "msak": {
-        "attack": "",
-        "damage": ""
-      },
-      "rsak": {
-        "attack": "",
-        "damage": ""
-      },
-      "abilities": {
-        "check": "",
-        "save": "",
-        "skill": ""
-      },
       "spell": {
         "dc": ""
       }
@@ -187,7 +185,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -200,7 +197,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -213,7 +209,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -226,7 +221,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -239,7 +233,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -252,7 +245,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -265,7 +257,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -278,7 +269,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -291,7 +281,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -304,7 +293,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -317,7 +305,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -330,7 +317,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -343,7 +329,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -356,7 +341,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -369,7 +353,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -382,7 +365,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -395,7 +377,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       },
@@ -408,7 +389,6 @@
         },
         "value": 0,
         "bonuses": {
-          "check": "",
           "passive": ""
         }
       }
@@ -463,14 +443,15 @@
           "min": null,
           "max": null,
           "mode": 0
-        },
-        "bonus": ""
+        }
       },
       "movement": {
-        "walk": "30",
         "units": null,
         "hover": false,
-        "ignoredDifficultTerrain": []
+        "ignoredDifficultTerrain": [],
+        "speeds": {
+          "walk": "30"
+        }
       },
       "attunement": {
         "max": 3
@@ -494,14 +475,16 @@
           "max": null,
           "mode": 0
         },
-        "bonuses": {
-          "save": ""
-        },
         "limit": 1
       },
       "ac": {
         "flat": null,
-        "calc": "default"
+        "calcs": [
+          "unarmored",
+          "armored"
+        ],
+        "formulas": [],
+        "override": null
       },
       "hd": {
         "spent": 0
@@ -520,10 +503,7 @@
           "mode": 0
         },
         "success": 0,
-        "failure": 0,
-        "bonuses": {
-          "save": ""
-        }
+        "failure": 0
       },
       "spell": {
         "level": 0
@@ -538,7 +518,7 @@
     },
     "details": {
       "biography": {
-        "value": "",
+        "value": "<p><em>Token artwork by <a href=\"https://www.forgotten-adventures.net/\" target=\"_blank\" rel=\"noopener\">Forgotten Adventures</a>.</em></p>",
         "public": ""
       },
       "alignment": "Chaotic Evil",
@@ -632,7 +612,8 @@
         "communication": {}
       },
       "important": false
-    }
+    },
+    "rolls": {}
   },
   "prototypeToken": {
     "name": "Ghast",
@@ -643,7 +624,7 @@
     "width": 1,
     "height": 1,
     "texture": {
-      "src": null,
+      "src": "systems/dnd5e/tokens/undead/Ghast.webp",
       "anchorX": 0.5,
       "anchorY": 0.5,
       "fit": "contain",
@@ -755,18 +736,21 @@
               "targets": []
             },
             "description": {
-              "chatFlavor": ""
+              "chatFlavor": "",
+              "value": ""
             },
             "duration": {
               "units": "inst",
               "concentration": false,
-              "override": false
+              "override": false,
+              "expiry": null
             },
             "effects": [
               {
                 "_id": "rHL9lpchOon81CN1",
                 "onSave": false,
-                "level": {}
+                "level": {},
+                "uuid": null
               }
             ],
             "range": {
@@ -780,7 +764,8 @@
                 "units": "ft",
                 "type": "radius",
                 "size": "5",
-                "count": ""
+                "count": "",
+                "stationary": false
               },
               "affects": {
                 "choice": false,
@@ -807,7 +792,8 @@
               "dc": {
                 "calculation": "con",
                 "formula": "8 + @mod + @prof"
-              }
+              },
+              "visible": true
             },
             "name": "",
             "img": null,
@@ -817,7 +803,8 @@
               "requireAttunement": false,
               "requireIdentification": false,
               "requireMagic": false
-            }
+            },
+            "behaviors": []
           }
         },
         "uses": {
@@ -853,7 +840,57 @@
       "folder": "L9Zgr8qAPc3ngKhb",
       "img": "icons/magic/air/fog-gas-smoke-swirling-orange.webp",
       "effects": [
-        "rHL9lpchOon81CN1"
+        {
+          "name": "Poisoned",
+          "img": "systems/dnd5e/icons/svg/statuses/poisoned.svg",
+          "origin": "Compendium.dnd-monster-manual.features.Item.mmStench00000000",
+          "_id": "rHL9lpchOon81CN1",
+          "type": "base",
+          "system": {
+            "changes": [],
+            "origin": {
+              "actor": null,
+              "behavior": null,
+              "effect": null,
+              "item": null,
+              "message": null
+            },
+            "conditions": "{}",
+            "magical": false,
+            "rider": {
+              "statuses": []
+            }
+          },
+          "disabled": false,
+          "duration": {
+            "value": 1,
+            "units": "turns",
+            "expiry": "turnStart",
+            "expired": false
+          },
+          "description": "<p>The target has the &amp;Reference[Poisoned apply=false] condition until the start of its next turn.</p>",
+          "tint": "#ffffff",
+          "transfer": false,
+          "statuses": [
+            "poisoned"
+          ],
+          "sort": 0,
+          "flags": {},
+          "_stats": {
+            "compendiumSource": null,
+            "duplicateSource": null,
+            "exportSource": null,
+            "coreVersion": "14.364",
+            "systemId": "dnd5e",
+            "systemVersion": "5.3.0",
+            "lastModifiedBy": null,
+            "createdTime": null,
+            "modifiedTime": null
+          },
+          "showIcon": 2,
+          "start": null,
+          "folder": null
+        }
       ],
       "flags": {
         "dnd5e": {
@@ -867,7 +904,7 @@
         "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmStench00000000",
         "duplicateSource": null,
         "exportSource": null,
-        "coreVersion": "14.363",
+        "coreVersion": "14.364",
         "systemId": "dnd5e",
         "systemVersion": "5.3.0",
         "lastModifiedBy": null,
@@ -875,271 +912,6 @@
         "modifiedTime": null
       },
       "sort": 12100000,
-      "ownership": {
-        "default": 0
-      }
-    },
-    {
-      "_id": "SQ1vT3qHTKj46khh",
-      "name": "Claw",
-      "type": "weapon",
-      "system": {
-        "type": {
-          "value": "natural",
-          "baseItem": ""
-        },
-        "activities": {
-          "W1T7dZnG8GMMwyEP": {
-            "_id": "W1T7dZnG8GMMwyEP",
-            "type": "attack",
-            "sort": 0,
-            "activation": {
-              "type": "action",
-              "value": null,
-              "override": false
-            },
-            "consumption": {
-              "scaling": {
-                "allowed": false
-              },
-              "spellSlot": true,
-              "targets": []
-            },
-            "description": {},
-            "duration": {
-              "units": "inst",
-              "concentration": false,
-              "override": false
-            },
-            "effects": [],
-            "range": {
-              "override": false,
-              "units": "self"
-            },
-            "target": {
-              "template": {
-                "contiguous": false,
-                "units": "ft"
-              },
-              "affects": {
-                "choice": false
-              },
-              "override": false,
-              "prompt": true
-            },
-            "uses": {
-              "spent": 0,
-              "recovery": []
-            },
-            "attack": {
-              "critical": {
-                "threshold": null
-              },
-              "flat": false,
-              "type": {}
-            },
-            "damage": {
-              "critical": {},
-              "includeBase": true,
-              "parts": []
-            },
-            "img": null,
-            "flags": {},
-            "visibility": {
-              "level": {},
-              "requireAttunement": false,
-              "requireIdentification": false,
-              "requireMagic": false
-            }
-          },
-          "nDM4WpckiZjvBzfg": {
-            "type": "save",
-            "_id": "nDM4WpckiZjvBzfg",
-            "sort": 0,
-            "activation": {
-              "type": "action",
-              "value": null,
-              "override": false,
-              "condition": ""
-            },
-            "consumption": {
-              "scaling": {
-                "allowed": false
-              },
-              "spellSlot": true,
-              "targets": []
-            },
-            "description": {
-              "chatFlavor": ""
-            },
-            "duration": {
-              "units": "inst",
-              "concentration": false,
-              "override": false
-            },
-            "effects": [
-              {
-                "_id": "Iw0CKY4OcHwWY1LV",
-                "onSave": false,
-                "level": {}
-              }
-            ],
-            "range": {
-              "override": false,
-              "units": "self"
-            },
-            "target": {
-              "template": {
-                "contiguous": false,
-                "units": "ft",
-                "type": ""
-              },
-              "affects": {
-                "choice": false,
-                "type": ""
-              },
-              "override": false,
-              "prompt": true
-            },
-            "uses": {
-              "spent": 0,
-              "recovery": [],
-              "max": ""
-            },
-            "damage": {
-              "parts": [],
-              "onSave": "none"
-            },
-            "save": {
-              "ability": [
-                "con"
-              ],
-              "dc": {
-                "calculation": "con",
-                "formula": "8 + @mod + @prof"
-              }
-            },
-            "name": "",
-            "img": null,
-            "flags": {},
-            "visibility": {
-              "level": {},
-              "requireAttunement": false,
-              "requireIdentification": false,
-              "requireMagic": false
-            }
-          }
-        },
-        "uses": {
-          "spent": 0,
-          "recovery": [],
-          "max": ""
-        },
-        "description": {
-          "value": "<p>[[/attack extended]]. [[/damage average extended]]. If the target is a non-Undead creature, it is subjected to the following effect.</p><p><em>Constitution Saving Throw:</em> DC [[lookup @save.dc.value activity=nDM4WpckiZjvBzfg]].</p><p><em>Failure:</em> The target has the &amp;Reference[Paralyzed apply=false] condition until the end of its next turn.</p>",
-          "chat": ""
-        },
-        "identifier": "claw",
-        "source": {
-          "revision": 1,
-          "rules": "2024",
-          "book": "",
-          "license": "CC-BY-4.0"
-        },
-        "identified": true,
-        "unidentified": {
-          "description": ""
-        },
-        "container": null,
-        "quantity": 1,
-        "weight": {
-          "value": 0,
-          "units": "lb"
-        },
-        "price": {
-          "value": 0,
-          "denomination": "gp"
-        },
-        "rarity": "",
-        "attunement": "",
-        "armor": {
-          "value": null
-        },
-        "cover": null,
-        "hp": {
-          "value": null,
-          "max": null,
-          "dt": null,
-          "conditions": ""
-        },
-        "ammunition": {},
-        "damage": {
-          "base": {
-            "number": 2,
-            "denomination": 6,
-            "types": [
-              "slashing"
-            ],
-            "custom": {
-              "enabled": false
-            },
-            "scaling": {
-              "number": 1
-            },
-            "bonus": ""
-          },
-          "versatile": {
-            "number": null,
-            "denomination": null,
-            "types": [],
-            "custom": {
-              "enabled": false
-            },
-            "scaling": {
-              "number": 1
-            }
-          }
-        },
-        "properties": [],
-        "proficient": null,
-        "range": {
-          "value": null,
-          "long": null,
-          "reach": null,
-          "units": "ft"
-        },
-        "mastery": "",
-        "attuned": false,
-        "equipped": true,
-        "crew": {
-          "value": []
-        }
-      },
-      "folder": "pSCWWdqMX9eUATRJ",
-      "img": "icons/skills/melee/blood-slash-foam-red.webp",
-      "effects": [
-        "Iw0CKY4OcHwWY1LV"
-      ],
-      "flags": {
-        "dnd5e": {
-          "riders": {
-            "activity": [],
-            "effect": []
-          }
-        }
-      },
-      "_stats": {
-        "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmClaw0000000000",
-        "duplicateSource": null,
-        "exportSource": null,
-        "coreVersion": "14.363",
-        "systemId": "dnd5e",
-        "systemVersion": "5.3.0",
-        "lastModifiedBy": null,
-        "createdTime": null,
-        "modifiedTime": null
-      },
-      "sort": 5800000,
       "ownership": {
         "default": 0
       }
@@ -1172,12 +944,14 @@
               "targets": []
             },
             "description": {
-              "chatFlavor": ""
+              "chatFlavor": "",
+              "value": ""
             },
             "duration": {
               "units": "inst",
               "concentration": false,
-              "override": false
+              "override": false,
+              "expiry": null
             },
             "effects": [],
             "range": {
@@ -1188,7 +962,8 @@
               "template": {
                 "contiguous": false,
                 "units": "ft",
-                "type": ""
+                "type": "",
+                "stationary": false
               },
               "affects": {
                 "choice": false,
@@ -1233,7 +1008,8 @@
                   ],
                   "scaling": {
                     "number": 1
-                  }
+                  },
+                  "modifiers": []
                 }
               ]
             },
@@ -1245,7 +1021,8 @@
               "requireAttunement": false,
               "requireIdentification": false,
               "requireMagic": false
-            }
+            },
+            "behaviors": []
           }
         },
         "uses": {
@@ -1290,7 +1067,8 @@
             },
             "scaling": {
               "number": 1
-            }
+            },
+            "modifiers": []
           },
           "versatile": {
             "number": null,
@@ -1301,7 +1079,8 @@
             },
             "scaling": {
               "number": 1
-            }
+            },
+            "modifiers": []
           }
         },
         "container": null,
@@ -1314,7 +1093,6 @@
           "value": 0,
           "denomination": "gp"
         },
-        "rarity": "",
         "attunement": "",
         "armor": {
           "value": null
@@ -1332,7 +1110,8 @@
         "equipped": true,
         "crew": {
           "value": []
-        }
+        },
+        "rarities": []
       },
       "folder": "pSCWWdqMX9eUATRJ",
       "img": "icons/creatures/abilities/fangs-teeth-bite.webp",
@@ -1349,7 +1128,7 @@
         "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmBite0000000000",
         "duplicateSource": null,
         "exportSource": null,
-        "coreVersion": "14.363",
+        "coreVersion": "14.364",
         "systemId": "dnd5e",
         "systemVersion": "5.3.0",
         "lastModifiedBy": null,
@@ -1357,6 +1136,334 @@
         "modifiedTime": null
       },
       "sort": -100000,
+      "ownership": {
+        "default": 0
+      }
+    },
+    {
+      "_id": "SQ1vT3qHTKj46khh",
+      "name": "Claw",
+      "type": "weapon",
+      "system": {
+        "type": {
+          "value": "natural",
+          "baseItem": ""
+        },
+        "activities": {
+          "W1T7dZnG8GMMwyEP": {
+            "_id": "W1T7dZnG8GMMwyEP",
+            "type": "attack",
+            "sort": 0,
+            "activation": {
+              "type": "action",
+              "value": null,
+              "override": false
+            },
+            "consumption": {
+              "scaling": {
+                "allowed": false
+              },
+              "spellSlot": true,
+              "targets": []
+            },
+            "description": {
+              "value": ""
+            },
+            "duration": {
+              "units": "inst",
+              "concentration": false,
+              "override": false,
+              "expiry": null
+            },
+            "effects": [],
+            "range": {
+              "override": false,
+              "units": "self"
+            },
+            "target": {
+              "template": {
+                "contiguous": false,
+                "units": "ft",
+                "stationary": false
+              },
+              "affects": {
+                "choice": false
+              },
+              "override": false,
+              "prompt": true
+            },
+            "uses": {
+              "spent": 0,
+              "recovery": []
+            },
+            "attack": {
+              "critical": {
+                "threshold": null
+              },
+              "flat": false,
+              "type": {}
+            },
+            "damage": {
+              "critical": {},
+              "includeBase": true,
+              "parts": []
+            },
+            "img": null,
+            "flags": {},
+            "visibility": {
+              "level": {},
+              "requireAttunement": false,
+              "requireIdentification": false,
+              "requireMagic": false
+            },
+            "behaviors": []
+          },
+          "nDM4WpckiZjvBzfg": {
+            "type": "save",
+            "_id": "nDM4WpckiZjvBzfg",
+            "sort": 0,
+            "activation": {
+              "type": "action",
+              "value": null,
+              "override": false,
+              "condition": ""
+            },
+            "consumption": {
+              "scaling": {
+                "allowed": false
+              },
+              "spellSlot": true,
+              "targets": []
+            },
+            "description": {
+              "chatFlavor": "",
+              "value": ""
+            },
+            "duration": {
+              "units": "inst",
+              "concentration": false,
+              "override": false,
+              "expiry": null
+            },
+            "effects": [
+              {
+                "_id": "Iw0CKY4OcHwWY1LV",
+                "onSave": false,
+                "level": {},
+                "uuid": null
+              }
+            ],
+            "range": {
+              "override": false,
+              "units": "self"
+            },
+            "target": {
+              "template": {
+                "contiguous": false,
+                "units": "ft",
+                "type": "",
+                "stationary": false
+              },
+              "affects": {
+                "choice": false,
+                "type": ""
+              },
+              "override": false,
+              "prompt": true
+            },
+            "uses": {
+              "spent": 0,
+              "recovery": [],
+              "max": ""
+            },
+            "damage": {
+              "parts": [],
+              "onSave": "none"
+            },
+            "save": {
+              "ability": [
+                "con"
+              ],
+              "dc": {
+                "calculation": "con",
+                "formula": "8 + @mod + @prof"
+              },
+              "visible": true
+            },
+            "name": "",
+            "img": null,
+            "flags": {},
+            "visibility": {
+              "level": {},
+              "requireAttunement": false,
+              "requireIdentification": false,
+              "requireMagic": false
+            },
+            "behaviors": []
+          }
+        },
+        "uses": {
+          "spent": 0,
+          "recovery": [],
+          "max": ""
+        },
+        "description": {
+          "value": "<p>[[/attack extended]]. [[/damage average extended]]. If the target is a non-Undead creature, it is subjected to the following effect.</p><p><em>Constitution Saving Throw:</em> DC [[lookup @save.dc.value activity=nDM4WpckiZjvBzfg]].</p><p><em>Failure:</em> The target has the &amp;Reference[Paralyzed apply=false] condition until the end of its next turn.</p>",
+          "chat": ""
+        },
+        "identifier": "claw",
+        "source": {
+          "revision": 1,
+          "rules": "2024",
+          "book": "",
+          "license": "CC-BY-4.0"
+        },
+        "identified": true,
+        "unidentified": {
+          "description": ""
+        },
+        "container": null,
+        "quantity": 1,
+        "weight": {
+          "value": 0,
+          "units": "lb"
+        },
+        "price": {
+          "value": 0,
+          "denomination": "gp"
+        },
+        "attunement": "",
+        "armor": {
+          "value": null
+        },
+        "cover": null,
+        "hp": {
+          "value": null,
+          "max": null,
+          "dt": null,
+          "conditions": ""
+        },
+        "ammunition": {},
+        "damage": {
+          "base": {
+            "number": 2,
+            "denomination": 6,
+            "types": [
+              "slashing"
+            ],
+            "custom": {
+              "enabled": false
+            },
+            "scaling": {
+              "number": 1
+            },
+            "bonus": "",
+            "modifiers": []
+          },
+          "versatile": {
+            "number": null,
+            "denomination": null,
+            "types": [],
+            "custom": {
+              "enabled": false
+            },
+            "scaling": {
+              "number": 1
+            },
+            "modifiers": []
+          }
+        },
+        "properties": [],
+        "proficient": null,
+        "range": {
+          "value": null,
+          "long": null,
+          "reach": null,
+          "units": "ft"
+        },
+        "mastery": "",
+        "attuned": false,
+        "equipped": true,
+        "crew": {
+          "value": []
+        },
+        "rarities": []
+      },
+      "folder": "pSCWWdqMX9eUATRJ",
+      "img": "icons/skills/melee/blood-slash-foam-red.webp",
+      "effects": [
+        {
+          "name": "Paralyzed",
+          "img": "systems/dnd5e/icons/svg/statuses/paralyzed.svg",
+          "origin": "Compendium.dnd5e.actors24.Actor.mmGhast000000000.Item.SQ1vT3qHTKj46khh",
+          "_id": "Iw0CKY4OcHwWY1LV",
+          "type": "base",
+          "system": {
+            "changes": [],
+            "origin": {
+              "actor": null,
+              "behavior": null,
+              "effect": null,
+              "item": null,
+              "message": null
+            },
+            "conditions": "{}",
+            "magical": false,
+            "rider": {
+              "statuses": []
+            }
+          },
+          "disabled": false,
+          "duration": {
+            "value": 1,
+            "units": "turns",
+            "expiry": "turnStart",
+            "expired": false
+          },
+          "description": "<p>The target has the &amp;Reference[Paralyzed apply=false] condition until the end of its next turn.</p>",
+          "tint": "#ffffff",
+          "transfer": false,
+          "statuses": [
+            "paralyzed"
+          ],
+          "sort": 0,
+          "flags": {},
+          "_stats": {
+            "compendiumSource": null,
+            "duplicateSource": null,
+            "exportSource": null,
+            "coreVersion": "14.364",
+            "systemId": "dnd5e",
+            "systemVersion": "5.3.0",
+            "lastModifiedBy": null,
+            "createdTime": null,
+            "modifiedTime": null
+          },
+          "showIcon": 2,
+          "start": null,
+          "folder": null
+        }
+      ],
+      "flags": {
+        "dnd5e": {
+          "riders": {
+            "activity": [],
+            "effect": []
+          }
+        }
+      },
+      "_stats": {
+        "compendiumSource": "Compendium.dnd-monster-manual.features.Item.mmClaw0000000000",
+        "duplicateSource": null,
+        "exportSource": null,
+        "coreVersion": "14.364",
+        "systemId": "dnd5e",
+        "systemVersion": "5.3.0",
+        "lastModifiedBy": null,
+        "createdTime": null,
+        "modifiedTime": null
+      },
+      "sort": 5800000,
       "ownership": {
         "default": 0
       }
@@ -1372,7 +1479,7 @@
   "_stats": {
     "duplicateSource": null,
     "exportSource": null,
-    "coreVersion": "14.363",
+    "coreVersion": "14.364",
     "systemId": "dnd5e",
     "systemVersion": "5.3.0",
     "createdTime": 1771452702486,
