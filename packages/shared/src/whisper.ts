@@ -20,8 +20,8 @@ export interface WhisperUser {
   id: string;
   name: string;
   isGM: boolean;
-  /** Name of the user's assigned character, when there is one. */
-  characterName?: string;
+  /** Characters the player plays: the assigned one plus any actor they explicitly own. */
+  characterNames?: string[];
 }
 
 export interface WhisperRecipient {
@@ -52,7 +52,7 @@ const norm = (s: string): string => s.trim().toLowerCase();
  */
 export function resolveWhisperRecipients(to: string[], users: WhisperUser[]): WhisperResolution {
   const players = users.filter((u) => !u.isGM);
-  const available = players.map((p) => (p.characterName ? `${p.name} (${p.characterName})` : p.name));
+  const available = players.map((p) => (p.characterNames?.length ? `${p.name} (${p.characterNames.join(", ")})` : p.name));
   const found = new Map<string, WhisperRecipient>();
 
   for (const raw of to) {
@@ -67,8 +67,8 @@ export function resolveWhisperRecipients(to: string[], users: WhisperUser[]): Wh
     }
     const steps: Array<(u: WhisperUser) => boolean> = [
       (u) => norm(u.name) === wanted,
-      (u) => norm(u.characterName ?? "") === wanted,
-      (u) => norm(u.characterName ?? "").split(/\s+/)[0] === wanted,
+      (u) => (u.characterNames ?? []).some((c) => norm(c) === wanted),
+      (u) => (u.characterNames ?? []).some((c) => norm(c).split(/\s+/)[0] === wanted),
     ];
     let matches: WhisperUser[] = [];
     for (const step of steps) {

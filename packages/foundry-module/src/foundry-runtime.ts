@@ -304,7 +304,19 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         id: String(u.id),
         name: String(u.name),
         isGM: Boolean(u.isGM),
-        characterName: u.character?.name ? String(u.character.name) : undefined,
+        characterNames: [
+          ...new Set<string>(
+            [
+              u.character?.name,
+              // Actors the player explicitly owns, as the vault's whisper macro finds them.
+              ...(g.game.actors?.contents ?? [])
+                .filter((a: any) => a.type === "character" && !u.isGM && a.ownership?.[u.id] === 3)
+                .map((a: any) => a.name),
+            ]
+              .filter(Boolean)
+              .map(String),
+          ),
+        ],
       }));
       const resolved = resolveWhisperRecipients(params.to, users);
       if (!resolved.ok) throw new CommandExecutionError(resolved.code, resolved.message, resolved.details);

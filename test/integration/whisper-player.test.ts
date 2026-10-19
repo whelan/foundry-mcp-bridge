@@ -9,9 +9,9 @@ function setup() {
   const mock = new MockFoundry();
   mock.whisperUsers.push(
     { id: "gm", name: "Lars", isGM: true },
-    { id: "u1", name: "Anna", isGM: false, characterName: "Kip Stonebrook" },
-    { id: "u2", name: "Bo", isGM: false, characterName: "Pyrax" },
-    { id: "u3", name: "Cecilie", isGM: false, characterName: "Ireena Kolyanovich" },
+    { id: "u1", name: "Anna", isGM: false, characterNames: ["Kip Stonebrook"] },
+    { id: "u2", name: "Bo", isGM: false, characterNames: ["Pyrax"] },
+    { id: "u3", name: "Cecilie", isGM: false, characterNames: ["Ireena Kolyanovich"] },
   );
   return { mock, transport: new MockTransport(mock) };
 }
