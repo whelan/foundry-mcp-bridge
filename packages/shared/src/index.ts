@@ -6,3 +6,4 @@ export * from "./chat.js";
 export * from "./permissions.js";
 export * from "./floorplan.js";
 export * from "./door-textures.js";
+export * from "./whisper.js";

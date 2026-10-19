@@ -30,6 +30,10 @@ import {
   applyUpdate,
   isPlainObject,
   buildChatLog,
+  resolveWhisperRecipients,
+  whisperHtml,
+  escapeChatText,
+  type WhisperUser,
   buildSceneState,
   type SceneState,
   chatLogWindow,
@@ -228,6 +232,10 @@ export class MockFoundry {
   readonly chatMessages: Json[] = [];
   /** Images shared to the players via showImage, in order. */
   readonly shownImages: Array<{ src: string; title?: string; uuid?: string }> = [];
+  /** World users a whisper can name (players and GMs), in order. */
+  readonly whisperUsers: WhisperUser[] = [];
+  /** Whispers the bridge sent: who got what, in order. */
+  readonly whispers: Array<{ id: string; whisper: string[]; content: string; flavor?: string }> = [];
   /** User id → name, for resolving a chat message's author. */
   readonly users = new Map<string, string>();
   /** The GM's "Allow the bridge to run macros" setting; flip it in a test. */
@@ -443,6 +451,19 @@ export class MockFoundry {
         if (dryRun) return ok(id, { ...base, ran: false });
         this.macroRuns.push({ id: base.macroId, name: base.name, scope: (command.args ?? {}) as Json });
         return ok(id, { ...base, ran: true, result: this.macroResults.get(base.name) ?? null });
+      }
+      case "whisperPlayer": {
+        const resolved = resolveWhisperRecipients(command.to, this.whisperUsers);
+        if (!resolved.ok) return err(id, resolved.code, resolved.message);
+        if (dryRun) return ok(id, { to: resolved.recipients, sent: false });
+        const messageId = `msg${this.whispers.length + 1}`;
+        this.whispers.push({
+          id: messageId,
+          whisper: resolved.recipients.map((r) => r.id),
+          content: whisperHtml(command.content),
+          ...(command.flavor ? { flavor: escapeChatText(command.flavor) } : {}),
+        });
+        return ok(id, { to: resolved.recipients, sent: true, messageId });
       }
       case "activateScene": {
         const scene = this.get("Scene", command.id);

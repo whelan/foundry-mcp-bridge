@@ -173,6 +173,8 @@ function commandSummary(c: Command): string {
       return c.src;
     case "runMacro":
       return c.id ? `id=${c.id}` : `name=${c.name}`;
+    case "whisperPlayer":
+      return `to=${c.to.join(",")}`;
     case "activateScene":
       return `${c.mode} id=${c.id}`;
     case "getSceneState":
@@ -997,6 +999,29 @@ export function runMacroReliable(
   return runTerminal(
     transport,
     { action: "runMacro", id: input.id, name: input.name, args: input.args },
+    opts,
+  );
+}
+
+export interface WhisperPlayerInput {
+  to: string[];
+  content: string;
+  flavor?: string;
+}
+
+/**
+ * Terminal side effect: dry-run resolves the named players (so a wrong or too-broad
+ * recipient fails before anything is sent), the write creates the one whisper. Nothing
+ * to read back or roll back — Foundry's own chat log is the record of what went out.
+ */
+export function whisperPlayerReliable(
+  transport: RelayTransport,
+  input: WhisperPlayerInput,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return runTerminal(
+    transport,
+    { action: "whisperPlayer", to: input.to, content: input.content, flavor: input.flavor },
     opts,
   );
 }

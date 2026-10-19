@@ -54,6 +54,9 @@ function stubApi(): FoundryDocumentApi {
     async runMacro(params, opts) {
       return { macroId: params.id ?? "m1", name: params.name ?? "Macro", ran: !opts.dryRun };
     },
+    async whisperPlayer(params, opts) {
+      return { to: params.to.map((n) => ({ id: n, name: n })), sent: !opts.dryRun };
+    },
     async activateScene(params, opts) {
       return { _id: params.id, name: "Scene", mode: params.mode, done: !opts.dryRun };
     },

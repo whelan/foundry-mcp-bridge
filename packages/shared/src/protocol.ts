@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { WHISPER_MAX_RECIPIENTS, WHISPER_MAX_CONTENT, WHISPER_MAX_FLAVOR } from "./whisper.js";
 
 /**
  * Wire contract shared by the MCP server and the Foundry module. Keeping the
@@ -306,9 +307,9 @@ export interface CompendiumDocument {
 
 /**
  * Read the world's chat log — the GM's roll and whisper record for a session.
- * Read-only by construction: there is no command that writes a ChatMessage,
- * and ChatMessage is deliberately absent from {@link DocumentType} so the
- * create/update/delete tools cannot address it.
+ * Reading only: ChatMessage is deliberately absent from {@link DocumentType}, so the
+ * create/update/delete tools cannot address it. The one chat write the bridge has is
+ * {@link WhisperPlayerCommand} — create-only, to players named one by one.
  */
 export const GetChatLogCommand = z.object({
   action: z.literal("getChatLog"),
@@ -320,6 +321,24 @@ export const GetChatLogCommand = z.object({
   limit: z.number().int().min(1).max(5000).default(2000),
 });
 export type GetChatLogCommand = z.infer<typeof GetChatLogCommand>;
+
+/**
+ * Whisper to players the caller names, as the GM. The bridge's only chat write, and
+ * narrow on purpose: it creates one message and nothing else (no edit, no delete),
+ * recipients are named players (never the whole table, never a GM), and the text is
+ * escaped into plain paragraphs. A side effect, not a document write: nothing to read
+ * back. Dry-run resolves the recipients without sending.
+ */
+export const WhisperPlayerCommand = z.object({
+  action: z.literal("whisperPlayer"),
+  /** Players to whisper to: a user name, a character name, or a unique first name. */
+  to: z.array(z.string().min(1)).min(1).max(WHISPER_MAX_RECIPIENTS),
+  /** The message. Blank lines are paragraph breaks; no markup is interpreted. */
+  content: z.string().min(1).max(WHISPER_MAX_CONTENT),
+  /** Optional line shown above the message (the cue that fired it). */
+  flavor: z.string().min(1).max(WHISPER_MAX_FLAVOR).optional(),
+});
+export type WhisperPlayerCommand = z.infer<typeof WhisperPlayerCommand>;
 
 /**
  * Pop an image up on the players' screens (Foundry's "Show Players" for an
@@ -412,6 +431,7 @@ export const Command = z.discriminatedUnion("action", [
   GetChatLogCommand,
   ShowImageCommand,
   RunMacroCommand,
+  WhisperPlayerCommand,
   ActivateSceneCommand,
   GetSceneStateCommand,
   ToggleConditionCommand,

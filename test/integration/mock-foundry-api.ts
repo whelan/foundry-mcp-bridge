@@ -22,6 +22,8 @@ import {
   type ShowImageResult,
   type RunMacroParams,
   type RunMacroResult,
+  type WhisperPlayerParams,
+  type WhisperPlayerResult,
   type ActivateSceneResult,
   type SceneState,
   type ToggleConditionResult,
@@ -170,6 +172,9 @@ export function mockFoundryApi(mock: MockFoundry): FoundryDocumentApi {
     },
     async runMacro(params: RunMacroParams, opts) {
       return (await run({ action: "runMacro", ...params }, opts)) as RunMacroResult;
+    },
+    async whisperPlayer(params: WhisperPlayerParams, opts) {
+      return (await run({ action: "whisperPlayer", ...params }, opts)) as WhisperPlayerResult;
     },
     async activateScene(params, opts) {
       return (await run({ action: "activateScene", ...params }, opts)) as ActivateSceneResult;

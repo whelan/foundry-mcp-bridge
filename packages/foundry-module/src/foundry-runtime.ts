@@ -6,7 +6,7 @@
  * protocol logic is tested against the mock. Kept thin and obvious on purpose.
  */
 
-import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, buildChatLog, buildSceneState, PERMISSION_CATEGORIES, DEFAULT_PERMISSION_LEVEL, type PermissionCategory, type PermissionLevel, type DocumentType, type CompendiumDocument, type ChatLog, type ChatLogWindow } from "@foundry-mcp-bridge/shared";
+import { COLLECTIONS, getByPath, assetBaseName, applyUpdate, buildChatLog, buildSceneState, resolveWhisperRecipients, whisperHtml, escapeChatText, type WhisperUser, PERMISSION_CATEGORIES, DEFAULT_PERMISSION_LEVEL, type PermissionCategory, type PermissionLevel, type DocumentType, type CompendiumDocument, type ChatLog, type ChatLogWindow } from "@foundry-mcp-bridge/shared";
 import type {
   DocData,
   ExecuteOptions,
@@ -21,6 +21,8 @@ import type {
   SceneState,
   ToggleConditionResult,
   RunMacroResult,
+  WhisperPlayerParams,
+  WhisperPlayerResult,
   WorldInfo,
   CompendiumEntry,
 } from "./protocol-executor.js";
@@ -294,6 +296,29 @@ export function createFoundryRuntimeApi(): FoundryDocumentApi {
         result = String(returned);
       }
       return { macroId: macro.id, name: macro.name, ran: true, result };
+    },
+
+    async whisperPlayer(params: WhisperPlayerParams, opts): Promise<WhisperPlayerResult> {
+      const g = globalThis as any;
+      const users: WhisperUser[] = (g.game.users?.contents ?? []).map((u: any) => ({
+        id: String(u.id),
+        name: String(u.name),
+        isGM: Boolean(u.isGM),
+        characterName: u.character?.name ? String(u.character.name) : undefined,
+      }));
+      const resolved = resolveWhisperRecipients(params.to, users);
+      if (!resolved.ok) throw new CommandExecutionError(resolved.code, resolved.message, resolved.details);
+      const to = resolved.recipients;
+      if (opts.dryRun) return { to, sent: false };
+
+      const ChatMessageClass = g.foundry?.documents?.ChatMessage ?? g.ChatMessage;
+      const message = await ChatMessageClass.create({
+        content: whisperHtml(params.content),
+        ...(params.flavor ? { flavor: escapeChatText(params.flavor) } : {}),
+        whisper: to.map((r) => r.id),
+      });
+      if (!message?.id) throw new CommandExecutionError("INTERNAL", "Foundry created no chat message");
+      return { to, sent: true, messageId: String(message.id) };
     },
 
     async activateScene(params, opts): Promise<ActivateSceneResult> {

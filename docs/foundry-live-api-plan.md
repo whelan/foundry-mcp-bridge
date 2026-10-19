@@ -106,7 +106,8 @@ Tools are added incrementally; each ships with the full reliability pipeline.
    id, UTC time, author, speaker alias, visibility (public/whisper/blind),
    plain-text flavor/content, and each roll's formula, total and individual
    dice including discarded results. `ChatMessage` is deliberately **not** a
-   `DocumentType`, so no tool can write or delete chat; deleted messages are
+   `DocumentType`, so no generic tool can write or delete chat (the one exception is
+   `whisper_player`, create-only and to named players, see `docs/command-lifecycle.md`); deleted messages are
    gone from the world and cannot be read back. The mapping (HTML → text, rolls
    stored as JSON strings, nested pool terms) lives in `shared/chat.ts` so the
    module and the mock shape a log identically and it is covered by tests.

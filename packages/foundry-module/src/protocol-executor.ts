@@ -92,6 +92,22 @@ export interface ShowImageResult {
   via?: "popout" | "journal";
 }
 
+/** Parameters for whispering to named players. */
+export interface WhisperPlayerParams {
+  to: string[];
+  content: string;
+  flavor?: string;
+}
+
+export interface WhisperPlayerResult {
+  /** The players it went (or, on a dry run, would go) to. */
+  to: Array<{ id: string; name: string }>;
+  /** False on a dry run. */
+  sent: boolean;
+  /** The created message's id. Absent on a dry run. */
+  messageId?: string;
+}
+
 /** Parameters for running a script macro. Exactly one of id / name. */
 export interface RunMacroParams {
   id?: string;
@@ -205,6 +221,11 @@ export interface FoundryDocumentApi {
    * "Allow the bridge to run macros" world setting; the bridge cannot change it.
    */
   runMacro(params: RunMacroParams, opts: ExecuteOptions): Promise<RunMacroResult>;
+  /**
+   * Whisper to players named one by one — the bridge's only chat write. Create-only:
+   * nothing edits or deletes a message. Never the whole table, never a GM.
+   */
+  whisperPlayer(params: WhisperPlayerParams, opts: ExecuteOptions): Promise<WhisperPlayerResult>;
   /** Switch the active scene, or just the GM's view of one. */
   activateScene(params: ActivateSceneParams, opts: ExecuteOptions): Promise<ActivateSceneResult>;
   /** Read-only: compact snapshot of a scene (the viewed one when `id` is omitted). */
@@ -381,6 +402,8 @@ async function dispatch(
         throw new CommandExecutionError("VALIDATION", "runMacro needs exactly one of id or name");
       }
       return api.runMacro({ id: command.id, name: command.name, args: command.args }, opts);
+    case "whisperPlayer":
+      return api.whisperPlayer({ to: command.to, content: command.content, flavor: command.flavor }, opts);
     case "activateScene":
       return api.activateScene({ id: command.id, mode: command.mode }, opts);
     case "getSceneState":

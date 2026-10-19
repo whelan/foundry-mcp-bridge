@@ -19,6 +19,9 @@ import {
   expandObject,
   isSafePath,
   filterUnsafePaths,
+  WHISPER_MAX_RECIPIENTS,
+  WHISPER_MAX_CONTENT,
+  WHISPER_MAX_FLAVOR,
   type CompendiumEntry,
   type CompendiumDocument,
 } from "@foundry-mcp-bridge/shared";
@@ -42,6 +45,7 @@ import {
   getChatLogReliable,
   showImageReliable,
   runMacroReliable,
+  whisperPlayerReliable,
   importFromCompendiumReliable,
   importEmbeddedFromCompendiumReliable,
   runRead,
@@ -350,6 +354,27 @@ export function runRunMacro(
     });
   }
   return runMacroReliable(transport, args, { ...opts, timeoutMs: args.timeoutMs ?? opts.timeoutMs ?? 120000 });
+}
+
+// --- whisper_player ----------------------------------------------------------
+
+export const WhisperPlayerShape = {
+  /** Players to whisper to, by user name, character name or unique first name. Never "all". */
+  to: z.array(z.string().min(1)).min(1).max(WHISPER_MAX_RECIPIENTS),
+  /** The message. Blank lines are paragraph breaks; no markup is interpreted. */
+  content: z.string().min(1).max(WHISPER_MAX_CONTENT),
+  /** Optional line shown above the message, e.g. the cue that fired it. */
+  flavor: z.string().min(1).max(WHISPER_MAX_FLAVOR).optional(),
+};
+const WhisperPlayer = z.object(WhisperPlayerShape);
+export type WhisperPlayerArgs = z.infer<typeof WhisperPlayer>;
+
+export function runWhisperPlayer(
+  transport: RelayTransport,
+  args: WhisperPlayerArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  return whisperPlayerReliable(transport, args, opts);
 }
 
 // --- show_image_file ---------------------------------------------------------

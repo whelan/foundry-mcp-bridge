@@ -20,6 +20,7 @@ import {
   GetChatLogShape,
   ShowImageShape,
   RunMacroShape,
+  WhisperPlayerShape,
   ShowImageFileShape,
   UploadAssetShape,
   BrowseAssetsShape,
@@ -44,6 +45,7 @@ import {
   runGetChatLog,
   runShowImage,
   runRunMacro,
+  runWhisperPlayer,
   runShowImageFile,
   runUploadAsset,
   runBrowseAssets,
@@ -239,6 +241,12 @@ export function buildServer(
     "Run an existing SCRIPT macro in the GM's browser (by id or exact name) and return its return value. This is code execution, so the GM must first switch on the world setting \"Allow the bridge to run macros\" in the module's settings (off by default; this tool cannot change it) — otherwise it returns UNSUPPORTED. Pass `args` to give the macro a `scope` object (e.g. {mode: \"test\"}) so it can skip dialogs. Dry-run only checks the macro exists and the setting is on. Anything the macro does is its own doing: it is not read back or rolled back.",
     RunMacroShape,
     runRunMacro,
+  );
+  register(
+    "whisper_player",
+    "Whisper a message, as the GM, to one or more players you name (user name, character name, or a unique first name such as \"Kip\"). The bridge's only chat write, and narrow on purpose: it creates one message and cannot edit or delete one, it never goes to the whole table (\"all\", \"alle\" and naming every player are refused) and never to a GM. The text is escaped into plain paragraphs — blank lines are paragraph breaks, markup is not interpreted. Optional `flavor` is a short line above the message. Dry-run resolves the recipients without sending. Nothing is read back; Foundry's chat log is the record.",
+    WhisperPlayerShape,
+    runWhisperPlayer,
   );
   register(
     "get_world_info",
