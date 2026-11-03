@@ -1,0 +1,74 @@
+name: Module release
+
+# Builds the Foundry module zip (module.json + dist/index.js at the archive root, as Forge's
+# Install/Upload wants it) and attaches it to the GitHub Release "module-v<version>". The repo
+# is private, so Forge cannot fetch a manifest URL: download the zip from the release page and
+# upload it on Forge (docs/setup-foundry-forge.md §5).
+#
+# A new version in module.json gets a new release. A change to the module without a version
+# bump replaces the zip on the existing release, so the release always holds main's build —
+# bump the version when Forge must see it as an upgrade.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/foundry-module/**"
+      - "packages/shared/**"
+      - ".github/workflows/module-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: module-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run bundle:module
+
+      - name: Zip the module
+        id: zip
+        run: |
+          VERSION=$(node -p "require('./packages/foundry-module/module.json').version")
+          ZIP="foundry-mcp-bridge-${VERSION}.zip"
+          cd packages/foundry-module
+          zip -r "../../${ZIP}" module.json dist/index.js
+          cd ../..
+          unzip -l "${ZIP}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.zip.outputs.zip }}
+          path: ${{ steps.zip.outputs.zip }}
+
+      - name: Publish to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: module-v${{ steps.zip.outputs.version }}
+          ZIP: ${{ steps.zip.outputs.zip }}
+        run: |
+          NOTES="Foundry module ${TAG#module-v}, built from ${GITHUB_SHA::7}.
+
+          Forge → Game Configuration → Modules → Install Module → upload this zip. If Forge refuses because the module already exists, uninstall the old version first; relay URL, token and permissions live in the world's settings and survive."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" --clobber
+            gh release edit "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" "$ZIP" --title "Foundry module ${TAG#module-v}" --notes "$NOTES" --target "$GITHUB_SHA"
+          fi
+          echo "### ${TAG}: ${ZIP}" >> "$GITHUB_STEP_SUMMARY"

@@ -147,7 +147,10 @@ The module runs in the **GM's browser**, so it connects *outbound* — no inboun
 port to your Foundry is needed.
 
 1. Install the module on your Forge game: **Forge → Game Configuration →
-   Modules → Install/Upload**, uploading a zip built from
+   Modules → Install/Upload**. The ready zip is on the repo's **Releases** page
+   (`module-v<version>` → `foundry-mcp-bridge-<version>.zip`), built by
+   `.github/workflows/module-release.yml` on every module change to `main`. To
+   build it by hand instead, upload a zip built from
    `packages/foundry-module` after `npm run bundle:module` — `module.json` and
    `dist/index.js` at the **root** of the archive, per Foundry's packaging
    spec. Upgrading is the same upload; if Forge refuses because the id already
