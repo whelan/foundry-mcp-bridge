@@ -146,19 +146,20 @@ claude mcp add foundry \
 The module runs in the **GM's browser**, so it connects *outbound* — no inbound
 port to your Foundry is needed.
 
-1. Install the module on your Forge game: **Forge → Game Configuration →
-   Modules → Install/Upload**, uploading a zip built from
-   `packages/foundry-module` after `npm run bundle:module` — `module.json` and
-   `dist/index.js` at the **root** of the archive, per Foundry's packaging
-   spec. Upgrading is the same upload; if Forge refuses because the id already
-   exists, uninstall the old version first. Relay URL and token live in the
-   world's settings database, not in the module folder, so they survive.
+1. Install the module on your Forge game with its **manifest URL**:
+   **Forge → Game Configuration → Modules → Install Module**, paste
+   `https://github.com/whelan/foundry-mcp-bridge/releases/latest/download/module.json`.
+   Updates then come through Foundry's own **Check for Updates / Update** like any
+   other module. `.github/workflows/module-release.yml` publishes a release
+   (`module-v<version>`, with `module.json` and `module.zip`) on every module
+   change to `main`; bump `version` in `module.json` for Foundry to offer it as an
+   update. Relay URL and token live in the world's settings database, not in the
+   module folder, so they survive.
 
-   > A manifest URL is **not** an option here: this repo is private, so neither
-   > a raw `module.json` link nor a release asset is fetchable by Forge's
-   > servers, and `module.json` carries no `manifest`/`download` fields to
-   > point at a zip. Hosting those publicly is a deliberate decision, not a
-   > default.
+   > The repo must be **public** for this: Forge's servers cannot read a private
+   > repo's releases. An install made earlier by zip upload has no manifest URL —
+   > uninstall it once and reinstall from the manifest URL to get updates. The zip
+   > on the release page still works for a hand upload.
 2. Enable it and set **Relay URL** + **Relay token** as in step 4.
 3. **Mixed content:** a Forge world is HTTPS, so a remote insecure `ws://` is
    blocked by the browser — use **`wss://`** (TLS proxy in front of the relay).

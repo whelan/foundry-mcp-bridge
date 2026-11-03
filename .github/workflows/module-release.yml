@@ -1,0 +1,86 @@
+name: Module release
+
+# Publishes the Foundry module so Foundry's own "Update" button works, on Forge too.
+# module.json's `manifest` points at releases/latest/download/module.json, so Foundry fetches
+# that file, compares versions, and installs from its `download` URL. This workflow builds the
+# module, writes the versioned download URL into module.json, zips module.json + dist/index.js
+# at the archive root, and attaches module.json + module.zip to the release "module-v<version>",
+# marked latest. (Works only while the repo is public: Forge cannot read private releases.)
+#
+# A new version in module.json gets a new release, and Foundry offers it as an update. A
+# change without a version bump replaces the files on the existing release; Foundry will not
+# see that as an update — bump the version for that.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/foundry-module/**"
+      - "packages/shared/**"
+      - ".github/workflows/module-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: module-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run bundle:module
+
+      - name: Zip the module
+        id: zip
+        run: |
+          VERSION=$(node -p "require('./packages/foundry-module/module.json').version")
+          TAG="module-v${VERSION}"
+          mkdir -p out/stage/dist
+          cp packages/foundry-module/dist/index.js out/stage/dist/
+          # The release's module.json pins its own version's zip; the repo's copy says "latest".
+          node -e '
+            const fs = require("fs");
+            const m = JSON.parse(fs.readFileSync("packages/foundry-module/module.json", "utf8"));
+            m.download = `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.argv[1]}/module.zip`;
+            fs.writeFileSync("out/stage/module.json", JSON.stringify(m, null, 2) + "\n");
+          ' "$TAG"
+          (cd out/stage && zip -r ../module.zip module.json dist/index.js)
+          cp out/stage/module.json out/module.json
+          unzip -l out/module.zip
+          grep '"download"' out/module.json
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: foundry-mcp-bridge-${{ steps.zip.outputs.version }}
+          path: |
+            out/module.json
+            out/module.zip
+
+      - name: Publish to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.zip.outputs.tag }}
+        run: |
+          NOTES="Foundry module ${TAG#module-v}, built from ${GITHUB_SHA::7}.
+
+          Install or update in Foundry (or Forge) with the manifest URL https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/module.json. Relay URL, token and permissions live in the world's settings and survive an update."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/module.json out/module.zip --clobber
+            gh release edit "$TAG" --notes "$NOTES" --latest
+          else
+            gh release create "$TAG" out/module.json out/module.zip --title "Foundry module ${TAG#module-v}" --notes "$NOTES" --target "$GITHUB_SHA" --latest
+          fi
+          echo "### ${TAG} published (module.json + module.zip)" >> "$GITHUB_STEP_SUMMARY"
