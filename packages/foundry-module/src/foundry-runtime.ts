@@ -42,6 +42,8 @@ export const MODULE_ID = "foundry-mcp-bridge";
  * URL + token for anything beyond a local machine.
  */
 export const DEFAULT_RELAY_URL = "ws://localhost:8787";
+export { DEFAULT_POSITION_LOG_URL } from "./position-log.js";
+import { DEFAULT_POSITION_LOG_URL } from "./position-log.js";
 
 export interface RelaySettings {
   url: string;
@@ -64,6 +66,17 @@ export function registerSettings(): void {
     config: true,
     type: String,
     default: "",
+  });
+  game.settings.register(MODULE_ID, "positionLogUrl", {
+    name: "Session position log URL",
+    hint:
+      "Once a minute, the GM's browser sends where each connected player is (scene, token, room) to this " +
+      "local collector, which the session recording starts and stops. Nothing is sent while nothing answers. " +
+      "Empty turns it off.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: DEFAULT_POSITION_LOG_URL,
   });
   game.settings.register(MODULE_ID, "allowMacros", {
     name: "Allow the bridge to run macros",
