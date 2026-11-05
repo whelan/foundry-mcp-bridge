@@ -133,9 +133,19 @@ A `JournalEntry` is a container; its prose lives in embedded `JournalEntryPage`
 documents (v10+). Two steps:
 1. `create_document({ documentType: "JournalEntry", data: { name, folder: folderId } })` → `_id`.
 2. `create_embedded({ parentType: "JournalEntry", parentId: _id,
-   embeddedName: "JournalEntryPage", data: [{ name: "Description", type: "text",
-   text: { content: "<p>…</p>" } }] })`
-Convert the markdown body to HTML for `text.content` — never dump raw markdown.
+   embeddedName: "JournalEntryPage", data: <pages> })`
+
+**Don't hand-convert the markdown body to HTML.** The `campaign-sync` CLI does it
+deterministically: `cli.js render --notes . --plan plan.json --out rendered.json`
+emits, per create/update journal, the ready-to-write `pages` array (the body's
+Markdown converted to HTML, `## ` sections split into named pages, GFM tables
+preserved). Use its `pages` verbatim as the `create_embedded` `data` — the body
+never has to pass through context, and the conversion is tested in Node.
+
+The field that matters: `text.content` (the HTML string) with `text.format: 1`
+(1 = HTML, 2 = Markdown). **Never write `text.html`** — it isn't a schema field, so
+Foundry drops it silently on create and the read-back fails `READBACK_MISMATCH` on
+update. `render` always writes `text.content` + `format: 1`.
 
 ## 7. Quest structure for Curse of Strahd
 
