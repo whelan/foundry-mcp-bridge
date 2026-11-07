@@ -200,6 +200,9 @@ wrong URL/token, or the world tab is closed).
 | `imageTimeoutMs` | `IMAGE_GEN_TIMEOUT_MS` | optional | `300000` | Per-image timeout. |
 | `changeLog` | `CHANGE_LOG` | optional | on | `0`/`false` turns the change log (and `list_changes` / `undo_change`) off. |
 | `changeLogDir` | `CHANGE_LOG_DIR` | optional | macOS `~/Library/Application Support/foundry-mcp-bridge`, else `$XDG_STATE_HOME` or `~/.local/state/foundry-mcp-bridge` | Directory of `changes.jsonl`, the append-only change log. |
+| `foundryTools` | `FOUNDRY_TOOLS` | optional | `all` | Comma list of tool groups to register (see [Tool profiles](#tool-profiles)). Unknown names fail at startup, listing the valid ones. |
+| `toolStats` | `TOOL_STATS` | optional | on | `0`/`false` turns per-call usage stats off. |
+| `toolStatsFile` | `TOOL_STATS_FILE` | optional | `<state dir>/tool-stats.jsonl` (same dir as the change log default) | JSONL usage-stats file. |
 
 In development only, the same keys may come from `dev.config.json` (`relayUrl`,
 `relayToken`, `requestTimeoutMs`); see
@@ -219,6 +222,62 @@ The module **only** connects when the current user is a **GM**; non-GM clients
 never open the relay.
 
 ---
+
+## Tool profiles
+
+Every tool definition costs context in every session. `FOUNDRY_TOOLS` limits which
+groups are registered (default `all`; measure with `npm run tools:size [-- --groups core,scenes]`):
+
+| Group | Tools |
+| --- | --- |
+| `core` | create/update/delete/duplicate/find_documents, get_world_info, create/update/delete_embedded, list_changes, undo_change |
+| `compendium` | search_compendium, import_from_compendium, import_embedded_from_compendium |
+| `statblocks` | import_npc |
+| `scenes` | create_scene, list_scenes, get_scene_state, switch_scene, place_token, move_tokens, remove_tokens, toggle_condition, add_walls, add_lights |
+| `floorplan` | build_floorplan_scene (largest schema; implies `images` for job polling) |
+| `images` | generate_image, check_image_job, cancel_image_job |
+| `assets` | upload_asset, browse_assets, batch_upload_assets |
+| `forge` | forge_browse_assets, forge_upload_asset, forge_batch_upload_assets, forge_create_folder |
+| `table` | get_chat_log, whisper_player, run_macro, show_image, show_image_file |
+| `quests` | create_quest, update_quest, delete_quest |
+
+Example: `FOUNDRY_TOOLS=core,compendium,scenes`. The mapping lives in
+`packages/mcp-server/src/tool-groups.ts`.
+
+### Usage stats
+
+Each tool call appends one JSON line to `TOOL_STATS_FILE`:
+`{ts, tool, group, ok, error?, ms, reqChars, resChars, session, pid, client?}`
+(`session` is a random id per server process, `client` the MCP client name from
+`initialize`). Write errors are logged to stderr and never fail the call; concurrent
+processes can share the file. `npm run tools:stats [-- file] [--json]` prints per-tool
+calls, error rate, avg/total response chars and last use, the never-used tools, and
+which groups look daily (used in >=50% of sessions) vs occasional vs extra, with a
+suggested `FOUNDRY_TOOLS`.
+
+`find_documents` with a `query` returns only `_id, name, type, folder` per hit unless
+you pass `fields` or `full:true`; a lookup by `id` returns the whole document.
+Mutations echo a slim `_id, name, _stats.modifiedTime`.
+
+## Multiple MCP sessions (hub / peer mode)
+
+Only one process can bind `RELAY_URL`'s port. The first MCP server process to
+start owns the relay; any further process (a second Claude Code session, Codex,
+...) gets `EADDRINUSE`, logs `relay mode peer` on stderr, and connects to the
+owner as a **peer** (`?role=peer&token=...`). The owner forwards each peer's
+envelopes to the single Foundry module connection and routes results back by
+envelope id. If the owner exits, a peer re-binds the port (promotion) and the
+module reconnects to it; otherwise peers keep reconnecting.
+
+For a stable setup, run a standalone hub that owns the port and nothing else:
+
+```bash
+RELAY_URL=ws://localhost:8787 RELAY_TOKEN=... npm run relay:hub   # or the foundry-relay-hub bin
+```
+
+Every MCP process then starts in peer mode automatically. Peer requests that
+arrive with no module connected fail with `TIMEOUT` after the hub's request
+timeout; a module disconnect fails in-flight peer requests with `INTERNAL`.
 
 ## How the relay works
 

@@ -16,20 +16,20 @@ export const RoomSchema = z.object({
   y: z.number().int().min(0),
   w: z.number().int().min(1),
   h: z.number().int().min(1),
-  floor: z.string().optional().describe("Floor material for the painter, e.g. wooden planks"),
+  floor: z.string().optional().describe("Floor material, e.g. wooden planks"),
   furnishings: z.array(z.string().min(1)).default([]),
 });
 
 export const OpeningSchema = z.object({
   room: z.string().min(1),
   side: z.enum(["n", "e", "s", "w"]),
-  at: z.number().int().min(0).describe("Cells from the left end (n/s walls) or the top end (e/w walls)"),
+  at: z.number().int().min(0).describe("Cells from left (n/s) or top (e/w) end"),
   width: z.number().int().min(1).default(1),
   kind: z.enum(["door", "window", "secretDoor"]).default("door"),
-  animation: z.enum(DOOR_ANIMATIONS).optional().describe("Default follows the style: swing, slide for stone, ascend for a portcullis"),
-  style: z.enum(DOOR_STYLES).optional().describe("Look of the door from Foundry's core door images (default wood)"),
-  tone: z.string().optional().describe("Narrow the style to a colour, e.g. dark, walnut, light, red, ashen (wood); volcanic, earthy, redrock (stone); rusty, gray (metal)"),
-  texture: z.string().optional().describe("Your own door image path; wins over style"),
+  animation: z.enum(DOOR_ANIMATIONS).optional().describe("Default by style"),
+  style: z.enum(DOOR_STYLES).optional().describe("Core door image (default wood)"),
+  tone: z.string().optional().describe("Colour variant, e.g. dark, walnut, ashen, volcanic, rusty"),
+  texture: z.string().optional().describe("Custom door image; overrides style"),
   double: z.boolean().optional(),
   flip: z.boolean().optional(),
   locked: z.boolean().optional(),
@@ -37,7 +37,7 @@ export const OpeningSchema = z.object({
 });
 
 export const FloorplanLightSchema = z.object({
-  at: z.tuple([z.number().min(0), z.number().min(0)]).describe("[col, row] of the cell; the light sits at its centre"),
+  at: z.tuple([z.number().min(0), z.number().min(0)]).describe("[col,row] cell (light at centre)"),
   source: z.enum(LIGHT_SOURCES),
   bright: z.number().min(0).optional(),
   dim: z.number().min(0).optional(),
@@ -60,13 +60,13 @@ export const StairSchema = z.object({
   style: z
     .enum(STAIR_STYLES)
     .default("plain")
-    .describe("plain wooden stair (default), grand (wide, balustrades, carpet runner; width 2+), stone, ladder (width 1) or spiral (square footprint, 2x2 or more)"),
-  look: z.string().min(1).optional().describe('Painter text, e.g. "black marble with a worn red carpet" or "rotting steps with a missing tread"'),
-  at: z.tuple([z.number().int().min(0), z.number().int().min(0)]).describe("[col, row] of the top-left cell of the stair"),
-  dir: z.enum(["n", "e", "s", "w"]).describe("The direction you walk to go UP"),
+    .describe("grand needs width 2+, ladder width 1, spiral a 2x2+ square"),
+  look: z.string().min(1).optional().describe("Painter text"),
+  at: z.tuple([z.number().int().min(0), z.number().int().min(0)]).describe("[col,row] top-left cell"),
+  dir: z.enum(["n", "e", "s", "w"]).describe("Direction to walk UP"),
   length: z.number().int().min(2).default(3).describe("Cells along dir"),
   width: z.number().int().min(1).default(1).describe("Cells across"),
-  from: z.number().int().min(-2).default(0).describe("Lower floor: 0 is the ground floor, 1 the floor above it, -1 the first cellar, -2 the second; the stair joins from and from + 1 (from -1 is a stair between the cellar and the ground floor)"),
+  from: z.number().int().min(-2).default(0).describe("Lower floor (0 ground, 1 above, -1/-2 cellars); joins from and from+1"),
 });
 
 /** What the ground outside the house is made of; the guide colours and the painter prompt both read this table. */
@@ -93,31 +93,31 @@ export const SurroundingFeatureSchema = z.object({
   y: z.number().int().min(0),
   w: z.number().int().min(1),
   h: z.number().int().min(1),
-  note: z.string().min(1).optional().describe('What it looks like, e.g. "rutted cart road with puddles"; required for kind custom'),
+  note: z.string().min(1).optional().describe("Painter text; required for custom"),
 });
 
 export const SurroundingsSchema = z.object({
-  ground: z.string().min(1).default("trampled grass and dirt").describe("What the open ground is, e.g. frost-hardened mud with dead grass"),
-  mood: z.string().min(1).optional().describe("Season, weather and light the painter should show, e.g. misty dusk, bare branches"),
-  features: z.array(SurroundingFeatureSchema).max(40).default([]).describe("Rectangles in grid cells outside the house; later ones paint over earlier ones"),
+  ground: z.string().min(1).default("trampled grass and dirt").describe("Open ground, painter text"),
+  mood: z.string().min(1).optional().describe("Season/weather/light"),
+  features: z.array(SurroundingFeatureSchema).max(40).default([]).describe("Cell rectangles outside the house; later paint over earlier"),
 });
 
 const WallBuildSchema = z.object({
   thickness: z.number().min(0.1).max(5).optional().describe("Thickness in feet"),
-  material: z.string().min(1).optional().describe('What it is made of, e.g. "fieldstone with lime wash" or "plastered timber partition"'),
+  material: z.string().min(1).optional().describe("Material, painter text"),
 });
 
 /** How this particular house is built; per house, so a hovel, a manor and a crypt look different. */
 export const ConstructionSchema = z.object({
-  exterior: WallBuildSchema.optional().describe("The outer walls (default 0.6 ft)"),
-  interior: WallBuildSchema.optional().describe("The walls between rooms (default 0.3 ft, thinner than the outer walls)"),
+  exterior: WallBuildSchema.optional().describe("Outer walls (default 0.6 ft)"),
+  interior: WallBuildSchema.optional().describe("Inner walls (default 0.3 ft)"),
   doors: z
     .object({
-      style: z.enum(DOOR_STYLES).optional().describe("Default door look (Foundry's door image) for every door that does not name its own style; doors are not painted, Foundry adds them"),
-      tone: z.string().optional().describe("Default tone for those doors, e.g. dark, ashen, rusty"),
+      style: z.enum(DOOR_STYLES).optional().describe("Default door image style"),
+      tone: z.string().optional().describe("Default door tone"),
     })
     .optional(),
-  windows: z.object({ look: z.string().min(1).optional().describe('e.g. "small leaded diamond panes behind rotten shutters"') }).optional(),
+  windows: z.object({ look: z.string().min(1).optional().describe("Painter text") }).optional(),
 });
 
 export const DEFAULT_EXTERIOR_FEET = 0.6;
@@ -144,15 +144,15 @@ export type RoofShape = (typeof ROOF_SHAPES)[number];
 
 /** One roof over a wing: the rooms it covers (on any floor), and how it looks. Rooms no roof claims share the house's default roof. */
 export const RoofSchema = z.object({
-  name: z.string().min(1).describe('Short name, e.g. "tower" or "kitchen annex"'),
-  rooms: z.array(z.string().min(1)).min(1).describe("Room ids this roof covers; a room with that id on every floor is included (a roof covers the whole stack)"),
-  style: z.string().min(1).optional().describe('Material and look, e.g. "slate roof"; defaults to roofStyle'),
-  look: z.string().min(1).optional().describe('Extra painter text, e.g. "copper green with a weathervane"'),
-  shape: z.enum(ROOF_SHAPES).optional().describe("gabled (pitched, ridge), hipped, flat, conical or domed; left to the painter when omitted"),
-  ridge: z.enum(["ew", "ns"]).optional().describe("Ridge direction for gabled and hipped roofs (default: along the longer side)"),
-  eave: z.number().min(0).max(6).optional().describe("How far the roof overhangs the walls, in feet (default 2)"),
-  condition: z.string().min(1).optional().describe('e.g. "mossy", "missing tiles", "snow-covered", "burnt"'),
-  chimneys: z.boolean().default(true).describe("Draw a chimney over each fireplace under this roof"),
+  name: z.string().min(1).describe("Wing name"),
+  rooms: z.array(z.string().min(1)).min(1).describe("Room ids covered (whole stack of floors)"),
+  style: z.string().min(1).optional().describe("Material; default roofStyle"),
+  look: z.string().min(1).optional().describe("Painter text"),
+  shape: z.enum(ROOF_SHAPES).optional().describe("Omit to let the painter choose"),
+  ridge: z.enum(["ew", "ns"]).optional().describe("Ridge direction (default longer side)"),
+  eave: z.number().min(0).max(6).optional().describe("Overhang in feet (default 2)"),
+  condition: z.string().min(1).optional().describe("e.g. mossy, burnt"),
+  chimneys: z.boolean().default(true).describe("Chimney over each fireplace"),
 });
 export type Roof = z.infer<typeof RoofSchema>;
 
@@ -165,16 +165,16 @@ export const FloorplanBaseSchema = z.object({
   rows: z.number().int().min(4).max(60),
   feetPerCell: z.number().positive().default(5),
   pxPerCell: z.number().int().min(50).max(200).default(100),
-  rooms: z.array(RoomSchema).min(1).max(12).optional().describe("Single-floor shortcut: the rooms of floor 1 (use floors for several)"),
+  rooms: z.array(RoomSchema).min(1).max(12).optional().describe("Single-floor shortcut (else floors)"),
   openings: z.array(OpeningSchema).optional(),
   lights: z.array(FloorplanLightSchema).optional(),
-  floors: z.array(FloorSchema).min(1).max(4).optional().describe("Several floors, index 0 is the ground floor"),
-  cellars: z.array(FloorSchema).max(2).default([]).describe("Underground floors, the first directly below the ground floor. A cellar may use the whole picture (it can run beyond the house); it has no roof, and outside its rooms is solid earth."),
+  floors: z.array(FloorSchema).min(1).max(4).optional().describe("Floors; 0 = ground"),
+  cellars: z.array(FloorSchema).max(2).default([]).describe("Up to 2 underground floors (first directly below ground); may extend beyond the house; no roof"),
   stairs: z.array(StairSchema).default([]),
-  construction: ConstructionSchema.optional().describe("Wall thickness and material, door and window look for this house"),
-  surroundings: SurroundingsSchema.optional().describe("The yard, roads and nature around the house (painted on the ground floor only; the picture is cols x rows, so leave a margin)"),
+  construction: ConstructionSchema.optional().describe("Wall thickness/material, door and window look"),
+  surroundings: SurroundingsSchema.optional().describe("Yard/roads/nature around the house; painting only, ground floor (leave a margin)"),
   roof: z.boolean().default(true),
-  roofs: z.array(RoofSchema).max(8).default([]).describe("A separate roof per wing; rooms not named in any of them share the default roof (roofStyle)"),
+  roofs: z.array(RoofSchema).max(8).default([]).describe("Per-wing roofs; unnamed rooms share the default roof"),
   roofStyle: z.string().min(1).default("thatched roof"),
   codex: z.boolean().default(true),
   seed: z.string().optional(),

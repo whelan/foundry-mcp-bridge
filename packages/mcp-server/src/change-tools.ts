@@ -39,7 +39,7 @@ export const ListChangesShape = {
   tool: z.string().min(1).optional().describe("Only changes made by this tool, e.g. update_document"),
   requestId: z.string().min(1).optional().describe("Only changes from one tool call"),
   includeUndone: z.boolean().optional(),
-  allWorlds: z.boolean().optional().describe("Also list changes made in other Foundry worlds or without a world identity (never undoable here)"),
+  allWorlds: z.boolean().optional().describe("Include other worlds (not undoable)"),
   limit: z.number().int().min(1).max(200).default(20),
 };
 export type ListChangesArgs = z.input<z.ZodObject<typeof ListChangesShape>>;

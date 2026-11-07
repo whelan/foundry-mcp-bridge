@@ -43,12 +43,12 @@ const ApplySchema = z.discriminatedUnion("to", [
   z.object({
     to: z.literal("sceneBackground"),
     id,
-    levelId: id.optional().describe("V14 scenes with several levels: which level's background to replace"),
+    levelId: id.optional().describe("V14 level to replace"),
   }),
   z.object({
     to: z.literal("newScene"),
     name: id,
-    gridSize: z.number().int().positive().optional().describe("Grid square in pixels (default 100); the scene is as large as the image"),
+    gridSize: z.number().int().positive().optional().describe("Grid px (default 100)"),
     gridDistance: z.number().positive().optional(),
     gridUnits: z.string().optional(),
   }),
@@ -62,11 +62,11 @@ export type ImageApply = z.infer<typeof ApplySchema> | FloorplanApply;
 type PublicApply = z.infer<typeof ApplySchema>;
 
 export const GenerateImageShape = {
-  prompt: z.string().min(3).describe("What to draw (the kind adds the style: portrait, token, battlemap, handout or item)"),
+  prompt: z.string().min(3).describe("What to draw"),
   kind: z.enum(IMAGE_KINDS).default("portrait"),
-  width: z.number().int().min(256).max(4096).optional().describe("Size hint in pixels; Codex treats it as a hint"),
+  width: z.number().int().min(256).max(4096).optional().describe("Hint only"),
   height: z.number().int().min(256).max(4096).optional(),
-  apply: ApplySchema.optional().describe("What to do with the image in Foundry once it exists; omit to only upload it"),
+  apply: ApplySchema.optional().describe("Where to apply it; omit to only upload"),
   source: z.enum(["data", "forgevtt"]).default("data"),
   target: z.string().min(1).default("generated-images").describe("Foundry directory the image is uploaded to"),
   waitSeconds: z
@@ -75,7 +75,7 @@ export const GenerateImageShape = {
     .min(0)
     .max(600)
     .default(90)
-    .describe("How long to wait for the image before returning a jobId to poll with check_image_job"),
+    .describe("Then returns a jobId"),
 };
 export type GenerateImageArgs = z.input<z.ZodObject<typeof GenerateImageShape>>;
 

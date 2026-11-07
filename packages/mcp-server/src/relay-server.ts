@@ -47,6 +47,11 @@ export class RelayServer implements RelayTransport {
   private readonly log: NonNullable<RelayServerOptions["log"]>;
 
   private client: WebSocket | null = null;
+  /** Upstream MCP processes (role=peer) sharing this relay's module connection. */
+  private readonly peers = new Set<WebSocket>();
+  /** In-flight peer requests: envelope id -> originating peer + cleanup timer. */
+  private readonly peerRequests = new Map<string, { peer: WebSocket; timer: NodeJS.Timeout }>();
+  private listenError: Error | null = null;
   private clientWaiters: Array<() => void> = [];
   private readonly pending = new PendingRequests();
   private closed = false;
@@ -68,15 +73,26 @@ export class RelayServer implements RelayTransport {
     // cycle (or any transient network blip) is exactly the kind of thing that
     // delivers a listen-socket error (e.g. a stale bind on wake), so this must
     // be handled, not left to the default EventEmitter behavior.
-    this.wss.on("error", (e) => this.log("error", `relay listen socket error: ${(e as Error).message}`));
+    this.wss.on("error", (e) => {
+      this.listenError = e as Error;
+      // EADDRINUSE is an expected outcome when another process owns the port
+      // (callers fall back to peer mode); surface it via listening() only.
+      if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") return;
+      this.log("error", `relay listen socket error: ${(e as Error).message}`);
+    });
   }
 
   /** Resolves once the server is listening (test convenience). */
   listening(): Promise<number> {
     return new Promise((resolve, reject) => {
+      if (this.listenError) return reject(this.listenError);
       if (this.wss.address()) return resolve(this.address());
-      this.wss.once("listening", () => resolve(this.address()));
-      this.wss.once("error", reject);
+      const onError = (e: Error) => reject(e);
+      this.wss.once("error", onError);
+      this.wss.once("listening", () => {
+        this.wss.off("error", onError);
+        resolve(this.address());
+      });
     });
   }
 
@@ -96,13 +112,16 @@ export class RelayServer implements RelayTransport {
       }
     }
 
+    const params = new URL(reqUrl ?? "", "ws://placeholder").searchParams;
+    if (params.get("role") === "peer") return this.onPeer(socket);
+
     // Latest GM connection wins; drop any previous one.
     if (this.client && this.client !== socket) this.client.close(1000, "superseded");
     this.client = socket;
     this.log("info", "Foundry module connected");
     for (const wake of this.clientWaiters.splice(0)) wake();
 
-    socket.on("message", (data) => this.pending.settle(data.toString()));
+    socket.on("message", (data) => this.onModuleMessage(data.toString()));
     // Same reasoning as the wss-level handler above: a sleep/wake network
     // reset typically delivers an "error" (ECONNRESET/EPIPE/ENETDOWN) to the
     // client socket, sometimes before its "close". Without this listener that
@@ -123,7 +142,83 @@ export class RelayServer implements RelayTransport {
       this.pending.failAll((id) =>
         err(id, "INTERNAL", "Foundry module disconnected before responding"),
       );
+      this.failPeerRequests("Foundry module disconnected before responding");
     });
+  }
+
+  /** Route a module result to the peer that asked, else to our own pending map. */
+  private onModuleMessage(raw: string): void {
+    let id: unknown;
+    try {
+      id = (JSON.parse(raw) as { id?: unknown }).id;
+    } catch {
+      return;
+    }
+    const entry = typeof id === "string" ? this.peerRequests.get(id) : undefined;
+    if (entry && typeof id === "string") {
+      this.peerRequests.delete(id);
+      clearTimeout(entry.timer);
+      if (entry.peer.readyState === entry.peer.OPEN) entry.peer.send(raw);
+      return;
+    }
+    this.pending.settle(raw);
+  }
+
+  private onPeer(socket: WebSocket): void {
+    this.peers.add(socket);
+    this.log("info", "MCP peer connected");
+    socket.on("message", (data) => void this.onPeerMessage(socket, data.toString()));
+    socket.on("error", (e) => this.log("warn", `MCP peer socket error: ${(e as Error).message}`));
+    socket.on("close", () => {
+      this.peers.delete(socket);
+      for (const [id, entry] of this.peerRequests) {
+        if (entry.peer === socket) {
+          clearTimeout(entry.timer);
+          this.peerRequests.delete(id);
+        }
+      }
+      this.log("info", "MCP peer disconnected");
+    });
+  }
+
+  private sendToPeer(peer: WebSocket, result: CommandResult): void {
+    if (peer.readyState === peer.OPEN) peer.send(JSON.stringify(result));
+  }
+
+  private async onPeerMessage(peer: WebSocket, raw: string): Promise<void> {
+    let envelope: { id?: unknown };
+    try {
+      envelope = JSON.parse(raw) as { id?: unknown };
+    } catch {
+      return;
+    }
+    const id = envelope.id;
+    if (typeof id !== "string" || id.length === 0) return;
+    try {
+      await this.waitForClient(this.defaultTimeoutMs);
+    } catch {
+      return this.sendToPeer(peer, err(id, "TIMEOUT", "no Foundry module connected to the relay"));
+    }
+    const client = this.client;
+    if (!client || this.closed || !this.peers.has(peer)) {
+      return this.sendToPeer(peer, err(id, "INTERNAL", "relay unavailable"));
+    }
+    // Ids are randomUUIDs, so they are globally unique across peers. The timer
+    // only garbage-collects a mapping the module never answers; the peer's own
+    // request timeout is authoritative.
+    const timer = setTimeout(() => this.peerRequests.delete(id), this.defaultTimeoutMs * 2);
+    timer.unref?.();
+    this.peerRequests.set(id, { peer, timer });
+    client.send(raw);
+  }
+
+  private failPeerRequests(message: string): void {
+    const entries = [...this.peerRequests.entries()];
+    this.peerRequests.clear();
+    for (const [id, entry] of entries) {
+      clearTimeout(entry.timer);
+      this.sendToPeer(entry.peer, err(id, "INTERNAL", message));
+    }
   }
 
   private waitForClient(timeoutMs: number): Promise<void> {
@@ -161,6 +256,9 @@ export class RelayServer implements RelayTransport {
     // here: fail in-flight requests and wake any waiters so callers don't hang
     // until their timeouts on an intentional shutdown.
     this.pending.failAll((id) => err(id, "INTERNAL", "relay server closed"));
+    this.failPeerRequests("relay server closed");
+    for (const peer of this.peers) peer.close(1001, "relay closing");
+    this.peers.clear();
     for (const wake of this.clientWaiters.splice(0)) wake();
     this.wss.close();
   }

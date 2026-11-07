@@ -58,8 +58,9 @@ Order to edit:
 6. **`packages/mcp-server/src/reliability.ts`** — add `xReliable()` running the
    appropriate pipeline (see contract below).
 7. **`packages/mcp-server/src/tools.ts`** — add `XShape` (zod input) + `runX()`.
-8. **`packages/mcp-server/src/server.ts`** — `registerTool("x", {description,
-   inputSchema: XShape}, …)`.
+8. **`packages/mcp-server/src/tool-groups.ts`** — add `x` to `TOOL_CATALOG` under its group;
+   then **`packages/mcp-server/src/server.ts`** — `register("x", "<terse description>", XShape, runX)`
+   (the central `add()` wrapper handles tracing, change log and usage stats). Check `npm run tools:size`.
 9. **Tests** — add coverage in `test/integration/mcp-tools.test.ts` (tool→pipeline
    via mock transport) and/or `test/integration/module-executor.test.ts`
    (executor→api via mock).
