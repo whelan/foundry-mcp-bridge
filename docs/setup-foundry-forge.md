@@ -220,6 +220,26 @@ never open the relay.
 
 ---
 
+## Multiple MCP sessions (hub / peer mode)
+
+Only one process can bind `RELAY_URL`'s port. The first MCP server process to
+start owns the relay; any further process (a second Claude Code session, Codex,
+...) gets `EADDRINUSE`, logs `relay mode peer` on stderr, and connects to the
+owner as a **peer** (`?role=peer&token=...`). The owner forwards each peer's
+envelopes to the single Foundry module connection and routes results back by
+envelope id. If the owner exits, a peer re-binds the port (promotion) and the
+module reconnects to it; otherwise peers keep reconnecting.
+
+For a stable setup, run a standalone hub that owns the port and nothing else:
+
+```bash
+RELAY_URL=ws://localhost:8787 RELAY_TOKEN=... npm run relay:hub   # or the foundry-relay-hub bin
+```
+
+Every MCP process then starts in peer mode automatically. Peer requests that
+arrive with no module connected fail with `TIMEOUT` after the hub's request
+timeout; a module disconnect fails in-flight peer requests with `INTERNAL`.
+
 ## How the relay works
 
 - The MCP server hosts the relay (`RelayServer`) and binds host/port from

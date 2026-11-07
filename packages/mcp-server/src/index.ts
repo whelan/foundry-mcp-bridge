@@ -6,7 +6,7 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig } from "./config.js";
-import { RelayServer } from "./relay-server.js";
+import { AutoRelayTransport } from "./relay-peer.js";
 import { buildServer } from "./server.js";
 import { ForgeRestClient } from "./forge-rest.js";
 import { ChangeLog } from "./change-log.js";
@@ -16,6 +16,7 @@ import type { ImageJobMeta } from "./image-tools.js";
 export { loadConfig } from "./config.js";
 export * from "./relay-transport.js";
 export { RelayServer } from "./relay-server.js";
+export * from "./relay-peer.js";
 export * from "./reliability.js";
 export * from "./tools.js";
 export * from "./forge-rest.js";
@@ -33,16 +34,18 @@ async function start(): Promise<void> {
   const trace = config.trace
     ? (line: string) => console.error(`[foundry-mcp-bridge] ${line}`)
     : undefined;
-  // The MCP server hosts the relay; the Foundry module connects out to it.
-  const transport = new RelayServer({
+  // The MCP server hosts the relay (the Foundry module connects out to it) --
+  // unless another process (another MCP session or `npm run relay:hub`) already
+  // owns the port, in which case we join it as a peer and share its module.
+  const transport = new AutoRelayTransport({
     url: config.relayUrl,
     token: config.relayToken,
     defaultTimeoutMs: config.requestTimeoutMs,
     log: (level, message) =>
       console.error(`[foundry-mcp-bridge] ${level}: ${message}`),
   });
-  // Do not advertise working tools when another process owns the relay port.
-  await transport.listening();
+  const mode = await transport.start();
+  console.error(`[foundry-mcp-bridge] info: relay mode ${mode} (${config.relayUrl})`);
   // Phase 2: enable the direct Forge REST tools only when both credentials are
   // present (they're optional; the forge_* tools report UNSUPPORTED otherwise).
   const forge =

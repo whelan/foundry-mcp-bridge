@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "bundle:module": "npm run build && npm -w @foundry-mcp-bridge/foundry-module run bundle",
     "selftest": "npm run build && node scripts/selftest.mjs",
+    "relay:hub": "npm run build && node packages/mcp-server/dist/hub.js",
     "selftest:live": "npm run build && node scripts/selftest.mjs --live",
     "lint:statblock": "npm run build && node scripts/lint-statblock.mjs",
     "bundle:write-statblock-skill": "npm run build && node scripts/bundle-write-statblock-skill.mjs",

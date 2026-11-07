@@ -83,7 +83,11 @@ MCP client → mcp-server (tools → reliability pipeline → RelayTransport)
   the mutate command, expected read-back subset, id source, and rollback). `relay-transport.ts`
   defines the `RelayTransport` interface, `PendingRequests` (id-correlation + per-request
   timeout, shared by both transports), and the browser-side `WebSocketRelayTransport`;
-  `relay-server.ts` is the Node relay hub (`RelayServer`). `config.ts` is the one place
+  `relay-server.ts` is the Node relay hub (`RelayServer`), which also accepts
+  `?role=peer` connections from other MCP processes and forwards their envelopes to the
+  one module. `relay-peer.ts` has `PeerRelayTransport` and `AutoRelayTransport` (bind the
+  port, else join as peer on EADDRINUSE, promote when the owner goes); `hub.ts`
+  (`npm run relay:hub`) runs a standalone hub so every MCP process is a peer. `config.ts` is the one place
   config is read.
 
 - **`test/integration`** — `mock-foundry.ts` is an in-memory Foundry implementing the
