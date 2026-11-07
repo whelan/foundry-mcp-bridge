@@ -12,8 +12,9 @@ import { ForgeRestClient } from "./forge-rest.js";
 import { ChangeLog } from "./change-log.js";
 import { createCodexRunner, ImageJobs } from "./image-gen.js";
 import type { ImageJobMeta } from "./image-tools.js";
+import { ToolStats } from "./tool-stats.js";
 
-export { loadConfig } from "./config.js";
+export { loadConfig, defaultStateDir } from "./config.js";
 export * from "./relay-transport.js";
 export { RelayServer } from "./relay-server.js";
 export * from "./relay-peer.js";
@@ -26,7 +27,9 @@ export * from "./change-tools.js";
 export * from "./scene-tools.js";
 export * from "./image-gen.js";
 export * from "./image-tools.js";
-export { buildServer } from "./server.js";
+export { buildServer, type ServerExtras } from "./server.js";
+export * from "./tool-groups.js";
+export * from "./tool-stats.js";
 
 async function start(): Promise<void> {
   const config = loadConfig();
@@ -72,11 +75,16 @@ async function start(): Promise<void> {
       ),
       outputDir: config.imageGen.outputDir,
     },
+    {
+      groups: config.toolGroups,
+      stats: config.toolStatsFile ? new ToolStats(config.toolStatsFile) : null,
+    },
   );
   if (config.trace) {
     console.error(
       `[foundry-mcp-bridge] ready: relay ${config.relayUrl}, timeout ${config.requestTimeoutMs}ms, ` +
-        `forge ${forge ? "on" : "off"}, trace on`,
+        `forge ${forge ? "on" : "off"}, tools ${[...config.toolGroups].join(",")}, ` +
+        `stats ${config.toolStatsFile ?? "off"}, trace on`,
     );
   }
   // The MCP client (Claude Code) closing our stdin -- because it quit, crashed,

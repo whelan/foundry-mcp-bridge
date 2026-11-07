@@ -40,8 +40,9 @@ Full reference: `docs/command-lifecycle.md`. Read it if anything below is unclea
    pipeline for its category. Prefer the shared `runMutation` skeleton for
    create/update-shaped ops.
 7. **`packages/mcp-server/src/tools.ts`** — add `XShape` (zod input) + `runX()`.
-8. **`packages/mcp-server/src/server.ts`** — `registerTool("x", { description,
-   inputSchema: XShape }, async (args) => toCallResult(await runX(transport, args, opts)))`.
+8. **`packages/mcp-server/src/tool-groups.ts`** — add `x` to `TOOL_CATALOG` under its group;
+   then **`packages/mcp-server/src/server.ts`** — `register("x", "<terse description>", XShape, runX)`
+   (the central `add()` wrapper handles tracing, change log and usage stats). Check `npm run tools:size`.
 9. **Tests** — cover the tool→pipeline path in
    `test/integration/mcp-tools.test.ts` and/or the executor→api path in
    `test/integration/module-executor.test.ts`. Test at least: happy path,

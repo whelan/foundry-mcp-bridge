@@ -24,7 +24,9 @@
     "bundle:write-statblock-skill": "npm run build && node scripts/bundle-write-statblock-skill.mjs",
     "gen:image": "node scripts/gen-image.mjs",
     "install:foundry": "npm run bundle:module && node scripts/install-into-foundry.mjs",
-    "clean": "tsc --build --clean"
+    "clean": "tsc --build --clean",
+    "tools:size": "npm run build && node scripts/tools-size.mjs",
+    "tools:stats": "npm run build && node scripts/tools-stats.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

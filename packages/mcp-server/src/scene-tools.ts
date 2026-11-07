@@ -75,7 +75,7 @@ export async function loadGrid(
 export const isOutcome = (r: GridResult | ToolOutcome): r is ToolOutcome => "ok" in r;
 
 const sceneId = z.string().min(1).describe("Scene id");
-const square = z.number().int().describe("Grid column/row, 0 = top-left square of the map (not the padding)");
+const square = z.number().int().describe("Grid col/row, 0 = top-left square");
 const DISPOSITIONS = { friendly: TOKEN_DISPOSITIONS.FRIENDLY, neutral: TOKEN_DISPOSITIONS.NEUTRAL, hostile: TOKEN_DISPOSITIONS.HOSTILE, secret: TOKEN_DISPOSITIONS.SECRET } as const;
 
 // --- list_scenes / get_scene_state / switch_scene ----------------------------
@@ -116,16 +116,16 @@ export function runSwitchScene(transport: RelayTransport, args: SwitchSceneArgs,
 
 export const PlaceTokenShape = {
   sceneId,
-  actorId: z.string().min(1).optional().describe("Actor to place; its name is used unless `name` is given"),
+  actorId: z.string().min(1).optional().describe("Actor (name used unless given)"),
   name: z.string().min(1).optional(),
   col: square,
   row: square,
   width: z.number().positive().optional().describe("Size in grid squares (default 1)"),
   height: z.number().positive().optional(),
-  src: z.string().min(1).optional().describe("Token image path; defaults to the actor's token art"),
+  src: z.string().min(1).optional().describe("Default: actor token art"),
   hidden: z.boolean().optional(),
   disposition: z.enum(["friendly", "neutral", "hostile", "secret"]).optional().describe("Default hostile"),
-  actorLink: z.boolean().optional().describe("Link to the world actor instead of a synthetic copy"),
+  actorLink: z.boolean().optional().describe("Link to the world actor"),
 };
 export type PlaceTokenArgs = z.infer<z.ZodObject<typeof PlaceTokenShape>>;
 
@@ -206,18 +206,18 @@ export function runToggleCondition(transport: RelayTransport, args: ToggleCondit
 
 export const AddWallsShape = {
   sceneId,
-  levels: z.array(z.string().min(1)).optional().describe("Foundry 14: the level ids these walls belong to; omit for every level"),
+  levels: z.array(z.string().min(1)).optional().describe("V14 level ids; omit = all"),
   walls: z
     .array(
       z.object({
-        x1: z.number().describe("Grid CORNER coordinates (0,0 = top-left corner of the map), fractions allowed"),
+        x1: z.number().describe("Grid corner coords, fractions ok"),
         y1: z.number(),
         x2: z.number(),
         y2: z.number(),
-        kind: z.enum(["wall", "door", "secretDoor", "limited", "window"]).optional().describe("limited = blocks movement, Limited sight/light (see through one, blocked by two). window = blocks movement only, sight and light pass (glass). Not Foundry's distance-based Proximity wall; make that with create_embedded."),
-        animation: z.enum(["swing", "slide", "swivel", "ascend", "descend"]).optional().describe("Foundry 14 door animation (doors only). Default follows the style: swing, slide for stone, ascend for a portcullis"),
-        style: z.enum(DOOR_STYLES).optional().describe("Door look from Foundry's core door images in canvas/doors: wood (default), stone, metal, portcullis. Every door gets one, Foundry only animates a door that has a texture"),
-        tone: z.string().optional().describe("Narrow the style to a colour: wood dark/walnut/light/red/ashen, stone volcanic/earthy/redrock, metal rusty/gray"),
+        kind: z.enum(["wall", "door", "secretDoor", "limited", "window"]).optional().describe("limited: see through one, blocked by two. window: blocks movement only. (Proximity walls: use create_embedded)"),
+        animation: z.enum(["swing", "slide", "swivel", "ascend", "descend"]).optional().describe("Doors only; default by style"),
+        style: z.enum(DOOR_STYLES).optional().describe("Core door image (default wood)"),
+        tone: z.string().optional().describe("Colour variant, e.g. dark, walnut, ashen, volcanic, rusty"),
         texture: z.string().optional().describe("Your own door image path; wins over style"),
         double: z.boolean().optional().describe("Double door (doors only)"),
         flip: z.boolean().optional(),
@@ -244,18 +244,18 @@ export async function runAddWalls(transport: RelayTransport, args: AddWallsArgs,
 
 export const AddLightsShape = {
   sceneId,
-  levels: z.array(z.string().min(1)).optional().describe("Foundry 14: the level ids these lights belong to; omit for every level"),
-  elevation: z.number().optional().describe("Elevation of the lights (default 0); on a Foundry 14 level, use the level's bottom"),
+  levels: z.array(z.string().min(1)).optional().describe("V14 level ids; omit = all"),
+  elevation: z.number().optional().describe("Default 0; on a V14 level use its bottom"),
   lights: z
     .array(
       z.object({
-        col: z.number().describe("Grid column (fractions allowed; +0.5 = centre of the square)"),
+        col: z.number().describe("+0.5 = square centre"),
         row: z.number(),
-        bright: z.number().min(0).optional().describe("Bright radius in the scene's distance units (e.g. feet)"),
-        dim: z.number().min(0).optional().describe("Dim radius in the scene's distance units"),
+        bright: z.number().min(0).optional().describe("Scene distance units"),
+        dim: z.number().min(0).optional().describe("Scene distance units"),
         color: z.string().optional().describe('Hex colour such as "#ffaa55"'),
-        source: z.enum(["torch", "fireplace", "candle", "lantern", "daylight"]).optional().describe("Preset: radii, colour and animation; explicit fields override it"),
-        animation: z.string().optional().describe("Foundry light animation key, e.g. torch, flame, pulse"),
+        source: z.enum(["torch", "fireplace", "candle", "lantern", "daylight"]).optional().describe("Preset; explicit fields override"),
+        animation: z.string().optional().describe("e.g. torch, flame, pulse"),
       }),
     )
     .min(1),

@@ -214,6 +214,28 @@ export const FindDocumentsShape = {
   fields: z.array(z.string().min(1)).min(1).optional(),
 };
 const FindDocuments = z.object(FindDocumentsShape);
+
+/** Summary paths a query/list returns by default (no id, no fields, no full). */
+export const FIND_SUMMARY_FIELDS = ["_id", "name", "type", "folder"];
+
+/** The find_documents TOOL shape: the read shape plus `full` for whole documents on a query. */
+export const FindDocumentsToolShape = { ...FindDocumentsShape, full: fullParam };
+export type FindDocumentsToolArgs = z.infer<z.ZodObject<typeof FindDocumentsToolShape>>;
+
+/**
+ * find_documents as exposed to the model: a single-id read returns the whole
+ * document, but a query/list returns only FIND_SUMMARY_FIELDS unless `fields`
+ * or `full:true` is given (whole actors/scenes in bulk dominate context).
+ * Internal callers use runFindDocuments, which keeps full-by-default.
+ */
+export function runFindDocumentsTool(
+  transport: RelayTransport,
+  { full, ...args }: FindDocumentsToolArgs,
+  opts: PipelineOptions = {},
+): Promise<ToolOutcome> {
+  const fields = args.fields ?? (args.id || full ? undefined : FIND_SUMMARY_FIELDS);
+  return runFindDocuments(transport, { ...args, fields }, opts);
+}
 export type FindDocumentsArgs = z.infer<typeof FindDocuments>;
 
 export async function runFindDocuments(

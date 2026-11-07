@@ -22,6 +22,8 @@ npm run selftest      # build + run the real server->relay->module->read-back pa
 npm run install:foundry  # bundle the module and install it into a local Foundry
 npm run lint:statblock -- path/to/note.md  # check a statblock note against the 2024-only grammar
 npm run bundle:write-statblock-skill  # regenerate .claude/skills/write-statblock/'s portable .cjs bundle
+npm run tools:size    # per-tool chars of name+description+JSON schema (context cost); -- --groups core,scenes
+npm run tools:stats   # summarize TOOL_STATS_FILE usage JSONL (per tool, never used, daily vs extra groups)
 ```
 
 Run a single test file or test:
@@ -116,7 +118,12 @@ MCP client → mcp-server (tools → reliability pipeline → RelayTransport)
 
 - **Config.** The MCP server reads config in exactly one place (`config.ts`), precedence:
   `process.env` → `.env` → `dev.config.json` (only when `NODE_ENV=development`). Missing
-  required config fails loudly naming the key. No connection strings are hardcoded; the
+  required config fails loudly naming the key.
+
+- **Tool groups + stats.** Every tool is tagged in `tool-groups.ts` (`TOOL_CATALOG`); a new
+  tool must be added there (its name type-checks `register`). `FOUNDRY_TOOLS` picks groups
+  (default `all`). `server.ts`'s `add()` is the single handler wrapper (trace, change log,
+  usage stats to `TOOL_STATS_FILE`). Keep descriptions terse — check `npm run tools:size`. No connection strings are hardcoded; the
   Foundry module gets its relay URL + token from Module Settings.
 
 ## Design docs

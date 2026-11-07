@@ -14,7 +14,7 @@ export const FloorplanSceneShape = {
   ...FloorplanBaseSchema.shape,
   source: z.enum(["data", "forgevtt"]).default("data"),
   target: z.string().min(1).default("generated-images").describe("Foundry directory the picture is uploaded to"),
-  waitSeconds: z.number().int().min(0).max(600).default(90).describe("How long to wait for Codex before returning a jobId to poll with check_image_job"),
+  waitSeconds: z.number().int().min(0).max(600).default(90).describe("Then returns a jobId"),
 };
 export type FloorplanSceneArgs = z.input<z.ZodObject<typeof FloorplanSceneShape>>;
 

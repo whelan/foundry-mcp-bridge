@@ -13,6 +13,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { parseToolGroups, type ToolGroup } from "./tool-groups.js";
 
 export interface ServerConfig {
   /** WebSocket URL of the relay the Foundry module connects to. */
@@ -33,6 +34,10 @@ export interface ServerConfig {
   changeLogFile: string | null;
   /** Codex image generation (the generate_image tool). */
   imageGen: { codexBin: string; outputDir: string; model?: string; timeoutMs: number };
+  /** Tool groups to register (FOUNDRY_TOOLS: comma list or `all`, default all). */
+  toolGroups: ReadonlySet<ToolGroup>;
+  /** JSONL usage-stats file (TOOL_STATS_FILE); null when TOOL_STATS=0. */
+  toolStatsFile: string | null;
 }
 
 /** Per-user state directory: ~/Library/Application Support on macOS, XDG state elsewhere. */
@@ -64,6 +69,12 @@ const ConfigSchema = z.object({
   imageOutputDir: z.string().min(1).optional(),
   imageCodexModel: z.string().min(1).optional(),
   imageTimeoutMs: z.coerce.number().int().positive().default(300_000),
+  foundryTools: z.string().optional(),
+  toolStats: z
+    .string()
+    .optional()
+    .transform((v) => v === undefined || (v !== "0" && v !== "false")),
+  toolStatsFile: z.string().min(1).optional(),
 });
 
 type RawConfig = Record<string, string | undefined>;
@@ -127,6 +138,9 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
     imageOutputDir: pick(env.IMAGE_GEN_OUTPUT_DIR, dotEnv.IMAGE_GEN_OUTPUT_DIR, devConfig.imageOutputDir),
     imageCodexModel: pick(env.IMAGE_GEN_CODEX_MODEL, dotEnv.IMAGE_GEN_CODEX_MODEL, devConfig.imageCodexModel),
     imageTimeoutMs: pick(env.IMAGE_GEN_TIMEOUT_MS, dotEnv.IMAGE_GEN_TIMEOUT_MS, devConfig.imageTimeoutMs?.toString()),
+    foundryTools: pick(env.FOUNDRY_TOOLS, dotEnv.FOUNDRY_TOOLS, devConfig.foundryTools),
+    toolStats: pick(env.TOOL_STATS, dotEnv.TOOL_STATS, devConfig.toolStats?.toString()),
+    toolStatsFile: pick(env.TOOL_STATS_FILE, dotEnv.TOOL_STATS_FILE, devConfig.toolStatsFile),
   };
 
   const parsed = ConfigSchema.safeParse(raw);
@@ -138,9 +152,11 @@ export function loadConfig(options: LoadConfigOptions = {}): ServerConfig {
       `Invalid MCP server configuration. Fix these (via .env or environment):\n${issues}`,
     );
   }
-  const { changeLog, changeLogDir, codexBin, imageOutputDir, imageCodexModel, imageTimeoutMs, ...rest } = parsed.data;
+  const { changeLog, changeLogDir, codexBin, imageOutputDir, imageCodexModel, imageTimeoutMs, foundryTools, toolStats, toolStatsFile, ...rest } = parsed.data;
   return {
     ...rest,
+    toolGroups: parseToolGroups(foundryTools),
+    toolStatsFile: toolStats ? (toolStatsFile ?? join(defaultStateDir(env), "tool-stats.jsonl")) : null,
     changeLogFile: changeLog ? join(changeLogDir ?? defaultStateDir(env), "changes.jsonl") : null,
     imageGen: {
       codexBin,
@@ -165,6 +181,9 @@ interface DevConfig {
   imageOutputDir?: string;
   imageCodexModel?: string;
   imageTimeoutMs?: number;
+  foundryTools?: string;
+  toolStats?: boolean;
+  toolStatsFile?: string;
 }
 
 function readDevConfig(path: string): DevConfig {
