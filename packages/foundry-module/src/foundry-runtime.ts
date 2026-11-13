@@ -33,7 +33,7 @@ import { resolveFilePicker } from "./file-picker.js";
 /** Resolved per call: CONFIG.ux is populated by the time the relay runs a command. */
 const filePicker = () => resolveFilePicker(globalThis);
 
-export const MODULE_ID = "foundry-mcp-bridge";
+export const MODULE_ID = "whelan-mcp-bridge";
 
 /**
  * Convenience default for local development so the module connects out of the

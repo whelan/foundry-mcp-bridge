@@ -132,9 +132,9 @@ claude mcp add foundry \
 
 1. Make Foundry see the module: copy or symlink the `packages/foundry-module`
    folder (it must contain `module.json` **and** `dist/index.js` from step 1)
-   into your Foundry data dir at `Data/modules/foundry-mcp-bridge`. (Or install
+   into your Foundry data dir at `Data/modules/whelan-mcp-bridge`. (Or install
    via a manifest URL pointing at `module.json`.)
-2. In Foundry: **Manage Modules → enable "Foundry MCP Bridge"** in your world.
+2. In Foundry: **Manage Modules → enable "Foundry MCP Bridge (whelan)"** in your world. Disable any module titled plain "Foundry MCP Bridge": that id (`foundry-mcp-bridge`) is a different package on foundryvtt.com, and Foundry updates by id.
 3. **Game Settings → Configure Settings → Module Settings → Foundry MCP Bridge**:
    set **Relay URL** = `ws://localhost:8787` and **Relay token** = your token.
 4. Reload the world **as the GM**.
@@ -155,6 +155,12 @@ port to your Foundry is needed.
    change to `main`; bump `version` in `module.json` for Foundry to offer it as an
    update. Relay URL and token live in the world's settings database, not in the
    module folder, so they survive.
+
+   > **0.9.0 changed the module id** from `foundry-mcp-bridge` to `whelan-mcp-bridge`
+   > (the old id belongs to another package on foundryvtt.com, and Foundry's updater
+   > swapped this module for it). Uninstall the old "Foundry MCP Bridge", install from
+   > the manifest URL above, enable "Foundry MCP Bridge (whelan)", and enter the Relay
+   > URL and token once more: settings are stored per module id.
 
    > The repo must be **public** for this: Forge's servers cannot read a private
    > repo's releases. An install made earlier by zip upload has no manifest URL —

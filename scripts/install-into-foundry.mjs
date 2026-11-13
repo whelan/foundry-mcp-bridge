@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Installs the Foundry module into your Foundry data dir by symlinking
-// packages/foundry-module -> <dataDir>/modules/foundry-mcp-bridge.
+// packages/foundry-module -> <dataDir>/modules/whelan-mcp-bridge.
 //
 // Usage:
 //   node scripts/install-into-foundry.mjs [FOUNDRY_DATA_DIR]
@@ -50,7 +50,9 @@ if (!dataDir) {
 
 const modulesDir = join(dataDir, "modules");
 mkdirSync(modulesDir, { recursive: true });
-const target = join(modulesDir, "foundry-mcp-bridge");
+// The id is our own: "foundry-mcp-bridge" belongs to another package on
+// foundryvtt.com, and Foundry's updater replaced this module with it by id.
+const target = join(modulesDir, "whelan-mcp-bridge");
 
 if (existsSync(target) || isSymlink(target)) {
   rmSync(target, { recursive: true, force: true });
@@ -66,8 +68,8 @@ try {
 }
 
 console.log(
-  "\nDone. In Foundry: load your test world as GM, enable \"Foundry MCP Bridge\"\n" +
-    "in Manage Modules, then reload. With the local defaults it connects to\n" +
+  "\nDone. In Foundry: load your test world as GM, enable \"Foundry MCP Bridge (whelan)\"\n" +
+    "in Manage Modules (disable any old \"Foundry MCP Bridge\"), then reload. With the local defaults it connects to\n" +
     "ws://localhost:8787 automatically — no settings to type.",
 );
 
