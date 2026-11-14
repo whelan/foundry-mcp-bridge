@@ -27,22 +27,28 @@ in the bridge — never improvise the diff. Bridge path = the absolute path in
    `node <bridge>/packages/campaign-sync/dist/cli.js plan --notes . --manifest foundry-sync.json --live live.json --system <system.id> --forge <true|false>`
    It prints a table (stderr) + plan JSON (stdout).
 4. Present the table. For > 3 writes, wait for go-ahead.
-5. Execute per item (see table). **Skip** `remote-ahead` and `conflict` (Foundry wins);
+5. For journal `create`/`update` items, render the bodies in Node instead of
+   hand-converting Markdown: `node <bridge>/.../cli.js render --notes . --plan
+   plan.json --out rendered.json`. Each entry gives the write-ready `pages` (HTML
+   `text.content`, `format: 1`, `## ` sections → named pages, GFM tables kept) —
+   pass them straight to `create_document` + `create_embedded` (or `update_embedded`).
+   The prose never enters context and the conversion is unit-tested.
+6. Execute per item (see table). **Skip** `remote-ahead` and `conflict` (Foundry wins);
    report them so the user can fold the change back into the repo.
-6. After writes, build a `results.json` (`{ "<source>": <ManifestEntity> }`) from each
+7. After writes, build a `results.json` (`{ "<source>": <ManifestEntity> }`) from each
    write's read-back (`_stats.modifiedTime` → `remoteModifiedTime`, new ids, content
    hash from the plan, asset `remotePath`s, quest `progressHash`), then
    `node <bridge>/.../cli.js record --manifest foundry-sync.json --results results.json --live live.json`.
-7. For quest `*-pull-progress` items, write the live progress into the quest note's
+8. For quest `*-pull-progress` items, write the live progress into the quest note's
    front-matter (`status`, `tasks: [{name, completed}]`) — leave the prose body alone.
-8. Commit `foundry-sync.json` and any changed notes.
+9. Commit `foundry-sync.json` and any changed notes.
 
 ## Action → tool
 
 | Plan action | Do |
 | --- | --- |
-| `create` | `create_document` / `create_scene` / `create_quest`; record returned `_id` |
-| `update` | `update_document` (partial) |
+| `create` | `create_document` / `create_scene` / `create_quest`; record returned `_id`. Journals: `create_embedded` the `pages` from `render` (step 5) |
+| `update` | `update_document` (partial). Journals: `update_embedded`/`create_embedded` with `render`ed `pages` |
 | `quest-push-structure` | `update_quest` with **structure fields only** (name/description/hierarchy) |
 | `quest-pull-progress` | pull live `status` + tasks into the note front-matter |
 | `quest-push-and-pull` | both of the above |

@@ -7,7 +7,8 @@ import { scanRepo } from "./scan.js";
 import { computePlan, planToTable } from "./planner.js";
 import { readWorld } from "./leveldb.js";
 import { buildVault } from "./world-export.js";
-import type { LiveState, Manifest } from "./types.js";
+import { renderPlan } from "./render.js";
+import type { LiveState, Manifest, Plan } from "./types.js";
 
 function arg(name: string, fallback?: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -39,6 +40,27 @@ function cmdRecord(): void {
   manifest.entities = { ...manifest.entities, ...updates };
   saveManifest(manifestPath, manifest);
   process.stderr.write(`recorded ${Object.keys(updates).length} entities → ${manifestPath}\n`);
+}
+
+/**
+ * render: turn a plan's create/update JournalEntry items into write-ready page
+ * payloads (Markdown body → HTML `text.content`, format 1). The importing skill
+ * passes these straight to the bridge instead of reading bodies into context and
+ * converting by hand. Writes JSON to --out, or stdout when omitted.
+ */
+function cmdRender(): void {
+  const root = resolve(arg("notes", process.cwd()));
+  const plan = readJson<Plan>(arg("plan"));
+  const docs = renderPlan(plan, (source) => readFileSync(resolve(root, source), "utf8"));
+  const json = JSON.stringify(docs, null, 2);
+  const outIdx = process.argv.indexOf("--out");
+  if (outIdx >= 0 && process.argv[outIdx + 1]) {
+    const outPath = resolve(process.argv[outIdx + 1]!);
+    writeFileSync(outPath, json);
+    process.stderr.write(`rendered ${docs.length} journal(s) → ${outPath}\n`);
+  } else {
+    process.stdout.write(json);
+  }
 }
 
 /**
@@ -98,12 +120,14 @@ async function main(): Promise<void> {
   const cmd = process.argv[2];
   if (cmd === "plan") cmdPlan();
   else if (cmd === "record") cmdRecord();
+  else if (cmd === "render") cmdRender();
   else if (cmd === "export") await cmdExport();
   else {
     process.stderr.write(
-      "usage: foundry-sync <plan|record|export>\n" +
+      "usage: foundry-sync <plan|record|render|export>\n" +
         "  plan   --live <file> [--notes dir] [--manifest path]\n" +
         "  record --results <file> --live <file> [--manifest path]\n" +
+        "  render --plan <file> [--notes dir] [--out file]\n" +
         "  export --world <foundry-world-dir> --out <vault-dir> [--manifest path] [--force]\n",
     );
     process.exit(1);
