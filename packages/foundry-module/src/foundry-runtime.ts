@@ -44,6 +44,7 @@ export const MODULE_ID = "whelan-mcp-bridge";
 export const DEFAULT_RELAY_URL = "ws://localhost:8787";
 export { DEFAULT_POSITION_LOG_URL } from "./position-log.js";
 import { DEFAULT_POSITION_LOG_URL } from "./position-log.js";
+import { DEFAULT_AUTORUN_MACROS } from "./autorun.js";
 
 export interface RelaySettings {
   url: string;
@@ -88,6 +89,17 @@ export function registerSettings(): void {
     config: true,
     type: Boolean,
     default: false,
+  });
+  game.settings.register(MODULE_ID, "autorunMacros", {
+    name: "Autorun macros (GM)",
+    hint:
+      "Macros to run in the active GM's browser on login, with { autostart: true }. Comma-separated names. " +
+      "Leave empty to run nothing. These are your own world macros run on your own login, so this does not " +
+      "need, and is not gated by, \"Allow the bridge to run macros\".",
+    scope: "world",
+    config: true,
+    type: String,
+    default: DEFAULT_AUTORUN_MACROS,
   });
   game.settings.register(MODULE_ID, "worldKey", {
     name: "World key",
