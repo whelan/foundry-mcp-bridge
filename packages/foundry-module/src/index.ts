@@ -8,6 +8,7 @@
 
 import { RelayClient } from "./relay-client.js";
 import { PositionLogger, POSITION_INTERVAL_MS, snapshotPositions, type FetchLike } from "./position-log.js";
+import { parseAutorunList, runAutorun } from "./autorun.js";
 import {
   MODULE_ID,
   createFoundryRuntimeApi,
@@ -19,6 +20,7 @@ import {
 
 export { RelayClient } from "./relay-client.js";
 export * from "./position-log.js";
+export * from "./autorun.js";
 export * from "./protocol-executor.js";
 export {
   MODULE_ID,
@@ -37,6 +39,9 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   // GM-only: non-GM clients never open the relay.
   if (!game.user?.isGM) return;
+
+  // Independent of the relay: runs even when the relay settings are incomplete.
+  startAutorun();
 
   let settings;
   try {
@@ -96,6 +101,33 @@ function startPositionLog(): void {
   const mod = game.modules?.get?.(MODULE_ID);
   if (mod) mod.api = { ...(mod.api ?? {}), positionLogger: positions };
 }
+
+/**
+ * Autorun macros (GM): the active GM's browser runs the listed world macros with
+ * `{ autostart: true }`. Not gated by "Allow the bridge to run macros": these are the GM's own
+ * macros on the GM's own login. See autorun.ts.
+ */
+function startAutorun(): void {
+  let names: string[] = [];
+  try {
+    names = parseAutorunList(game.settings.get(MODULE_ID, "autorunMacros"));
+  } catch {
+    return;
+  }
+  if (!names.length) return;
+  void runAutorun(names, {
+    game,
+    warn: (m) => ui.notifications?.warn(m),
+    log: (m) => console.log(m),
+  });
+}
+
+// The first GM leaves and another stays: core re-elects the active GM when users connect or
+// disconnect, so check after each change whether this browser is now the one to run the list.
+Hooks.on("userConnected", () => {
+  if (!game.user?.isGM) return;
+  startAutorun();
+});
 
 Hooks.once("closeGame", () => {
   client?.disconnect();
